@@ -7,6 +7,7 @@ use near_primitives::{
     hash::CryptoHash,
     types::{AccountId, TransactionOrReceiptId},
 };
+use near_rpc_client::ChangeRequest;
 use sha3::{Digest, Keccak256};
 use std::{str::FromStr, sync::Arc};
 
@@ -111,12 +112,14 @@ impl EthConnector {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            self.eth_connector_account_id()?.to_string(),
-            "deposit".to_string(),
-            args,
-            300_000_000_000_000,
-            0,
+            ChangeRequest {
+                method_name: "deposit".to_string(),
+                receiver_id: self.eth_connector_account_id()?.to_string(),
+                args,
+                gas: 300_000_000_000_000,
+                deposit: 0,
+                signer: self.near_signer()?,
+            },
         )
         .await?;
 
@@ -145,12 +148,14 @@ impl EthConnector {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            eth_connector_account_id,
-            "withdraw".to_string(),
-            args,
-            300_000_000_000_000,
-            1,
+            ChangeRequest {
+                method_name: "withdraw".to_string(),
+                receiver_id: eth_connector_account_id,
+                args,
+                gas: 300_000_000_000_000,
+                deposit: 1,
+                signer: self.near_signer()?,
+            },
         )
         .await?;
 

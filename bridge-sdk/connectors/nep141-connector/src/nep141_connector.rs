@@ -7,6 +7,7 @@ use near_primitives::{
     hash::CryptoHash,
     types::{AccountId, TransactionOrReceiptId},
 };
+use near_rpc_client::ChangeRequest;
 use sha3::{Digest, Keccak256};
 use std::{str::FromStr, sync::Arc};
 
@@ -66,12 +67,14 @@ impl Nep141Connector {
 
         let tx_id = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            self.token_locker_id()?.to_string(),
-            "log_metadata".to_string(),
-            args,
-            300_000_000_000_000,
-            0,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: self.token_locker_id()?.to_string(),
+                method_name: "log_metadata".to_string(),
+                args,
+                gas: 300_000_000_000_000,
+                deposit: 0,
+            },
         )
         .await?;
 
@@ -94,12 +97,14 @@ impl Nep141Connector {
 
         let tx_id = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            near_token_id,
-            "storage_deposit".to_string(),
-            args,
-            300_000_000_000_000,
-            amount,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: near_token_id,
+                method_name: "storage_deposit".to_string(),
+                args,
+                gas: 300_000_000_000_000,
+                deposit: amount,
+            },
         )
         .await?;
 
@@ -177,12 +182,14 @@ impl Nep141Connector {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            near_token_id,
-            "ft_transfer_call".to_string(),
-            args,
-            300_000_000_000_000,
-            1,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: near_token_id,
+                method_name: "ft_transfer_call".to_string(),
+                args,
+                gas: 300_000_000_000_000,
+                deposit: 1,
+            },
         )
         .await?;
 
@@ -316,12 +323,14 @@ impl Nep141Connector {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            self.token_locker_id()?.to_string(),
-            "withdraw".to_string(),
-            args,
-            300_000_000_000_000,
-            60_000_000_000_000_000_000_000,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: self.token_locker_id()?.to_string(),
+                method_name: "withdraw".to_string(),
+                args,
+                gas: 300_000_000_000_000,
+                deposit: 60_000_000_000_000_000_000_000,
+            },
         )
         .await?;
 

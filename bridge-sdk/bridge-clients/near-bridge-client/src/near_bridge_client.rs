@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::SecretKey;
 use near_primitives::{hash::CryptoHash, types::AccountId};
+use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
@@ -60,11 +61,13 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_id,
-            "get_token_id".to_string(),
-            serde_json::json!({
-                "address": token_address
-            }),
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_token_id".to_string(),
+                args: serde_json::json!({
+                    "address": token_address
+                }),
+            },
         )
         .await?;
 
@@ -79,11 +82,13 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_id,
-            "get_native_token_id".to_string(),
-            serde_json::json!({
-                "chain": origin_chain
-            }),
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_native_token_id".to_string(),
+                args: serde_json::json!({
+                    "chain": origin_chain
+                }),
+            },
         )
         .await?;
 
@@ -101,11 +106,13 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_id,
-            "storage_balance_of".to_string(),
-            serde_json::json!({
-                "account_id": account_id
-            }),
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "storage_balance_of".to_string(),
+                args: serde_json::json!({
+                    "account_id": account_id
+                }),
+            },
         )
         .await?;
 
@@ -120,13 +127,16 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_locker_id,
-            "required_balance_for_account".to_string(),
-            serde_json::Value::Null,
+            ViewRequest {
+                contract_account_id: token_locker_id,
+                method_name: "required_balance_for_account".to_string(),
+                args: serde_json::Value::Null,
+            },
         )
         .await?;
 
         let required_balance: NearToken = serde_json::from_slice(&response)?;
+
         Ok(required_balance.as_yoctonear())
     }
 
@@ -139,9 +149,11 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_id.clone(),
-            "storage_balance_bounds".to_string(),
-            serde_json::Value::Null,
+            ViewRequest {
+                contract_account_id: token_id.clone(),
+                method_name: "storage_balance_bounds".to_string(),
+                args: serde_json::Value::Null,
+            },
         )
         .await?;
 
@@ -166,18 +178,21 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let token_locker = self.token_locker_id_as_str()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_id,
-            "storage_deposit".to_string(),
-            serde_json::json!({
-                "account_id": token_locker
-            })
-            .to_string()
-            .into_bytes(),
-            STORAGE_DEPOSIT_GAS,
-            amount,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_id,
+                method_name: "storage_deposit".to_string(),
+                args: serde_json::json!({
+                    "account_id": token_locker
+                })
+                .to_string()
+                .into_bytes(),
+                gas: STORAGE_DEPOSIT_GAS,
+                deposit: amount,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
@@ -193,23 +208,26 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id_as_str()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_locker_id.to_string(),
-            "storage_deposit".to_string(),
-            json!({
-                "account_id": None::<AccountId>
-            })
-            .to_string()
-            .into_bytes(),
-            STORAGE_DEPOSIT_GAS,
-            amount,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_locker_id.to_string(),
+                method_name: "storage_deposit".to_string(),
+                args: json!({
+                    "account_id": None::<AccountId>
+                })
+                .to_string()
+                .into_bytes(),
+                gas: STORAGE_DEPOSIT_GAS,
+                deposit: amount,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash.to_string()),
+            tx_hash = tx_hash.to_string(),
             "Sent storage deposit transaction"
         );
 
@@ -221,18 +239,21 @@ impl NearBridgeClient {
     pub async fn log_token_metadata(&self, token_id: String) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            self.token_locker_id_as_str()?.to_string(),
-            "log_metadata".to_string(),
-            serde_json::json!({
-                "token_id": token_id
-            })
-            .to_string()
-            .into_bytes(),
-            LOG_METADATA_GAS,
-            LOG_METADATA_DEPOSIT,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: self.token_locker_id_as_str()?.to_string(),
+                method_name: "log_metadata".to_string(),
+                args: serde_json::json!({
+                    "token_id": token_id
+                })
+                .to_string()
+                .into_bytes(),
+                gas: LOG_METADATA_GAS,
+                deposit: LOG_METADATA_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
@@ -260,19 +281,22 @@ impl NearBridgeClient {
             prover_args: borsh::to_vec(&prover_args).unwrap(),
         };
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_locker_id.to_string(),
-            "deploy_token".to_string(),
-            borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
-            DEPLOY_TOKEN_WITH_VAA_GAS,
-            DEPLOY_TOKEN_WITH_VAA_DEPOSIT,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_locker_id.to_string(),
+                method_name: "deploy_token".to_string(),
+                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                gas: DEPLOY_TOKEN_WITH_VAA_GAS,
+                deposit: DEPLOY_TOKEN_WITH_VAA_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
+            tx_hash = tx_hash.to_string(),
             "Sent deploy token transaction"
         );
 
@@ -285,22 +309,21 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id_as_str()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_locker_id.to_string(),
-            "bind_token".to_string(),
-            borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
-            BIND_TOKEN_GAS,
-            BIND_TOKEN_DEPOSIT,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_locker_id.to_string(),
+                method_name: "bind_token".to_string(),
+                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                gas: BIND_TOKEN_GAS,
+                deposit: BIND_TOKEN_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent bind token transaction"
-        );
-
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sent bind token transaction");
         Ok(tx_hash)
     }
 
@@ -314,28 +337,30 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            self.token_locker_id_as_str()?.to_string(),
-            "sign_transfer".to_string(),
-            serde_json::json!({
-                "transfer_id": transfer_id,
-                "fee_recipient": fee_recipient,
-                "fee": fee,
-            })
-            .to_string()
-            .into_bytes(),
-            SIGN_TRANSFER_GAS,
-            SIGN_TRANSFER_DEPOSIT, // TODO: make a contract call to signer account to determine the required deposit
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: self.token_locker_id_as_str()?.to_string(),
+                method_name: "sign_transfer".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id,
+                    "fee_recipient": fee_recipient,
+                    "fee": fee,
+                })
+                .to_string()
+                .into_bytes(),
+                gas: SIGN_TRANSFER_GAS,
+                deposit: SIGN_TRANSFER_DEPOSIT, // TODO: make a contract call to signer account to determine the required deposit
+            },
+            near_primitives::views::TxExecutionStatus::Included,
         )
         .await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash.to_string()),
+            tx_hash = tx_hash.to_string(),
             "Sent sign transfer transaction"
         );
-
         Ok(tx_hash)
     }
 
@@ -350,12 +375,14 @@ impl NearBridgeClient {
 
         let response = near_rpc_client::view(
             endpoint,
-            token_locker_id,
-            "required_balance_for_init_transfer".to_string(),
-            serde_json::json!({
-                "recipient": recipient,
-                "sender": format!("near:{}", sender)
-            }),
+            ViewRequest {
+                contract_account_id: token_locker_id,
+                method_name: "required_balance_for_init_transfer".to_string(),
+                args: serde_json::json!({
+                    "recipient": recipient,
+                    "sender": format!("near:{}", sender)
+                }),
+            },
         )
         .await?;
 
@@ -390,32 +417,31 @@ impl NearBridgeClient {
         let fee = 0;
         let native_fee = 0;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_id,
-            "ft_transfer_call".to_string(),
-            serde_json::json!({
-                "receiver_id": token_locker,
-                "amount": amount.to_string(),
-                "msg": serde_json::json!({
-                    "recipient": receiver,
-                    "fee": fee,
-                    "native_token_fee": native_fee
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_id,
+                method_name: "ft_transfer_call".to_string(),
+                args: serde_json::json!({
+                    "receiver_id": token_locker,
+                    "amount": amount.to_string(),
+                    "msg": serde_json::json!({
+                "recipient": receiver,
+                "fee": fee,
+                "native_token_fee": native_fee
+                    })
                 })
-            })
-            .to_string()
-            .into_bytes(),
-            INIT_TRANSFER_GAS,
-            INIT_TRANSFER_DEPOSIT,
+                .to_string()
+                .into_bytes(),
+                gas: INIT_TRANSFER_GAS,
+                deposit: INIT_TRANSFER_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent transfer transaction"
-        );
-
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sent transfer transaction");
         Ok(tx_hash)
     }
 
@@ -424,22 +450,24 @@ impl NearBridgeClient {
     pub async fn fin_transfer(&self, args: FinTransferArgs) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            self.token_locker_id_as_str()?.to_string(),
-            "fin_transfer".to_string(),
-            borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
-            FIN_TRANSFER_GAS,
-            FIN_TRANSFER_DEPOSIT,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: self.token_locker_id_as_str()?.to_string(),
+                method_name: "fin_transfer".to_string(),
+                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                gas: FIN_TRANSFER_GAS,
+                deposit: FIN_TRANSFER_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Included,
         )
         .await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
+            tx_hash = tx_hash.to_string(),
             "Sent finalize transfer transaction"
         );
-
         Ok(tx_hash)
     }
 
@@ -449,22 +477,21 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id_as_str()?;
 
-        let tx_hash = near_rpc_client::change(
+        let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
-            self.signer()?,
-            token_locker_id.to_string(),
-            "claim_fee".to_string(),
-            borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
-            CLAIM_FEE_GAS,
-            CLAIM_FEE_DEPOSIT,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_locker_id.to_string(),
+                method_name: "claim_fee".to_string(),
+                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                gas: CLAIM_FEE_GAS,
+                deposit: CLAIM_FEE_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Included,
         )
         .await?;
 
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash.to_string()),
-            "Sent claim fee request"
-        );
-
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sent claim fee request");
         Ok(tx_hash)
     }
 
@@ -480,9 +507,16 @@ impl NearBridgeClient {
             Some(id) => id,
             None => self.account_id()?,
         };
-        let sign_tx =
-            near_rpc_client::wait_for_tx_final_outcome(transaction_hash, sender_id, endpoint, 30)
-                .await?;
+        let tx_hash = near_rpc_client::wait_for_tx(
+            endpoint,
+            transaction_hash,
+            sender_id.clone(),
+            near_primitives::views::TxExecutionStatus::Executed,
+            60,
+        )
+        .await?;
+
+        let sign_tx = near_rpc_client::get_tx_final_outcome(endpoint, tx_hash, sender_id).await?;
 
         let transfer_log = sign_tx
             .receipts_outcome
