@@ -33,6 +33,14 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    NearDeployTokenWithEvmProof {
+        #[clap(short, long)]
+        source_chain_id: u8,
+        #[clap(short, long)]
+        tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     NearStorageDeposit {
         #[clap(short, long)]
         token: String,
@@ -428,6 +436,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+
+        OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
+            source_chain_id,
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
+                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                })
+                .await
+                .unwrap();
+        }
     }
 }
 
@@ -489,7 +511,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .eth_bridge_client(Some(eth_bridge_client))
         .base_bridge_client(Some(base_bridge_client))
         .arb_bridge_client(Some(arb_bridge_client))
-        .solana_bridge_client(Some(solana_bridge_client))
+        .wormhole_bridge_client(None)
         .build()
         .unwrap()
 }
