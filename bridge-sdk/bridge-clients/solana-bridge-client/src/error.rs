@@ -8,4 +8,6 @@ pub enum SolanaClientError {
     ConfigError(String),
     #[error("Invalid account data")]
     InvalidAccountData(String),
+    #[error("Invalid event")]
+    InvalidEvent,
 }

@@ -13,14 +13,12 @@ near-crypto.workspace = true
 near-jsonrpc-client.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
-near-contract-standards.workspace = true
 omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
-near-bridge-client = { path = "../near-bridge-client" }
 
 [lib]
 path = "src/evm_bridge_client.rs"

@@ -4,7 +4,6 @@ use ethers::prelude::*;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
-use near_primitives::views::FinalExecutionOutcomeView;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::EvmVerifyProofArgs;
@@ -52,7 +51,10 @@ pub enum DeployTokenArgs {
         near_tx_hash: CryptoHash,
     },
     SolanaDeployToken {
-        tx_hash: CryptoHash,
+        event: Nep141LockerEvent,
+    },
+    SolanaDeployTokenWithTxHash {
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
 }
@@ -106,7 +108,11 @@ pub enum FinTransferArgs {
         near_tx_hash: CryptoHash,
     },
     SolanaFinTransfer {
-        tx_hash: CryptoHash,
+        event: Nep141LockerEvent,
+        solana_token: Pubkey,
+    },
+    SolanaFinTransferWithTxHash {
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         solana_token: Pubkey,
     },
@@ -175,13 +181,13 @@ impl OmniConnector {
 
     pub async fn near_sign_transfer(
         &self,
-        origin_nonce: u64,
+        transfer_id: omni_types::TransferId,
         fee_recipient: Option<AccountId>,
         fee: Option<Fee>,
-    ) -> Result<FinalExecutionOutcomeView> {
+    ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .sign_transfer(origin_nonce, fee_recipient, fee)
+            .sign_transfer(transfer_id, fee_recipient, fee)
             .await
     }
 
@@ -213,10 +219,7 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn near_claim_fee(
-        &self,
-        claim_fee_args: ClaimFeeArgs,
-    ) -> Result<FinalExecutionOutcomeView> {
+    pub async fn near_claim_fee(&self, claim_fee_args: ClaimFeeArgs) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.claim_fee(claim_fee_args).await
     }
@@ -358,26 +361,38 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
-    pub async fn solana_deploy_token(
+    pub async fn solana_deploy_token_with_tx_hash(
         &self,
-        transaction_hash: CryptoHash,
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     ) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
 
         let transfer_log = near_bridge_client
-            .extract_transfer_log(transaction_hash, sender_id, "LogMetadataEvent")
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
+            .await?;
 
+        self.solana_deploy_token_with_event(
+            serde_json::from_str(&transfer_log).map_err(|_| BridgeSdkError::UnknownError)?,
+        )
+        .await
+        // TODO: This will silence a real error, so it must be fixed during `BridgeSdkError` refactoring
+        .map_err(|_| BridgeSdkError::UnknownError)
+    }
+
+    pub async fn solana_deploy_token_with_event(
+        &self,
+        event: Nep141LockerEvent,
+    ) -> Result<Signature> {
         let Nep141LockerEvent::LogMetadataEvent {
             signature,
             metadata_payload,
-        } = serde_json::from_str(&transfer_log)?
+        } = event
         else {
             return Err(BridgeSdkError::UnknownError);
         };
+
+        let solana_bridge_client = self.solana_bridge_client()?;
 
         let mut signature = signature.to_bytes();
         signature[64] -= 27; // TODO: Remove recovery_id modification in OmniTypes and add it specifically when submitting to EVM chains
@@ -389,22 +404,15 @@ impl OmniConnector {
                 symbol: metadata_payload.symbol,
                 decimals: metadata_payload.decimals,
             },
-            signature: signature
-                .try_into()
-                .map_err(|_| BridgeSdkError::UnknownError)?,
+            signature: signature.try_into().map_err(|_| {
+                BridgeSdkError::ConfigError("Failed to parse signature".to_string())
+            })?,
         };
 
-        let tx_hash = solana_bridge_client
+        solana_bridge_client
             .deploy_token(payload)
             .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
-
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent deploy token transaction"
-        );
-
-        Ok(tx_hash)
+            .map_err(|_| BridgeSdkError::UnknownError)
     }
 
     pub async fn solana_init_transfer(
@@ -448,27 +456,42 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
-    pub async fn solana_finalize_transfer(
+    pub async fn solana_finalize_transfer_with_tx_hash(
         &self,
-        transaction_hash: CryptoHash,
-        solana_token: Pubkey, // TODO: retrieve from near contract
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
+        solana_token: Pubkey, // TODO: retrieve from near contract
     ) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
 
         let transfer_log = near_bridge_client
-            .extract_transfer_log(transaction_hash, sender_id, "SignTransferEvent")
+            .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
             .await
             .map_err(|_| BridgeSdkError::UnknownError)?;
 
+        self.solana_finalize_transfer_with_event(
+            serde_json::from_str(&transfer_log).map_err(|_| BridgeSdkError::UnknownError)?,
+            solana_token,
+        )
+        .await
+        // TODO: This will silence a real error, so it must be fixed during `BridgeSdkError` refactoring
+        .map_err(|_| BridgeSdkError::UnknownError)
+    }
+
+    pub async fn solana_finalize_transfer_with_event(
+        &self,
+        event: Nep141LockerEvent,
+        solana_token: Pubkey, // TODO: retrieve from near contract
+    ) -> Result<Signature> {
         let Nep141LockerEvent::SignTransferEvent {
             message_payload,
             signature,
-        } = serde_json::from_str(&transfer_log)?
+        } = event
         else {
             return Err(BridgeSdkError::UnknownError);
         };
+
+        let solana_bridge_client = self.solana_bridge_client()?;
 
         let mut signature = signature.to_bytes();
         signature[64] -= 27;
@@ -480,30 +503,29 @@ impl OmniConnector {
                     origin_chain: 1,
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
-                token: "wrap.testnet".to_string(),
                 amount: message_payload.amount.into(),
                 recipient: match message_payload.recipient {
                     OmniAddress::Sol(addr) => Pubkey::new_from_array(addr.0),
-                    _ => return Err(BridgeSdkError::UnknownError),
+                    _ => return Err(BridgeSdkError::ConfigError("Invalid recipient".to_string())),
                 },
                 fee_recipient: message_payload.fee_recipient.map(|addr| addr.to_string()),
             },
-            signature: signature
-                .try_into()
-                .map_err(|_| BridgeSdkError::UnknownError)?,
+            signature: signature.try_into().map_err(|_| {
+                BridgeSdkError::ConfigError("Failed to parse signature".to_string())
+            })?,
         };
 
-        let tx_hash = solana_bridge_client
-            .finalize_transfer(payload, solana_token)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
-
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent finalize transfer transaction"
-        );
-
-        Ok(tx_hash)
+        if solana_token == Pubkey::default() {
+            solana_bridge_client
+                .finalize_transfer_sol(payload)
+                .await
+                .map_err(|_| BridgeSdkError::UnknownError)
+        } else {
+            solana_bridge_client
+                .finalize_transfer(payload, solana_token)
+                .await
+                .map_err(|_| BridgeSdkError::UnknownError)
+        }
     }
 
     pub async fn log_metadata(&self, log_metadata_args: LogMetadataArgs) -> Result<String> {
@@ -536,8 +558,16 @@ impl OmniConnector {
                 .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash)
                 .await
                 .map(|hash| hash.to_string()),
-            DeployTokenArgs::SolanaDeployToken { tx_hash, sender_id } => self
-                .solana_deploy_token(tx_hash, sender_id)
+            DeployTokenArgs::SolanaDeployToken { event } => self
+                .solana_deploy_token_with_event(event)
+                .await
+                .map(|hash| hash.to_string())
+                .map_err(|_| BridgeSdkError::UnknownError),
+            DeployTokenArgs::SolanaDeployTokenWithTxHash {
+                near_tx_hash: tx_hash,
+                sender_id,
+            } => self
+                .solana_deploy_token_with_tx_hash(tx_hash, sender_id)
                 .await
                 .map(|hash| hash.to_string()),
         }
@@ -616,11 +646,18 @@ impl OmniConnector {
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::SolanaFinTransfer {
-                tx_hash,
+                event,
+                solana_token,
+            } => self
+                .solana_finalize_transfer_with_event(event, solana_token)
+                .await
+                .map(|tx_hash| tx_hash.to_string()),
+            FinTransferArgs::SolanaFinTransferWithTxHash {
+                near_tx_hash,
                 sender_id,
                 solana_token,
             } => self
-                .solana_finalize_transfer(tx_hash, solana_token, sender_id)
+                .solana_finalize_transfer_with_tx_hash(near_tx_hash, sender_id, solana_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
         }

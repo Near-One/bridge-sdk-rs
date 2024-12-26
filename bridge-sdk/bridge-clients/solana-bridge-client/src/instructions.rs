@@ -57,6 +57,20 @@ impl BorshSerialize for FinalizeTransfer {
     }
 }
 
+pub struct FinalizeTransferSol {
+    pub payload: FinalizeTransferInstructionPayload,
+    pub signature: [u8; 65],
+}
+
+impl BorshSerialize for FinalizeTransferSol {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&get_instruction_identifier("global:finalize_transfer_sol"))?;
+        self.payload.serialize(writer)?;
+        writer.write_all(&self.signature)?;
+        Ok(())
+    }
+}
+
 pub struct LogMetadata {
     pub override_name: String,
     pub override_symbol: String,

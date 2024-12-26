@@ -12,6 +12,7 @@ near-primitives.workspace = true
 near-token.workspace = true
 near-contract-standards.workspace = true
 omni-types.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 near-rpc-client = { path = "../../near-rpc-client" }

@@ -5,6 +5,7 @@ use derive_builder::Builder;
 use ethers::prelude::*;
 use near_crypto::SecretKey;
 use near_primitives::{hash::CryptoHash, types::AccountId};
+use near_rpc_client::ChangeRequest;
 use sha3::{Digest, Keccak256};
 use std::{str::FromStr, sync::Arc};
 
@@ -106,12 +107,14 @@ impl FastBridge {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            token_id.to_string(),
-            "ft_transfer_call".to_string(),
-            args,
-            200_000_000_000_000,
-            1,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: fast_bridge_account_id,
+                method_name: "transfer".to_string(),
+                args,
+                gas: 20_000_000_000_000,
+                deposit: 1,
+            },
         )
         .await?;
 
@@ -178,12 +181,14 @@ impl FastBridge {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            self.fast_bridge_account_id()?.to_string(),
-            "lp_unlock".to_string(),
-            args,
-            120_000_000_000_000,
-            0,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: self.fast_bridge_account_id()?.to_string(),
+                method_name: "lp_unlock".to_string(),
+                args,
+                gas: 120_000_000_000_000,
+                deposit: 0,
+            },
         )
         .await?;
 
@@ -222,12 +227,14 @@ impl FastBridge {
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,
-            self.near_signer()?,
-            self.fast_bridge_account_id()?.to_string(),
-            "withdraw".to_string(),
-            args,
-            20_000_000_000_000,
-            0,
+            ChangeRequest {
+                signer: self.near_signer()?,
+                receiver_id: self.fast_bridge_account_id()?.to_string(),
+                method_name: "withdraw".to_string(),
+                args,
+                gas: 20_000_000_000_000,
+                deposit: 0,
+            },
         )
         .await?;
 

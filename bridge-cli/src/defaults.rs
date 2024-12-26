@@ -50,7 +50,7 @@ pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xd565f7CcE0FA1bB8DBe73FCDA281390d545f6200";
 
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
-pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "";
+pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEpGSS5zeBge28p";
 pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
 
 pub const FAST_BRIDGE_ACCOUNT_ID_TESTNET: &str = "fastbridge.testnet";
