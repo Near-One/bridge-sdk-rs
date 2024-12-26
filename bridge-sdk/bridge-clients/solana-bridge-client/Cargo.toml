@@ -13,7 +13,6 @@ mpl-token-metadata.workspace = true
 spl-token.workspace = true
 spl-associated-token-account.workspace = true
 thiserror.workspace = true
-omni-types.workspace = true
 
 [lib]
 path = "src/solana_bridge_client.rs"
