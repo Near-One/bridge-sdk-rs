@@ -33,6 +33,14 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    NearDeployTokenWithEvmProof {
+        #[clap(short, long)]
+        source_chain_id: u8,
+        #[clap(short, long)]
+        tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     NearStorageDeposit {
         #[clap(short, long)]
         token: String,
@@ -433,6 +441,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
                         prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
                     },
+                })
+                .await
+                .unwrap();
+        }
+
+        OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
+            source_chain_id,
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
+                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();

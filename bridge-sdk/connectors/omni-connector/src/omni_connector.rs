@@ -42,6 +42,10 @@ pub enum DeployTokenArgs {
         chain_kind: ChainKind,
         vaa: String,
     },
+    NearDeployTokenWithEvmProof {
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
+    },
     EvmDeployToken {
         chain_kind: ChainKind,
         event: Nep141LockerEvent,
@@ -243,6 +247,33 @@ impl OmniConnector {
 
         near_bridge_client
             .bind_token(omni_types::locker_args::BindTokenArgs {
+                chain_kind,
+                prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
+                    BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
+                })?,
+            })
+            .await
+    }
+
+    pub async fn near_deploy_token_with_evm_proof(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+
+        let proof = evm_bridge_client
+            .get_proof_for_event(tx_hash, ProofKind::LogMetadata)
+            .await?;
+
+        let verify_proof_args = EvmVerifyProofArgs {
+            proof_kind: ProofKind::LogMetadata,
+            proof,
+        };
+
+        near_bridge_client
+            .deploy_token_with_evm_proof(omni_types::locker_args::DeployTokenArgs {
                 chain_kind,
                 prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
                     BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
@@ -568,6 +599,13 @@ impl OmniConnector {
                 sender_id,
             } => self
                 .solana_deploy_token_with_tx_hash(tx_hash, sender_id)
+                .await
+                .map(|hash| hash.to_string()),
+            DeployTokenArgs::NearDeployTokenWithEvmProof {
+                chain_kind,
+                tx_hash,
+            } => self
+                .near_deploy_token_with_evm_proof(chain_kind, tx_hash)
                 .await
                 .map(|hash| hash.to_string()),
         }

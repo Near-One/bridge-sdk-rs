@@ -18,8 +18,8 @@ const STORAGE_DEPOSIT_GAS: u64 = 10_000_000_000_000;
 const LOG_METADATA_GAS: u64 = 300_000_000_000_000;
 const LOG_METADATA_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 
-const DEPLOY_TOKEN_WITH_VAA_GAS: u64 = 120_000_000_000_000;
-const DEPLOY_TOKEN_WITH_VAA_DEPOSIT: u128 = 4_000_000_000_000_000_000_000_000;
+const DEPLOY_TOKEN_GAS: u64 = 120_000_000_000_000;
+const DEPLOY_TOKEN_DEPOSIT: u128 = 4_000_000_000_000_000_000_000_000;
 
 const BIND_TOKEN_GAS: u64 = 300_000_000_000_000;
 const BIND_TOKEN_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
@@ -290,6 +290,33 @@ impl NearBridgeClient {
                 args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
                 gas: DEPLOY_TOKEN_WITH_VAA_GAS,
                 deposit: DEPLOY_TOKEN_WITH_VAA_DEPOSIT,
+            },
+            near_primitives::views::TxExecutionStatus::Executed,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent deploy token transaction"
+        );
+
+        Ok(tx_hash)
+    }
+
+    /// Deploys a token on the target chain using the evm proof
+    pub async fn deploy_token_with_evm_proof(&self, args: DeployTokenArgs) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let token_locker_id = self.token_locker_id_as_str()?;
+
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                receiver_id: token_locker_id.to_string(),
+                method_name: "deploy_token".to_string(),
+                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                gas: DEPLOY_TOKEN_GAS,
+                deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             near_primitives::views::TxExecutionStatus::Executed,
         )
