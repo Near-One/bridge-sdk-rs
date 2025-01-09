@@ -288,8 +288,8 @@ impl NearBridgeClient {
                 receiver_id: token_locker_id.to_string(),
                 method_name: "deploy_token".to_string(),
                 args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
-                gas: DEPLOY_TOKEN_WITH_VAA_GAS,
-                deposit: DEPLOY_TOKEN_WITH_VAA_DEPOSIT,
+                gas: DEPLOY_TOKEN_GAS,
+                deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             near_primitives::views::TxExecutionStatus::Executed,
         )
