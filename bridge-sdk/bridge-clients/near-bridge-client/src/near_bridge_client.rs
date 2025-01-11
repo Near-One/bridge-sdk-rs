@@ -380,7 +380,7 @@ impl NearBridgeClient {
                 gas: SIGN_TRANSFER_GAS,
                 deposit: SIGN_TRANSFER_DEPOSIT, // TODO: make a contract call to signer account to determine the required deposit
             },
-            near_primitives::views::TxExecutionStatus::Final,
+            near_primitives::views::TxExecutionStatus::Executed,
         )
         .await?;
 
