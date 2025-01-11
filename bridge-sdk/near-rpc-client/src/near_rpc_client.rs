@@ -1,11 +1,14 @@
 use crate::error::NearRpcError;
 use crate::light_client_proof::LightClientExecutionProof;
 use lazy_static::lazy_static;
+use near_jsonrpc_client::errors::{
+    JsonRpcError, JsonRpcServerError, JsonRpcServerResponseStatusError,
+};
 use near_jsonrpc_client::{methods, JsonRpcClient, JsonRpcClientConnector};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::TransactionInfo;
 use near_primitives::hash::CryptoHash;
-use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
+use near_primitives::transaction::{Action, FunctionCallAction, Transaction, TransactionV0};
 use near_primitives::types::{AccountId, BlockReference, Finality, FunctionArgs};
 use near_primitives::views::{FinalExecutionOutcomeView, QueryRequest};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -130,7 +133,7 @@ pub async fn change(
         QueryResponseKind::AccessKey(access_key) => access_key.nonce,
         _ => Err(NearRpcError::NonceError)?,
     };
-    let transaction = Transaction {
+    let transaction = Transaction::V0(TransactionV0 {
         signer_id: change_request.signer.account_id.clone(),
         public_key: change_request.signer.public_key.clone(),
         nonce: current_nonce + 1,
@@ -142,9 +145,9 @@ pub async fn change(
             gas: change_request.gas,
             deposit: change_request.deposit,
         }))],
-    };
+    });
     let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-        signed_transaction: transaction.sign(&change_request.signer),
+        signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(change_request.signer)),
     };
 
     Ok(client.call(request).await?)
@@ -196,12 +199,17 @@ pub async fn wait_for_tx(
 
         match response {
             Ok(_) => return Ok(hash),
-            Err(err) => match err.handler_error() {
-                Some(_err) => {
+            Err(err) => match err {
+                JsonRpcError::ServerError(JsonRpcServerError::HandlerError(_))
+                | near_jsonrpc_client::errors::JsonRpcError::ServerError(
+                    JsonRpcServerError::ResponseStatusError(
+                        JsonRpcServerResponseStatusError::TimeoutError,
+                    ),
+                ) => {
                     time::sleep(time::Duration::from_secs(2)).await;
                     continue;
                 }
-                _ => Err(NearRpcError::RpcTransactionError(err))?,
+                _ => return Err(NearRpcError::RpcTransactionError(err)),
             },
         }
     }
