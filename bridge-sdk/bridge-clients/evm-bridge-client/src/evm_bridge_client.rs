@@ -72,9 +72,17 @@ impl EvmBridgeClient {
 
         assert!(serialized_signature.len() == 65);
 
-        let call = factory
+        let mut call = factory
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
+
+        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
+        let Some(tx) = call.tx.as_eip1559_mut() else {
+            return Err(BridgeSdkError::UnknownError);
+        };
+        tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
+        tx.max_fee_per_gas = Some(base_fee_per_gas);
+
         let tx = call.send().await?;
 
         tracing::info!(
@@ -180,7 +188,15 @@ impl EvmBridgeClient {
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+        let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+
+        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
+        let Some(tx) = call.tx.as_eip1559_mut() else {
+            return Err(BridgeSdkError::UnknownError);
+        };
+        tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
+        tx.max_fee_per_gas = Some(base_fee_per_gas);
+
         let tx = call.send().await?;
 
         tracing::info!(
@@ -297,5 +313,28 @@ impl EvmBridgeClient {
         Ok(LocalWallet::from_bytes(&private_key_bytes)
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM private key".to_string()))?
             .with_chain_id(*chain_id))
+    }
+
+    pub async fn get_required_gas_fee(&self) -> Result<(U256, U256)> {
+        let endpoint = self.endpoint()?;
+        let client = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let response: std::result::Result<U256, ProviderError> =
+            client.request("eth_maxPriorityFeePerGas", ()).await;
+
+        let max_priority_fee_per_gas = match response {
+            Ok(fee) => fee,
+            Err(_) => U256::zero(),
+        };
+
+        let response = client.get_block(BlockNumber::Latest).await;
+
+        let base_fee_per_gas = match response {
+            Ok(Some(block)) => block.base_fee_per_gas.unwrap_or_default(),
+            _ => return Err(BridgeSdkError::UnknownError),
+        };
+
+        Ok((max_priority_fee_per_gas, base_fee_per_gas))
     }
 }
