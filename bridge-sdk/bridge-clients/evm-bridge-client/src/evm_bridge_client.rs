@@ -75,14 +75,7 @@ impl EvmBridgeClient {
         let mut call = factory
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
-
-        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
-        let Some(tx) = call.tx.as_eip1559_mut() else {
-            return Err(BridgeSdkError::UnknownError);
-        };
-        tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
-        tx.max_fee_per_gas = Some(base_fee_per_gas);
-
+        self.apply_required_gas_fee(&mut call).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -189,14 +182,7 @@ impl EvmBridgeClient {
         };
 
         let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
-
-        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
-        let Some(tx) = call.tx.as_eip1559_mut() else {
-            return Err(BridgeSdkError::UnknownError);
-        };
-        tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
-        tx.max_fee_per_gas = Some(base_fee_per_gas);
-
+        self.apply_required_gas_fee(&mut call).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -336,5 +322,21 @@ impl EvmBridgeClient {
         };
 
         Ok((max_priority_fee_per_gas, base_fee_per_gas))
+    }
+
+    pub async fn apply_required_gas_fee<B, M, D>(
+        &self,
+        call: &mut FunctionCall<B, M, D>,
+    ) -> Result<()> {
+        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
+
+        let Some(tx) = call.tx.as_eip1559_mut() else {
+            return Err(BridgeSdkError::UnknownError);
+        };
+
+        tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
+        tx.max_fee_per_gas = Some(base_fee_per_gas);
+
+        Ok(())
     }
 }
