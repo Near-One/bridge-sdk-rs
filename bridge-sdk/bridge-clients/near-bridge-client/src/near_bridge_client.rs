@@ -25,6 +25,7 @@ const BIND_TOKEN_GAS: u64 = 300_000_000_000_000;
 const BIND_TOKEN_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 
 const SIGN_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const SIGN_TRANSFER_DEPOSIT: u128 = 500_000_000_000_000_000_000_000;
 
 const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_TRANSFER_DEPOSIT: u128 = 1;
@@ -386,7 +387,8 @@ impl NearBridgeClient {
         )
         .await?;
 
-        let required_deposit = serde_json::from_slice::<u128>(&response)?;
+        let required_deposit = serde_json::from_slice::<String>(&response)
+            .map(|response| response.parse::<u128>().unwrap_or(SIGN_TRANSFER_DEPOSIT))?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
