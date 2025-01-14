@@ -93,7 +93,7 @@ impl EvmBridgeClient {
         let mut call = factory
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
-        self.apply_required_gas_fee(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -136,8 +136,10 @@ impl EvmBridgeClient {
 
         let amount256: ethers::types::U256 = amount.into();
         if allowance < amount256 {
-            bridge_token
-                .approve(bridge_token_factory_address, amount256 - allowance)
+            let mut approval_call =
+                bridge_token.approve(bridge_token_factory_address, amount256 - allowance);
+            self.prepare_tx_for_sending(&mut approval_call).await?;
+            approval_call
                 .send()
                 .await?
                 .await
@@ -146,7 +148,7 @@ impl EvmBridgeClient {
             tracing::debug!("Approved tokens for spending");
         }
 
-        let withdraw_call = factory.init_transfer(
+        let mut withdraw_call = factory.init_transfer(
             erc20_address,
             amount,
             fee.fee.into(),
@@ -154,6 +156,7 @@ impl EvmBridgeClient {
             receiver,
             String::new(),
         );
+        self.prepare_tx_for_sending(&mut withdraw_call).await?;
         let tx = withdraw_call.send().await?;
 
         tracing::info!(
@@ -200,7 +203,7 @@ impl EvmBridgeClient {
         };
 
         let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
-        self.apply_required_gas_fee(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -319,11 +322,7 @@ impl EvmBridgeClient {
             .with_chain_id(*chain_id))
     }
 
-    pub async fn get_required_gas_fee(&self) -> Result<(U256, U256)> {
-        let endpoint = self.endpoint()?;
-        let client = Provider::<Http>::try_from(endpoint)
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
-
+    pub async fn get_required_gas_fee(&self, client: &Provider<Http>) -> Result<(U256, U256)> {
         let response: std::result::Result<U256, ProviderError> =
             client.request("eth_maxPriorityFeePerGas", ()).await;
 
@@ -342,11 +341,21 @@ impl EvmBridgeClient {
         Ok((max_priority_fee_per_gas, base_fee_per_gas))
     }
 
-    pub async fn apply_required_gas_fee<B, M, D>(
+    pub async fn prepare_tx_for_sending<B, M, D>(
         &self,
         call: &mut FunctionCall<B, M, D>,
     ) -> Result<()> {
-        let (max_priority_fee_per_gas, base_fee_per_gas) = self.get_required_gas_fee().await?;
+        let endpoint = self.endpoint()?;
+        let client = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        client
+            .estimate_gas(&call.tx, None)
+            .await
+            .map_err(|err| BridgeSdkError::EvmGasEstimateError(err.to_string()))?;
+
+        let (max_priority_fee_per_gas, base_fee_per_gas) =
+            self.get_required_gas_fee(&client).await?;
 
         let Some(tx) = call.tx.as_eip1559_mut() else {
             return Err(BridgeSdkError::UnknownError);

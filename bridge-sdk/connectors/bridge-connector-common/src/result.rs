@@ -23,6 +23,8 @@ pub enum BridgeSdkError {
     NearRpcError(#[from] NearRpcError),
     #[error("Error creating Ethereum proof: {0}")]
     EthProofError(String),
+    #[error("Error estimating gas on EVM: {0}")]
+    EvmGasEstimateError(String),
     #[error("Error creating Near proof: {0}")]
     NearProofError(String),
     #[error("Error deserializing RPC response: {0}")]
