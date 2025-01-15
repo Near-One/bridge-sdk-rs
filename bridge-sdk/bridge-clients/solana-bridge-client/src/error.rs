@@ -1,7 +1,7 @@
 use solana_client::client_error::ClientError;
 
 #[derive(thiserror::Error, Debug)]
-pub enum SolanaClientError {
+pub enum SolanaBridgeClientError {
     #[error("Solana RPC error: {0}")]
     RpcError(#[from] ClientError),
     #[error("Configuration error: {0}")]

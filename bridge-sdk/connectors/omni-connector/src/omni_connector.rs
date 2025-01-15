@@ -365,8 +365,7 @@ impl OmniConnector {
 
         let tx_hash = solana_bridge_client
             .initialize(DERIVED_NEAR_BRIDGE_ADDRESS, program_keypair)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", tx_hash),
@@ -381,8 +380,7 @@ impl OmniConnector {
 
         let tx_hash = solana_bridge_client
             .log_metadata(token)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", tx_hash),
@@ -440,10 +438,11 @@ impl OmniConnector {
             })?,
         };
 
-        solana_bridge_client
+        let tx_hash =solana_bridge_client
             .deploy_token(payload)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)
+            .await?;
+
+        Ok(tx_hash)
     }
 
     pub async fn solana_init_transfer(
@@ -456,8 +455,7 @@ impl OmniConnector {
 
         let tx_hash = solana_bridge_client
             .init_transfer(token, amount, recipient)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", tx_hash),
@@ -476,8 +474,7 @@ impl OmniConnector {
 
         let tx_hash = solana_bridge_client
             .init_transfer_sol(amount, recipient)
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", tx_hash),
@@ -497,8 +494,7 @@ impl OmniConnector {
 
         let transfer_log = near_bridge_client
             .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
-            .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .await?;
 
         self.solana_finalize_transfer_with_event(
             serde_json::from_str(&transfer_log).map_err(|_| BridgeSdkError::UnknownError)?,
@@ -546,17 +542,17 @@ impl OmniConnector {
             })?,
         };
 
-        if solana_token == Pubkey::default() {
+        let tx_hash = if solana_token == Pubkey::default() {
             solana_bridge_client
                 .finalize_transfer_sol(payload)
-                .await
-                .map_err(|_| BridgeSdkError::UnknownError)
+                .await?
         } else {
             solana_bridge_client
                 .finalize_transfer(payload, solana_token)
-                .await
-                .map_err(|_| BridgeSdkError::UnknownError)
-        }
+                .await?
+        };
+
+        Ok(tx_hash)
     }
 
     pub async fn log_metadata(&self, log_metadata_args: LogMetadataArgs) -> Result<String> {

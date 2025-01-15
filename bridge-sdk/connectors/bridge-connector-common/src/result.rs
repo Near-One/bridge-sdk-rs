@@ -7,6 +7,8 @@ use ethers::{
 };
 use near_light_client_on_eth::NearLightClientOnEthError;
 use near_rpc_client::NearRpcError;
+use solana_bridge_client::error::SolanaBridgeClientError;
+use solana_client::client_error::ClientError;
 use std::result;
 
 pub type Result<T> = result::Result<T, BridgeSdkError>;
@@ -25,8 +27,23 @@ pub enum BridgeSdkError {
     NearProofError(String),
     #[error("Error deserializing RPC response: {0}")]
     DeserializationError(#[from] serde_json::Error),
+    #[error("Error communicating with Solana RPC: {0}")]
+    SolanaRpcError(#[from] ClientError),
+    #[error("Error working with Solana: {0}")]
+    SolanaOtherError(String),
     #[error("Unexpected error occured")]
     UnknownError,
+}
+
+impl From<SolanaBridgeClientError> for BridgeSdkError {
+    fn from(error: SolanaBridgeClientError) -> Self {
+        match error {
+            SolanaBridgeClientError::RpcError(e) => Self::SolanaRpcError(e),
+            SolanaBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            SolanaBridgeClientError::InvalidAccountData(e) => Self::SolanaOtherError(e),
+            SolanaBridgeClientError::InvalidEvent => Self::SolanaOtherError("Invalid event".to_string()),
+        }
+    }
 }
 
 #[derive(thiserror::Error, Debug)]

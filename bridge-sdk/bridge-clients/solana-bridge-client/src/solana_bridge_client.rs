@@ -13,9 +13,9 @@ use solana_sdk::{
 };
 use spl_token::state::Mint;
 
-use crate::{error::SolanaClientError, instructions::*};
+use crate::{error::SolanaBridgeClientError, instructions::*};
 
-mod error;
+pub mod error;
 mod instructions;
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
@@ -72,7 +72,7 @@ impl SolanaBridgeClient {
         &self,
         derived_near_bridge_address: [u8; 64],
         program_keypair: Keypair,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -117,7 +117,7 @@ impl SolanaBridgeClient {
         .await
     }
 
-    pub async fn log_metadata(&self, token: Pubkey) -> Result<Signature, SolanaClientError> {
+    pub async fn log_metadata(&self, token: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -172,7 +172,7 @@ impl SolanaBridgeClient {
     pub async fn deploy_token(
         &self,
         data: DeployTokenData,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -228,7 +228,7 @@ impl SolanaBridgeClient {
         token: Pubkey,
         amount: u128,
         recipient: String,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -301,7 +301,7 @@ impl SolanaBridgeClient {
         &self,
         amount: u128,
         recipient: String,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -350,7 +350,7 @@ impl SolanaBridgeClient {
         &self,
         data: FinalizeDepositData,
         solana_token: Pubkey,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -438,7 +438,7 @@ impl SolanaBridgeClient {
     pub async fn finalize_transfer_sol(
         &self,
         data: FinalizeDepositData,
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
         let keypair = self.keypair()?;
@@ -500,7 +500,7 @@ impl SolanaBridgeClient {
             .await
     }
 
-    async fn get_wormhole_accounts(&self) -> Result<(Pubkey, Pubkey, Pubkey), SolanaClientError> {
+    async fn get_wormhole_accounts(&self) -> Result<(Pubkey, Pubkey, Pubkey), SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
 
@@ -518,7 +518,7 @@ impl SolanaBridgeClient {
         &self,
         instructions: Vec<Instruction>,
         signers: &[&Keypair],
-    ) -> Result<Signature, SolanaClientError> {
+    ) -> Result<Signature, SolanaBridgeClientError> {
         let client = self.client()?;
 
         let recent_blockhash = client.get_latest_blockhash().await?;
@@ -534,41 +534,41 @@ impl SolanaBridgeClient {
         Ok(signature)
     }
 
-    async fn get_token_owner(&self, token: Pubkey) -> Result<COption<Pubkey>, SolanaClientError> {
+    async fn get_token_owner(&self, token: Pubkey) -> Result<COption<Pubkey>, SolanaBridgeClientError> {
         let client = self.client()?;
 
         let mint_account = client.get_account(&token).await?;
 
         let mint_data = Mint::unpack(&mint_account.data)
-            .map_err(|e| SolanaClientError::InvalidAccountData(e.to_string()))?;
+            .map_err(|e| SolanaBridgeClientError::InvalidAccountData(e.to_string()))?;
 
         Ok(mint_data.mint_authority)
     }
 
-    pub fn client(&self) -> Result<&RpcClient, SolanaClientError> {
-        self.client.as_ref().ok_or(SolanaClientError::ConfigError(
+    pub fn client(&self) -> Result<&RpcClient, SolanaBridgeClientError> {
+        self.client.as_ref().ok_or(SolanaBridgeClientError::ConfigError(
             "Client not initialized".to_string(),
         ))
     }
 
-    pub fn program_id(&self) -> Result<&Pubkey, SolanaClientError> {
+    pub fn program_id(&self) -> Result<&Pubkey, SolanaBridgeClientError> {
         self.program_id
             .as_ref()
-            .ok_or(SolanaClientError::ConfigError(
+            .ok_or(SolanaBridgeClientError::ConfigError(
                 "Program ID not initialized".to_string(),
             ))
     }
 
-    pub fn wormhole_core(&self) -> Result<&Pubkey, SolanaClientError> {
+    pub fn wormhole_core(&self) -> Result<&Pubkey, SolanaBridgeClientError> {
         self.wormhole_core
             .as_ref()
-            .ok_or(SolanaClientError::ConfigError(
+            .ok_or(SolanaBridgeClientError::ConfigError(
                 "Wormhole Core not initialized".to_string(),
             ))
     }
 
-    pub fn keypair(&self) -> Result<&Keypair, SolanaClientError> {
-        self.keypair.as_ref().ok_or(SolanaClientError::ConfigError(
+    pub fn keypair(&self) -> Result<&Keypair, SolanaBridgeClientError> {
+        self.keypair.as_ref().ok_or(SolanaBridgeClientError::ConfigError(
             "Keypair not initialized".to_string(),
         ))
     }
