@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
@@ -13,7 +13,7 @@ use omni_connector::{
 use omni_types::{ChainKind, Fee, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::Keypair;
+use solana_sdk::{signature::Keypair, signer::EncodableKey};
 
 use crate::{combined_config, CliConfig, Network};
 
@@ -78,7 +78,7 @@ pub enum OmniConnectorSubCommand {
         token_id: String,
         #[clap(short, long)]
         account_id: String,
-        #[clap(short, long)]
+        #[clap(long)]
         storage_deposit_amount: Option<u128>,
         #[clap(short, long)]
         source_chain_id: u8,
@@ -131,7 +131,7 @@ pub enum OmniConnectorSubCommand {
 
     SolanaInitialize {
         #[clap(short, long)]
-        program_keypair: Vec<u8>,
+        program_keypair: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -146,7 +146,7 @@ pub enum OmniConnectorSubCommand {
     SolanaFinalizeTransfer {
         #[clap(short, long)]
         transaction_hash: String,
-        #[clap(short, long)]
+        #[clap(long)]
         sender_id: Option<String>,
         #[clap(short, long)]
         solana_token: String,
@@ -359,7 +359,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .solana_initialize(Keypair::from_bytes(&program_keypair).unwrap())
+                .solana_initialize(extract_solana_keypair(program_keypair))
                 .await
                 .unwrap();
         }
@@ -509,9 +509,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .solana_wormhole_address
                 .map(|addr| addr.parse().unwrap()),
         )
-        .keypair(Some(Keypair::from_base58_string(
-            &combined_config.solana_keypair.unwrap(),
-        )))
+        .keypair(combined_config.solana_keypair.map(|keypair| extract_solana_keypair(keypair)))
         .build()
         .unwrap();
 
@@ -524,4 +522,12 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .wormhole_bridge_client(None)
         .build()
         .unwrap()
+}
+
+fn extract_solana_keypair(keypair: String) -> Keypair {
+    if keypair.contains("/") || keypair.contains(".") {
+        Keypair::read_from_file(Path::new(&keypair)).unwrap()
+    } else {
+        Keypair::from_base58_string(&keypair)
+    }
 }
