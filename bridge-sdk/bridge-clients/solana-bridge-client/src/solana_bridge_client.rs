@@ -401,7 +401,6 @@ impl SolanaBridgeClient {
             *program_id,
             &instruction_data,
             vec![
-                AccountMeta::new(config, false),
                 AccountMeta::new(used_nonces, false),
                 AccountMeta::new(authority, false),
                 AccountMeta::new_readonly(recipient, false),
