@@ -5,8 +5,8 @@ use derive_builder::Builder;
 use ethers::{abi::Address, prelude::*};
 use omni_types::prover_args::EvmProof;
 use omni_types::prover_result::ProofKind;
-use omni_types::Fee;
-use omni_types::{near_events::Nep141LockerEvent, OmniAddress};
+use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
+use omni_types::{EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
 
 abigen!(
@@ -18,6 +18,7 @@ abigen!(
       function finTransfer(bytes, TransferMessagePayload) external
       function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external
       function nearToEthToken(string nearTokenId) external view returns (address)
+      function logMetadata(address tokenAddress) external
     ]"#
 );
 
@@ -48,12 +49,29 @@ impl EvmBridgeClient {
         Self::default()
     }
 
-    /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from log_metadata transaction on Near
-    #[tracing::instrument(skip_all, name = "EVM DEPLOY TOKEN")]
-    pub async fn deploy_token(&self, transfer_log: Nep141LockerEvent) -> Result<TxHash> {
+    // Logs an ERC-20 token metadata
+    #[tracing::instrument(skip_all, name = "LOG METADATA")]
+    pub async fn log_metadata(&self, address: EvmAddress) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
-        let Nep141LockerEvent::LogMetadataEvent {
+        let mut call = factory.log_metadata(address.0.into());
+        self.apply_required_gas_fee(&mut call).await?;
+        let tx = call.send().await?;
+
+        tracing::info!(
+            tx_hash = format!("{:?}", tx.tx_hash()),
+            "Sent new bridge token transaction"
+        );
+
+        Ok(tx.tx_hash())
+    }
+
+    /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from log_metadata transaction on Near
+    #[tracing::instrument(skip_all, name = "EVM DEPLOY TOKEN")]
+    pub async fn deploy_token(&self, transfer_log: OmniBridgeEvent) -> Result<TxHash> {
+        let factory = self.bridge_token_factory()?;
+
+        let OmniBridgeEvent::LogMetadataEvent {
             signature,
             metadata_payload,
         } = transfer_log
@@ -148,10 +166,10 @@ impl EvmBridgeClient {
 
     /// Mints the corresponding bridged tokens on EVM. Requires an MPC signature
     #[tracing::instrument(skip_all, name = "EVM FIN TRANSFER")]
-    pub async fn fin_transfer(&self, transfer_log: Nep141LockerEvent) -> Result<TxHash> {
+    pub async fn fin_transfer(&self, transfer_log: OmniBridgeEvent) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
-        let Nep141LockerEvent::SignTransferEvent {
+        let OmniBridgeEvent::SignTransferEvent {
             message_payload,
             signature,
         } = transfer_log

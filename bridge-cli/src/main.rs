@@ -73,6 +73,9 @@ struct CliConfig {
     fast_bridge_address: Option<String>,
 
     #[arg(long)]
+    wormhole_api: Option<String>,
+
+    #[arg(long)]
     config_file: Option<String>,
 }
 
@@ -122,6 +125,8 @@ impl CliConfig {
             fast_bridge_account_id: self.fast_bridge_account_id.or(other.fast_bridge_account_id),
             fast_bridge_address: self.fast_bridge_address.or(other.fast_bridge_address),
 
+            wormhole_api: self.wormhole_api.or(other.wormhole_api),
+
             config_file: self.config_file.or(other.config_file),
         }
     }
@@ -165,6 +170,8 @@ fn env_config() -> CliConfig {
 
         fast_bridge_account_id: env::var("FAST_BRIDGE_ACCOUNT_ID").ok(),
         fast_bridge_address: env::var("FAST_BRIDGE_ADDRESS").ok(),
+
+        wormhole_api: env::var("WORMHOLE_API").ok(),
 
         config_file: None,
     }
@@ -212,6 +219,8 @@ fn default_config(network: Network) -> CliConfig {
             fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_MAINNET.to_owned()),
             fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_MAINNET.to_owned()),
 
+            wormhole_api: Some(defaults::WORMHOLE_API.to_owned()),
+
             config_file: None,
         },
         Network::Testnet => CliConfig {
@@ -253,6 +262,8 @@ fn default_config(network: Network) -> CliConfig {
 
             fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_TESTNET.to_owned()),
             fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_TESTNET.to_owned()),
+
+            wormhole_api: Some(defaults::WORMHOLE_API.to_owned()),
 
             config_file: None,
         },

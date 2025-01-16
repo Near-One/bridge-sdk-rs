@@ -25,6 +25,8 @@ pub enum BridgeSdkError {
     NearProofError(String),
     #[error("Error deserializing RPC response: {0}")]
     DeserializationError(#[from] serde_json::Error),
+    #[error("Wormhole client error: {0}")]
+    WormholeClientError(String),
     #[error("Unexpected error occured")]
     UnknownError,
 }

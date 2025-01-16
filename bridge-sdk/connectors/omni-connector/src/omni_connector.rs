@@ -8,8 +8,8 @@ use near_primitives::types::AccountId;
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::EvmVerifyProofArgs;
 use omni_types::prover_result::ProofKind;
-use omni_types::{near_events::Nep141LockerEvent, ChainKind};
-use omni_types::{Fee, OmniAddress};
+use omni_types::{near_events::OmniBridgeEvent, ChainKind};
+use omni_types::{EvmAddress, Fee, OmniAddress};
 
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::NearBridgeClient;
@@ -32,15 +32,21 @@ pub struct OmniConnector {
     wormhole_bridge_client: Option<WormholeBridgeClient>,
 }
 
-pub enum LogMetadataArgs {
-    NearLogMetadata { token: String },
-    SolanaLogMetadata { token: Pubkey },
+pub enum WormholeDeployTokenArgs {
+    Transaction {
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
+    },
+    VAA {
+        chain_kind: ChainKind,
+        vaa: String,
+    },
 }
 
 pub enum DeployTokenArgs {
     NearDeployToken {
         chain_kind: ChainKind,
-        vaa: String,
+        tx_hash: TxHash,
     },
     NearDeployTokenWithEvmProof {
         chain_kind: ChainKind,
@@ -48,14 +54,14 @@ pub enum DeployTokenArgs {
     },
     EvmDeployToken {
         chain_kind: ChainKind,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     },
     EvmDeployTokenWithTxHash {
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
     },
     SolanaDeployToken {
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     },
     SolanaDeployTokenWithTxHash {
         near_tx_hash: CryptoHash,
@@ -105,14 +111,14 @@ pub enum FinTransferArgs {
     },
     EvmFinTransfer {
         chain_kind: ChainKind,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     },
     EvmFinTransferWithTxHash {
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
     },
     SolanaFinTransfer {
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
         solana_token: Pubkey,
     },
     SolanaFinTransferWithTxHash {
@@ -144,13 +150,30 @@ impl OmniConnector {
 
     pub async fn near_deploy_token_with_vaa_proof(
         &self,
-        chain_kind: ChainKind,
-        vaa: String,
+        args: WormholeDeployTokenArgs,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client
-            .deploy_token_with_vaa_proof(chain_kind, &vaa)
-            .await
+
+        match args {
+            WormholeDeployTokenArgs::Transaction {
+                chain_kind,
+                tx_hash,
+            } => {
+                let wormhole_bridge_client = self.wormhole_bridge_client()?;
+                let vaa = wormhole_bridge_client
+                    .get_vaa_by_tx_hash(format!("{:?}", tx_hash))
+                    .await?;
+
+                near_bridge_client
+                    .deploy_token_with_vaa_proof(chain_kind, &vaa)
+                    .await
+            }
+            WormholeDeployTokenArgs::VAA { chain_kind, vaa } => {
+                near_bridge_client
+                    .deploy_token_with_vaa_proof(chain_kind, &vaa)
+                    .await
+            }
+        }
     }
 
     pub async fn near_bind_token(
@@ -282,10 +305,19 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn evm_log_metadata(
+        &self,
+        address: EvmAddress,
+        chain_kind: ChainKind,
+    ) -> Result<TxHash> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        evm_bridge_client.log_metadata(address).await
+    }
+
     pub async fn evm_deploy_token(
         &self,
         chain_kind: ChainKind,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client.deploy_token(event).await
@@ -327,7 +359,7 @@ impl OmniConnector {
     pub async fn evm_fin_transfer(
         &self,
         chain_kind: ChainKind,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client.fin_transfer(event).await
@@ -413,9 +445,9 @@ impl OmniConnector {
 
     pub async fn solana_deploy_token_with_event(
         &self,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
     ) -> Result<Signature> {
-        let Nep141LockerEvent::LogMetadataEvent {
+        let OmniBridgeEvent::LogMetadataEvent {
             signature,
             metadata_payload,
         } = event
@@ -511,10 +543,10 @@ impl OmniConnector {
 
     pub async fn solana_finalize_transfer_with_event(
         &self,
-        event: Nep141LockerEvent,
+        event: OmniBridgeEvent,
         solana_token: Pubkey, // TODO: retrieve from near contract
     ) -> Result<Signature> {
-        let Nep141LockerEvent::SignTransferEvent {
+        let OmniBridgeEvent::SignTransferEvent {
             message_payload,
             signature,
         } = event
@@ -559,23 +591,36 @@ impl OmniConnector {
         }
     }
 
-    pub async fn log_metadata(&self, log_metadata_args: LogMetadataArgs) -> Result<String> {
-        match log_metadata_args {
-            LogMetadataArgs::NearLogMetadata { token: token_id } => self
-                .near_log_metadata(token_id)
+    pub async fn log_metadata(&self, token: OmniAddress) -> Result<String> {
+        match &token {
+            OmniAddress::Eth(address) | OmniAddress::Arb(address) | OmniAddress::Base(address) => {
+                self.evm_log_metadata(address.clone(), token.get_chain())
+                    .await
+                    .map(|hash| hash.to_string())
+            }
+            OmniAddress::Near(token_id) => self
+                .near_log_metadata(token_id.to_string())
                 .await
                 .map(|hash| hash.to_string()),
-            LogMetadataArgs::SolanaLogMetadata { token } => self
-                .solana_log_metadata(token)
-                .await
-                .map(|hash| hash.to_string()),
+            OmniAddress::Sol(sol_address) => {
+                let token = Pubkey::new_from_array(sol_address.0);
+                self.solana_log_metadata(token)
+                    .await
+                    .map(|hash| hash.to_string())
+            }
         }
     }
 
     pub async fn deploy_token(&self, deploy_token_args: DeployTokenArgs) -> Result<String> {
         match deploy_token_args {
-            DeployTokenArgs::NearDeployToken { chain_kind, vaa } => self
-                .near_deploy_token_with_vaa_proof(chain_kind, vaa)
+            DeployTokenArgs::NearDeployToken {
+                chain_kind,
+                tx_hash,
+            } => self
+                .near_deploy_token_with_vaa_proof(WormholeDeployTokenArgs::Transaction {
+                    chain_kind,
+                    tx_hash,
+                })
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::EvmDeployToken { chain_kind, event } => self
