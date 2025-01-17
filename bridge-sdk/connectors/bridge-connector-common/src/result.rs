@@ -31,6 +31,8 @@ pub enum BridgeSdkError {
     SolanaRpcError(#[from] ClientError),
     #[error("Error working with Solana: {0}")]
     SolanaOtherError(String),
+    #[error("Wormhole client error: {0}")]
+    WormholeClientError(String),
     #[error("Unexpected error occured")]
     UnknownError,
 }

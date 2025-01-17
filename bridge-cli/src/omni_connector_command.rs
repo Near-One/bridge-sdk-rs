@@ -7,35 +7,36 @@ use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::NearBridgeClientBuilder;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, LogMetadataArgs,
-    OmniConnector, OmniConnectorBuilder,
+    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
+    OmniConnectorBuilder,
 };
-use omni_types::{ChainKind, Fee, TransferId};
+use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signer::EncodableKey};
+use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
 use crate::{combined_config, CliConfig, Network};
 
 #[derive(Subcommand, Debug)]
 pub enum OmniConnectorSubCommand {
-    NearLogMetadata {
-        #[clap(short, long)]
-        token: String,
+    LogMetadata {
+        #[clap(long)]
+        token: OmniAddress,
         #[command(flatten)]
         config_cli: CliConfig,
     },
     NearDeployToken {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
-        vaa: String,
+        tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
     NearDeployTokenWithEvmProof {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         tx_hash: String,
         #[command(flatten)]
@@ -81,16 +82,15 @@ pub enum OmniConnectorSubCommand {
         #[clap(long)]
         storage_deposit_amount: Option<u128>,
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         vaa: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-
     EvmDeployToken {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         tx_hash: String,
         #[command(flatten)]
@@ -98,7 +98,7 @@ pub enum OmniConnectorSubCommand {
     },
     EvmBindToken {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         tx_hash: String,
         #[command(flatten)]
@@ -106,7 +106,7 @@ pub enum OmniConnectorSubCommand {
     },
     EvmInitTransfer {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         token: String,
         #[clap(short, long)]
@@ -122,7 +122,7 @@ pub enum OmniConnectorSubCommand {
     },
     EvmFinTransfer {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         tx_hash: String,
         #[command(flatten)]
@@ -161,12 +161,6 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    SolanaLogMetadata {
-        #[clap(short, long)]
-        token: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     SolanaInitTransfer {
         #[clap(short, long)]
         token: String,
@@ -188,7 +182,7 @@ pub enum OmniConnectorSubCommand {
 
     WormholeBindToken {
         #[clap(short, long)]
-        source_chain_id: u8,
+        chain: ChainKind,
         #[clap(short, long)]
         vaa: String,
         #[command(flatten)]
@@ -198,21 +192,21 @@ pub enum OmniConnectorSubCommand {
 
 pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
-        OmniConnectorSubCommand::NearLogMetadata { token, config_cli } => {
+        OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(LogMetadataArgs::NearLogMetadata { token })
+                .log_metadata(token)
                 .await
                 .unwrap();
         }
         OmniConnectorSubCommand::NearDeployToken {
-            source_chain_id,
-            vaa,
+            chain,
+            tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .deploy_token(DeployTokenArgs::NearDeployToken {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
-                    vaa,
+                    chain_kind: chain,
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
@@ -269,7 +263,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             token_id,
             account_id,
             storage_deposit_amount,
-            source_chain_id,
+            chain,
             vaa,
             config_cli,
         } => {
@@ -279,7 +273,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             };
             omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::NearFinTransfer {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                     storage_deposit_actions: vec![omni_types::locker_args::StorageDepositAction {
                         token_id: AccountId::from_str(&token_id).unwrap(),
                         account_id: AccountId::from_str(&account_id).unwrap(),
@@ -292,33 +286,33 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
 
         OmniConnectorSubCommand::EvmDeployToken {
-            source_chain_id,
+            chain,
             tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
         }
         OmniConnectorSubCommand::EvmBindToken {
-            source_chain_id,
+            chain,
             tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .bind_token(BindTokenArgs::EvmBindToken {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                     tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
         }
         OmniConnectorSubCommand::EvmInitTransfer {
-            source_chain_id,
+            chain,
             token,
             amount,
             receiver,
@@ -328,7 +322,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::EvmInitTransfer {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                     token,
                     amount,
                     receiver,
@@ -341,14 +335,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::EvmFinTransfer {
-            source_chain_id,
+            chain,
             tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::EvmFinTransferWithTxHash {
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                 })
                 .await
                 .unwrap();
@@ -360,14 +354,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .solana_initialize(extract_solana_keypair(program_keypair))
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::SolanaLogMetadata { token, config_cli } => {
-            omni_connector(network, config_cli)
-                .log_metadata(LogMetadataArgs::SolanaLogMetadata {
-                    token: token.parse().unwrap(),
-                })
                 .await
                 .unwrap();
         }
@@ -427,7 +413,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::SolanaFinalizeTransferSol { .. } => {}
 
         OmniConnectorSubCommand::WormholeBindToken {
-            source_chain_id,
+            chain,
             vaa,
             config_cli,
         } => {
@@ -438,7 +424,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             omni_connector(network, config_cli)
                 .bind_token(BindTokenArgs::WormholeBindToken {
                     bind_token_args: omni_types::locker_args::BindTokenArgs {
-                        chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                        chain_kind: chain,
                         prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
                     },
                 })
@@ -447,13 +433,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
 
         OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
-            source_chain_id,
+            chain,
             tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
-                    chain_kind: ChainKind::try_from(source_chain_id).unwrap(),
+                    chain_kind: chain,
                     tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
@@ -509,7 +495,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .solana_wormhole_address
                 .map(|addr| addr.parse().unwrap()),
         )
-        .keypair(combined_config.solana_keypair.map(|keypair| extract_solana_keypair(keypair)))
+        .keypair(
+            combined_config
+                .solana_keypair
+                .map(|keypair| extract_solana_keypair(keypair)),
+        )
+        .build()
+        .unwrap();
+
+    let wormhole_bridge_client = WormholeBridgeClientBuilder::default()
+        .endpoint(combined_config.wormhole_api)
         .build()
         .unwrap();
 
@@ -519,7 +514,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .base_bridge_client(Some(base_bridge_client))
         .arb_bridge_client(Some(arb_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
-        .wormhole_bridge_client(None)
+        .wormhole_bridge_client(Some(wormhole_bridge_client))
         .build()
         .unwrap()
 }
