@@ -8,6 +8,11 @@ struct WormholeApiResponse {
 }
 
 #[derive(Debug, serde::Deserialize)]
+struct WormholeTxApiResponse {
+    data: Vec<WormholeApiData>,
+}
+
+#[derive(Debug, serde::Deserialize, Clone)]
 struct WormholeApiData {
     vaa: String,
 }
@@ -47,6 +52,31 @@ impl WormholeBridgeClient {
             .map_err(|_| BridgeSdkError::UnknownError)?
             .data
             .vaa;
+        Ok(hex::encode(from_base64(&vaa).unwrap()))
+    }
+
+    pub async fn get_vaa_by_tx_hash(&self, tx_hash: String) -> Result<String> {
+        let endpoint = self.endpoint()?;
+        let sanitized_endpoint = endpoint.trim_end_matches('/');
+
+        let url = format!("{}/api/v1/vaas/?txHash={}", sanitized_endpoint, tx_hash);
+
+        let response = reqwest::get(url)
+            .await
+            .map_err(|e| BridgeSdkError::WormholeClientError(e.to_string()))?;
+
+        let vaa = response
+            .json::<WormholeTxApiResponse>()
+            .await
+            .map_err(|e| BridgeSdkError::WormholeClientError(e.to_string()))?
+            .data
+            .first()
+            .cloned()
+            .ok_or(BridgeSdkError::WormholeClientError(
+                "No VAA found".to_string(),
+            ))?
+            .vaa;
+
         Ok(hex::encode(from_base64(&vaa).unwrap()))
     }
 
