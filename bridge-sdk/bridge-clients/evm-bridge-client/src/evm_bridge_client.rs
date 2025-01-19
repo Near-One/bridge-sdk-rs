@@ -55,7 +55,7 @@ impl EvmBridgeClient {
         let factory = self.bridge_token_factory()?;
 
         let mut call = factory.log_metadata(address.0.into());
-        self.apply_required_gas_fee(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call).await?;
         let tx = call.send().await?;
 
         tracing::info!(
