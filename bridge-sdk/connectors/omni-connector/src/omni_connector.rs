@@ -70,7 +70,7 @@ pub enum DeployTokenArgs {
 }
 
 pub enum BindTokenArgs {
-    EvmBindToken {
+    NearBindToken {
         chain_kind: ChainKind,
         tx_hash: TxHash,
     },
@@ -648,7 +648,7 @@ impl OmniConnector {
 
     pub async fn bind_token(&self, bind_token_args: BindTokenArgs) -> Result<String> {
         match bind_token_args {
-            BindTokenArgs::EvmBindToken {
+            BindTokenArgs::NearBindToken {
                 chain_kind,
                 tx_hash,
             } => self

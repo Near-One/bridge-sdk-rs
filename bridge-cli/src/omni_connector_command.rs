@@ -104,20 +104,20 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Bind a token from EVM on NEAR")]
+    NearBindToken {
+        #[clap(short, long, help = "EVM chain to bind the token on")]
+        chain: ChainKind,
+        #[clap(short, long, help = "Transaction hash of the DeployToken call on EVM")]
+        tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Deploy a token on EVM")]
     EvmDeployToken {
         #[clap(short, long, help = "Chain to deploy the token on")]
         chain: ChainKind,
         #[clap(short, long, help = "Transaction hash of the LogMetadata call on NEAR")]
-        tx_hash: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Bind a token on EVM")]
-    EvmBindToken {
-        #[clap(short, long, help = "Chain to bind the token on")]
-        chain: ChainKind,
-        #[clap(short, long, help = "Transaction hash of the DeployToken call on NEAR")]
         tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -324,7 +324,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-
+        OmniConnectorSubCommand::NearBindToken {
+            chain,
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .bind_token(BindTokenArgs::NearBindToken {
+                    chain_kind: chain,
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                })
+                .await
+                .unwrap();
+        }
         OmniConnectorSubCommand::EvmDeployToken {
             chain,
             tx_hash,
@@ -334,19 +346,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                     chain_kind: chain,
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::EvmBindToken {
-            chain,
-            tx_hash,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .bind_token(BindTokenArgs::EvmBindToken {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
