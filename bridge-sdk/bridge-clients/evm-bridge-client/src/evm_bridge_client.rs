@@ -328,7 +328,7 @@ impl EvmBridgeClient {
 
         let max_priority_fee_per_gas = match response {
             Ok(fee) => fee,
-            Err(_) => U256::zero(),
+            Err(_) => return Err(BridgeSdkError::UnknownError),
         };
 
         let response = client.get_block(BlockNumber::Latest).await;
