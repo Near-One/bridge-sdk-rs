@@ -6,7 +6,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
-use omni_types::prover_args::EvmVerifyProofArgs;
+use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress};
@@ -104,10 +104,15 @@ pub enum InitTransferArgs {
 }
 
 pub enum FinTransferArgs {
-    NearFinTransfer {
+    NearFinTransferWithEvmProof {
+        chain_kind: ChainKind,
+        near_tx_hash: TxHash,
+        storage_deposit_actions: Vec<StorageDepositAction>,
+    },
+    NearFinTransferWithVaa {
         chain_kind: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
-        prover_args: Vec<u8>,
+        vaa: String,
     },
     EvmFinTransfer {
         chain_kind: ChainKind,
@@ -230,18 +235,55 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn near_fin_transfer(
+    pub async fn near_fin_transfer_with_evm_proof(
         &self,
         chain_kind: ChainKind,
+        tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
-        prover_args: Vec<u8>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+
+        let proof = evm_bridge_client
+            .get_proof_for_event(tx_hash, ProofKind::LogMetadata)
+            .await?;
+
+        let verify_proof_args = EvmVerifyProofArgs {
+            proof_kind: ProofKind::InitTransfer,
+            proof,
+        };
+
         near_bridge_client
             .fin_transfer(omni_types::locker_args::FinTransferArgs {
                 chain_kind,
                 storage_deposit_actions,
-                prover_args,
+                prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
+                    BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
+                })?,
+            })
+            .await
+    }
+
+    pub async fn near_fin_transfer_with_vaa(
+        &self,
+        chain_kind: ChainKind,
+        storage_deposit_actions: Vec<StorageDepositAction>,
+        vaa: String,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let verify_proof_args = WormholeVerifyProofArgs {
+            proof_kind: ProofKind::InitTransfer,
+            vaa,
+        };
+
+        near_bridge_client
+            .fin_transfer(omni_types::locker_args::FinTransferArgs {
+                chain_kind,
+                storage_deposit_actions,
+                prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
+                    BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
+                })?,
             })
             .await
     }
@@ -699,12 +741,20 @@ impl OmniConnector {
 
     pub async fn fin_transfer(&self, fin_transfer_args: FinTransferArgs) -> Result<String> {
         match fin_transfer_args {
-            FinTransferArgs::NearFinTransfer {
+            FinTransferArgs::NearFinTransferWithEvmProof {
+                chain_kind,
+                near_tx_hash,
+                storage_deposit_actions,
+            } => self
+                .near_fin_transfer_with_evm_proof(chain_kind, near_tx_hash, storage_deposit_actions)
+                .await
+                .map(|tx_hash| tx_hash.to_string()),
+            FinTransferArgs::NearFinTransferWithVaa {
                 chain_kind,
                 storage_deposit_actions,
-                prover_args,
+                vaa,
             } => self
-                .near_fin_transfer(chain_kind, storage_deposit_actions, prover_args)
+                .near_fin_transfer_with_vaa(chain_kind, storage_deposit_actions, vaa)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::EvmFinTransfer { chain_kind, event } => self

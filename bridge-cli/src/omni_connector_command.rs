@@ -89,8 +89,27 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer on NEAR")]
-    NearFinTransfer {
+    #[clap(about = "Finalize a transfer on NEAR using EVM proof")]
+    NearFinTransferWithEvmProof {
+        #[clap(short, long, help = "Origin chain of the transfer to finalize")]
+        chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the InitTransfer call on other chain"
+        )]
+        tx_hash: String,
+        #[clap(
+            short,
+            long,
+            help = "Storage deposit actions. Format: token_id1:account_id1:amount1,token_id2:account_id2:amount2,..."
+        )]
+        storage_deposit_actions: Vec<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize a transfer on NEAR using VAA")]
+    NearFinTransferWithVaa {
         #[clap(short, long, help = "Origin chain of the transfer to finalize")]
         chain: ChainKind,
         #[clap(
@@ -247,6 +266,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
+            chain,
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
+                    chain_kind: chain,
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                })
+                .await
+                .unwrap();
+        }
         OmniConnectorSubCommand::NearStorageDeposit {
             token,
             amount,
@@ -295,18 +327,39 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearFinTransfer {
+        OmniConnectorSubCommand::NearFinTransferWithEvmProof {
+            chain,
+            tx_hash,
+            storage_deposit_actions,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
+                    chain_kind: chain,
+                    near_tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    storage_deposit_actions: storage_deposit_actions
+                        .iter()
+                        .map(|action| {
+                            let parts: Vec<&str> = action.split(':').collect();
+                            omni_types::locker_args::StorageDepositAction {
+                                token_id: parts[0].parse().unwrap(),
+                                account_id: parts[1].parse().unwrap(),
+                                storage_deposit_amount: parts[2].parse().ok(),
+                            }
+                        })
+                        .collect(),
+                })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearFinTransferWithVaa {
             chain,
             storage_deposit_actions,
             vaa,
             config_cli,
         } => {
-            let args = omni_types::prover_args::WormholeVerifyProofArgs {
-                proof_kind: omni_types::prover_result::ProofKind::InitTransfer,
-                vaa,
-            };
             omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::NearFinTransfer {
+                .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
                     chain_kind: chain,
                     storage_deposit_actions: storage_deposit_actions
                         .iter()
@@ -319,7 +372,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             }
                         })
                         .collect(),
-                    prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
+                    vaa,
                 })
                 .await
                 .unwrap();
@@ -466,20 +519,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
                     },
-                })
-                .await
-                .unwrap();
-        }
-
-        OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
-            chain,
-            tx_hash,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
