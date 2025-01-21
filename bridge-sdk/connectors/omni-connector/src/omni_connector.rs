@@ -106,7 +106,7 @@ pub enum InitTransferArgs {
 pub enum FinTransferArgs {
     NearFinTransferWithEvmProof {
         chain_kind: ChainKind,
-        near_tx_hash: TxHash,
+        tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
     },
     NearFinTransferWithVaa {
@@ -743,7 +743,7 @@ impl OmniConnector {
         match fin_transfer_args {
             FinTransferArgs::NearFinTransferWithEvmProof {
                 chain_kind,
-                near_tx_hash,
+                tx_hash: near_tx_hash,
                 storage_deposit_actions,
             } => self
                 .near_fin_transfer_with_evm_proof(chain_kind, near_tx_hash, storage_deposit_actions)

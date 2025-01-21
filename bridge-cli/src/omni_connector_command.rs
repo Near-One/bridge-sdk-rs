@@ -336,7 +336,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
                     chain_kind: chain,
-                    near_tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     storage_deposit_actions: storage_deposit_actions
                         .iter()
                         .map(|action| {
