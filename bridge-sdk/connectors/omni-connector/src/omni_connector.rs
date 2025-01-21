@@ -245,7 +245,7 @@ impl OmniConnector {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
         let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::LogMetadata)
+            .get_proof_for_event(tx_hash, ProofKind::InitTransfer)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
