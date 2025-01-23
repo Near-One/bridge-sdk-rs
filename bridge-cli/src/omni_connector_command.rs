@@ -65,11 +65,11 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Sign a transfer on NEAR")]
     NearSignTransfer {
-        #[clap(short, long, help = "Origin chain ID of transfer to sign")]
+        #[clap(long, help = "Origin chain ID of transfer to sign")]
         origin_chain_id: u8,
-        #[clap(short, long, help = "Origin nonce of transfer to sign")]
+        #[clap(long, help = "Origin nonce of transfer to sign")]
         origin_nonce: u64,
-        #[clap(short, long, help = "Fee recipient account ID")]
+        #[clap(long, help = "Fee recipient account ID")]
         fee_recipient: Option<AccountId>,
         #[clap(short, long, help = "Fee to charge for the transfer")]
         fee: u128,
