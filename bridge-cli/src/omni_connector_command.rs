@@ -123,15 +123,6 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Bind a token from EVM on NEAR")]
-    NearBindToken {
-        #[clap(short, long, help = "EVM chain to bind the token on")]
-        chain: ChainKind,
-        #[clap(short, long, help = "Transaction hash of the DeployToken call on EVM")]
-        tx_hash: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     #[clap(about = "Deploy a token on EVM")]
     EvmDeployToken {
         #[clap(short, long, help = "Chain to deploy the token on")]
@@ -381,19 +372,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearBindToken {
-            chain,
-            tx_hash,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .bind_token(BindTokenArgs::NearBindToken {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
         OmniConnectorSubCommand::EvmDeployToken {
             chain,
             tx_hash,
@@ -512,15 +490,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             tx_hash,
             config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .bind_token(BindTokenArgs::WormholeBindToken {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
+        } => match chain {
+            ChainKind::Eth => {
+                omni_connector(network, config_cli)
+                    .bind_token(BindTokenArgs::BindTokenWithEvmProof {
+                        chain_kind: chain,
+                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    })
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                omni_connector(network, config_cli)
+                    .bind_token(BindTokenArgs::WormholeBindToken {
+                        chain_kind: chain,
+                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    })
+                    .await
+                    .unwrap();
+            }
+        },
     }
 }
 
