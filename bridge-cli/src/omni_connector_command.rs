@@ -493,7 +493,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => match chain {
             ChainKind::Eth => {
                 omni_connector(network, config_cli)
-                    .bind_token(BindTokenArgs::BindTokenWithEvmProof {
+                    .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     })
@@ -502,7 +502,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             }
             _ => {
                 omni_connector(network, config_cli)
-                    .bind_token(BindTokenArgs::WormholeBindToken {
+                    .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     })

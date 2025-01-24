@@ -70,11 +70,11 @@ pub enum DeployTokenArgs {
 }
 
 pub enum BindTokenArgs {
-    BindTokenWithEvmProof {
+    BindTokenWithEvmProofTx {
         chain_kind: ChainKind,
         tx_hash: TxHash,
     },
-    WormholeBindToken {
+    BindTokenWithVaaProofTx {
         chain_kind: ChainKind,
         tx_hash: TxHash,
     },
@@ -691,14 +691,14 @@ impl OmniConnector {
 
     pub async fn bind_token(&self, bind_token_args: BindTokenArgs) -> Result<String> {
         match bind_token_args {
-            BindTokenArgs::BindTokenWithEvmProof {
+            BindTokenArgs::BindTokenWithEvmProofTx {
                 chain_kind,
                 tx_hash,
             } => self
                 .near_bind_token_with_evm_proof(chain_kind, tx_hash)
                 .await
                 .map(|hash| hash.to_string()),
-            BindTokenArgs::WormholeBindToken {
+            BindTokenArgs::BindTokenWithVaaProofTx {
                 chain_kind,
                 tx_hash,
             } => {
