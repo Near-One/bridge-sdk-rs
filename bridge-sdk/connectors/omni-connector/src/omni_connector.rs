@@ -75,7 +75,8 @@ pub enum BindTokenArgs {
         tx_hash: TxHash,
     },
     WormholeBindToken {
-        bind_token_args: omni_types::locker_args::BindTokenArgs,
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
     },
 }
 
@@ -697,10 +698,27 @@ impl OmniConnector {
                 .near_bind_token_with_evm_proof(chain_kind, tx_hash)
                 .await
                 .map(|hash| hash.to_string()),
-            BindTokenArgs::WormholeBindToken { bind_token_args } => self
-                .near_bind_token(bind_token_args)
-                .await
-                .map(|hash| hash.to_string()),
+            BindTokenArgs::WormholeBindToken {
+                chain_kind,
+                tx_hash,
+            } => {
+                let vaa = self
+                    .wormhole_bridge_client()?
+                    .get_vaa_by_tx_hash(format!("{:?}", tx_hash))
+                    .await?;
+                let args = omni_types::prover_args::WormholeVerifyProofArgs {
+                    proof_kind: omni_types::prover_result::ProofKind::DeployToken,
+                    vaa,
+                };
+                let bind_token_args = omni_types::locker_args::BindTokenArgs {
+                    chain_kind,
+                    prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
+                };
+
+                self.near_bind_token(bind_token_args)
+                    .await
+                    .map(|hash| hash.to_string())
+            }
         }
     }
 

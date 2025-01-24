@@ -234,11 +234,15 @@ pub enum OmniConnectorSubCommand {
     },
 
     #[clap(about = "Bind a token on a chain that supports Wormhole")]
-    WormholeBindToken {
+    BindToken {
         #[clap(short, long, help = "Chain to bind the token from")]
         chain: ChainKind,
-        #[clap(short, long, help = "VAA from DeployToken call")]
-        vaa: String,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of deploy_token on the destination chain"
+        )]
+        tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -504,21 +508,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::SolanaFinalizeTransferSol { .. } => {}
 
-        OmniConnectorSubCommand::WormholeBindToken {
+        OmniConnectorSubCommand::BindToken {
             chain,
-            vaa,
+            tx_hash,
             config_cli,
         } => {
-            let args = omni_types::prover_args::WormholeVerifyProofArgs {
-                proof_kind: omni_types::prover_result::ProofKind::DeployToken,
-                vaa,
-            };
             omni_connector(network, config_cli)
                 .bind_token(BindTokenArgs::WormholeBindToken {
-                    bind_token_args: omni_types::locker_args::BindTokenArgs {
-                        chain_kind: chain,
-                        prover_args: near_primitives::borsh::to_vec(&args).unwrap(),
-                    },
+                    chain_kind: chain,
+                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                 })
                 .await
                 .unwrap();
