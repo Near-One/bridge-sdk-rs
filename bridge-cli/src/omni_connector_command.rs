@@ -28,23 +28,12 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
-    #[clap(about = "Deploy a token on NEAR")]
-    NearDeployToken {
+    #[clap(about = "Deploy a token")]
+    DeployToken {
         #[clap(short, long, help = "Origin chain of the token to deploy")]
         chain: ChainKind,
-        #[clap(
-            short,
-            long,
-            help = "Transaction hash of the LogMetadata call on other chain"
-        )]
-        tx_hash: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Deploy a token on NEAR with EVM proof")]
-    NearDeployTokenWithEvmProof {
-        #[clap(short, long, help = "Origin chain of the token to deploy")]
-        chain: ChainKind,
+        #[clap(short, long, help = "The chain where the LogMetadata call was made")]
+        source_chain: ChainKind,
         #[clap(
             short,
             long,
@@ -123,15 +112,6 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Deploy a token on EVM")]
-    EvmDeployToken {
-        #[clap(short, long, help = "Chain to deploy the token on")]
-        chain: ChainKind,
-        #[clap(short, long, help = "Transaction hash of the LogMetadata call on NEAR")]
-        tx_hash: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     #[clap(about = "Initialize a transfer on EVM")]
     EvmInitTransfer {
         #[clap(short, long, help = "Chain to initialize the transfer on")]
@@ -171,15 +151,6 @@ pub enum OmniConnectorSubCommand {
             help = "Solana keypair in Base58 or path to a .json keypair file"
         )]
         program_keypair: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Deploy a token on Solana")]
-    SolanaDeployToken {
-        #[clap(short, long, help = "Transaction hash of the LogMetadata call on NEAR")]
-        tx_hash: String,
-        #[clap(short, long, help = "Sender ID of the LogMetadata call on NEAR")]
-        sender_id: Option<AccountId>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -248,32 +219,51 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearDeployToken {
+        OmniConnectorSubCommand::DeployToken {
             chain,
+            source_chain,
             tx_hash,
             config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .deploy_token(DeployTokenArgs::NearDeployToken {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::NearDeployTokenWithEvmProof {
-            chain,
-            tx_hash,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
+        } => match chain {
+            ChainKind::Near => match source_chain {
+                ChainKind::Eth => {
+                    omni_connector(network, config_cli)
+                        .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
+                            chain_kind: source_chain,
+                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        })
+                        .await
+                        .unwrap();
+                }
+                _ => {
+                    omni_connector(network, config_cli)
+                        .deploy_token(DeployTokenArgs::NearDeployToken {
+                            chain_kind: source_chain,
+                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        })
+                        .await
+                        .unwrap();
+                }
+            },
+            ChainKind::Eth | ChainKind::Arb | ChainKind::Base => {
+                omni_connector(network, config_cli)
+                    .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
+                        chain_kind: chain,
+                        near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Sol => {
+                omni_connector(network, config_cli)
+                    .deploy_token(DeployTokenArgs::SolanaDeployTokenWithTxHash {
+                        near_tx_hash: tx_hash.parse().unwrap(),
+                        sender_id: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+        },
         OmniConnectorSubCommand::NearStorageDeposit {
             token,
             amount,
@@ -372,19 +362,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::EvmDeployToken {
-            chain,
-            tx_hash,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
-                    chain_kind: chain,
-                    near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                })
-                .await
-                .unwrap();
-        }
         OmniConnectorSubCommand::EvmInitTransfer {
             chain,
             token,
@@ -428,19 +405,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .solana_initialize(extract_solana_keypair(&program_keypair))
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::SolanaDeployToken {
-            tx_hash,
-            sender_id,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .deploy_token(DeployTokenArgs::SolanaDeployTokenWithTxHash {
-                    near_tx_hash: tx_hash.parse().unwrap(),
-                    sender_id,
-                })
                 .await
                 .unwrap();
         }

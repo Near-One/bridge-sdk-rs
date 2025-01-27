@@ -219,7 +219,7 @@ fn default_config(network: Network) -> CliConfig {
             fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_MAINNET.to_owned()),
             fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_MAINNET.to_owned()),
 
-            wormhole_api: Some(defaults::WORMHOLE_API.to_owned()),
+            wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
 
             config_file: None,
         },
@@ -263,7 +263,7 @@ fn default_config(network: Network) -> CliConfig {
             fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_TESTNET.to_owned()),
             fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_TESTNET.to_owned()),
 
-            wormhole_api: Some(defaults::WORMHOLE_API.to_owned()),
+            wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
 
             config_file: None,
         },

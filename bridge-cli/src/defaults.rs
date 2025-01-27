@@ -28,6 +28,8 @@ pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596a
 pub const FAST_BRIDGE_ACCOUNT_ID_MAINNET: &str = "fast.bridge.near";
 pub const FAST_BRIDGE_ADDRESS_MAINNET: &str = "0xC5E985976d9b521904AD96306356ECA0fE4F3a1f";
 
+pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
+
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni-locker.testnet";
@@ -58,4 +60,4 @@ pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H6
 pub const FAST_BRIDGE_ACCOUNT_ID_TESTNET: &str = "fastbridge.testnet";
 pub const FAST_BRIDGE_ADDRESS_TESTNET: &str = "0x0B2C4871C9bAD795746C05c1539A8B1f26c26357";
 
-pub const WORMHOLE_API: &str = "https://api.testnet.wormholescan.io";
+pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
