@@ -1,5 +1,5 @@
 /// Mainnet
-pub const NEAR_RPC_MAINNET: &str = "https://rpc.mainnet.near.org/";
+pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
 pub const NEAR_LIGHT_CLIENT_ETH_ADDRESS_MAINNET: &str =
     "0x3FEFc5A4B1c02f21cBc8D3613643ba0635b9a873";
@@ -31,7 +31,7 @@ pub const FAST_BRIDGE_ADDRESS_MAINNET: &str = "0xC5E985976d9b521904AD96306356ECA
 pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
 
 /// Testnet
-pub const NEAR_RPC_TESTNET: &str = "https://rpc.testnet.near.org/";
+pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni-locker.testnet";
 pub const NEAR_LIGHT_CLIENT_ETH_ADDRESS_TESTNET: &str =
     "0x202cdf10bfa45a3d2190901373edd864f071d707";
@@ -61,4 +61,3 @@ pub const FAST_BRIDGE_ACCOUNT_ID_TESTNET: &str = "fastbridge.testnet";
 pub const FAST_BRIDGE_ADDRESS_TESTNET: &str = "0x0B2C4871C9bAD795746C05c1539A8B1f26c26357";
 
 pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
-
