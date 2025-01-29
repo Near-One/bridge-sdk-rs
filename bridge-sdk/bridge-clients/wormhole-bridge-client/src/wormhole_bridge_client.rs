@@ -44,12 +44,12 @@ impl WormholeBridgeClient {
 
         let response = reqwest::get(url)
             .await
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
 
         let vaa = response
             .json::<WormholeApiResponse>()
             .await
-            .map_err(|_| BridgeSdkError::UnknownError)?
+            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?
             .data
             .vaa;
         Ok(hex::encode(from_base64(&vaa).unwrap()))

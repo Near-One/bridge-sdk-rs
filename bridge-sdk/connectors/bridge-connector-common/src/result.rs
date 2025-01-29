@@ -37,8 +37,8 @@ pub enum BridgeSdkError {
     WormholeClientError(String),
     #[error("Invalid argument provided: {0}")]
     InvalidArgument(String),
-    #[error("Unexpected error occured")]
-    UnknownError,
+    #[error("Unexpected error occured: {0}")]
+    UnknownError(String),
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {

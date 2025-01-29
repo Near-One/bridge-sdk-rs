@@ -96,7 +96,7 @@ impl FastBridge {
         let mut buffer: Vec<u8> = Vec::new();
         message
             .serialize(&mut buffer)
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
         let msg = BASE64_STANDARD.encode(&buffer);
 
         let args = format!(
@@ -170,7 +170,7 @@ impl FastBridge {
         let event_topic = H256::from_str(&hex::encode(Keccak256::digest(
             "TransferTokens(uint256,address,address,address,uint256,string,bytes32)".as_bytes(),
         )))
-        .map_err(|_| BridgeSdkError::UnknownError)?;
+        .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
 
         let proof = eth_proof::get_proof_for_event(tx_hash, event_topic, eth_endpoint).await?;
 

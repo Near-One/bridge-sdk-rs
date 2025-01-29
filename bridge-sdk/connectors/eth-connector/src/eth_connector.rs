@@ -99,7 +99,7 @@ impl EthConnector {
         let event_topic = H256::from_str(&hex::encode(Keccak256::digest(
             "Deposited(address,string,uint256,uint256)".as_bytes(),
         )))
-        .map_err(|_| BridgeSdkError::UnknownError)?;
+        .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
 
         let proof = eth_proof::get_proof_for_event(tx_hash, event_topic, eth_endpoint).await?;
 
@@ -149,7 +149,7 @@ impl EthConnector {
         };
         args_struct
             .serialize(&mut args)
-            .map_err(|_| BridgeSdkError::UnknownError)?;
+            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
 
         let tx_hash = near_rpc_client::change(
             near_endpoint,

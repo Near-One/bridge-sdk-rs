@@ -289,7 +289,8 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 receiver_id: token_locker_id,
                 method_name: "deploy_token".to_string(),
-                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: DEPLOY_TOKEN_GAS,
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
@@ -316,7 +317,8 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 receiver_id: token_locker_id,
                 method_name: "deploy_token".to_string(),
-                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: DEPLOY_TOKEN_GAS,
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
@@ -344,7 +346,8 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 receiver_id: token_locker_id,
                 method_name: "bind_token".to_string(),
-                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: BIND_TOKEN_GAS,
                 deposit: BIND_TOKEN_DEPOSIT,
             },
@@ -513,7 +516,8 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 receiver_id: self.token_locker_id()?,
                 method_name: "fin_transfer".to_string(),
-                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: FIN_TRANSFER_GAS,
                 deposit: FIN_TRANSFER_DEPOSIT,
             },
@@ -540,7 +544,8 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 receiver_id: token_locker_id,
                 method_name: "claim_fee".to_string(),
-                args: borsh::to_vec(&args).map_err(|_| BridgeSdkError::UnknownError)?,
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: CLAIM_FEE_GAS,
                 deposit: CLAIM_FEE_DEPOSIT,
             },
@@ -581,7 +586,9 @@ impl NearBridgeClient {
             .find(|receipt| {
                 !receipt.outcome.logs.is_empty() && receipt.outcome.logs[0].contains(event_name)
             })
-            .ok_or(BridgeSdkError::UnknownError)?
+            .ok_or(BridgeSdkError::UnknownError(
+                "Failed to find correct receipt".to_string(),
+            ))?
             .outcome
             .logs[0]
             .clone();

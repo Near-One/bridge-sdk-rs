@@ -139,7 +139,7 @@ impl Nep141Connector {
         let receipt_id = TransactionOrReceiptId::Receipt {
             receipt_id,
             receiver_id: AccountId::from_str(self.token_locker_id()?)
-                .map_err(|_| BridgeSdkError::UnknownError)?,
+                .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
         };
 
         let proof_data = near_rpc_client::get_light_client_proof(
@@ -226,7 +226,7 @@ impl Nep141Connector {
         let receipt_id = TransactionOrReceiptId::Receipt {
             receipt_id,
             receiver_id: AccountId::from_str(self.token_locker_id()?)
-                .map_err(|_| BridgeSdkError::UnknownError)?,
+                .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
         };
 
         let proof_data = near_rpc_client::get_light_client_proof(
@@ -316,7 +316,7 @@ impl Nep141Connector {
         let event_topic = H256::from_str(&hex::encode(Keccak256::digest(
             "Withdraw(string,address,uint256,string,address)".as_bytes(),
         )))
-        .map_err(|_| BridgeSdkError::UnknownError)?;
+        .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?;
 
         let proof = eth_proof::get_proof_for_event(tx_hash, event_topic, eth_endpoint).await?;
 

@@ -476,8 +476,6 @@ impl OmniConnector {
 
         self.solana_deploy_token_with_event(serde_json::from_str(&transfer_log)?)
             .await
-            // TODO: This will silence a real error, so it must be fixed during `BridgeSdkError` refactoring
-            .map_err(|_| BridgeSdkError::UnknownError)
     }
 
     pub async fn solana_deploy_token_with_event(
@@ -489,7 +487,7 @@ impl OmniConnector {
             metadata_payload,
         } = event
         else {
-            return Err(BridgeSdkError::UnknownError);
+            return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
 
         let solana_bridge_client = self.solana_bridge_client()?;
@@ -567,8 +565,6 @@ impl OmniConnector {
 
         self.solana_finalize_transfer_with_event(serde_json::from_str(&transfer_log)?, solana_token)
             .await
-            // TODO: This will silence a real error, so it must be fixed during `BridgeSdkError` refactoring
-            .map_err(|_| BridgeSdkError::UnknownError)
     }
 
     pub async fn solana_finalize_transfer_with_event(
@@ -581,7 +577,7 @@ impl OmniConnector {
             signature,
         } = event
         else {
-            return Err(BridgeSdkError::UnknownError);
+            return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
 
         let solana_bridge_client = self.solana_bridge_client()?;
@@ -665,8 +661,7 @@ impl OmniConnector {
             DeployTokenArgs::SolanaDeployToken { event } => self
                 .solana_deploy_token_with_event(event)
                 .await
-                .map(|hash| hash.to_string())
-                .map_err(|_| BridgeSdkError::UnknownError),
+                .map(|hash| hash.to_string()),
             DeployTokenArgs::SolanaDeployTokenWithTxHash {
                 near_tx_hash: tx_hash,
                 sender_id,
