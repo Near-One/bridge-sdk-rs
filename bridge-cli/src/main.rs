@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 use omni_connector_command::OmniConnectorSubCommand;
 use serde::Deserialize;
 use std::{env, fs::File, io::BufReader};
@@ -252,14 +252,6 @@ fn combined_config(cli_config: CliConfig, network: Network) -> CliConfig {
         .or(default_config(network))
 }
 
-#[derive(Subcommand, Debug)]
-enum SubCommand {
-    OmniConnector {
-        #[clap(subcommand)]
-        cmd: OmniConnectorSubCommand,
-    },
-}
-
 #[derive(ValueEnum, Copy, Clone, Debug)]
 enum Network {
     Mainnet,
@@ -271,20 +263,16 @@ enum Network {
 struct Arguments {
     network: Network,
     #[command(subcommand)]
-    cmd: SubCommand,
+    cmd: OmniConnectorSubCommand,
 }
 
 #[tokio::main]
 async fn main() {
     init_logger();
     dotenv::dotenv().ok();
-    let args = Arguments::parse();
 
-    match args.cmd {
-        SubCommand::OmniConnector { cmd } => {
-            omni_connector_command::match_subcommand(cmd, args.network).await;
-        }
-    }
+    let args = Arguments::parse();
+    omni_connector_command::match_subcommand(args.cmd, args.network).await;
 }
 
 fn init_logger() {
