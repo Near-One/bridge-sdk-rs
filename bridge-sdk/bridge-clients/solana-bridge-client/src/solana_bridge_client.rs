@@ -181,12 +181,16 @@ impl SolanaBridgeClient {
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
 
-        let mut token = [0u8; 32];
-        if data.metadata.token.len() > 32 {
-            token.copy_from_slice(&Sha256::digest(data.metadata.token.as_bytes()))
+        let token_bytes = data.metadata.token.as_bytes();
+        let token = if token_bytes.len() > 32 {
+            let mut token = [0u8; 32];
+            token.copy_from_slice(&Sha256::digest(token_bytes));
+            token
         } else {
-            token.copy_from_slice(data.metadata.token.as_bytes())
-        }
+            let mut padded_token_bytes = [0u8; 32];
+            padded_token_bytes[..token_bytes.len()].copy_from_slice(token_bytes);
+            padded_token_bytes
+        };
         let (mint, _) = Pubkey::find_program_address(&[b"wrapped_mint", &token], program_id);
 
         let metadata_program_id: Pubkey = mpl_token_metadata::ID.to_bytes().into();
