@@ -16,7 +16,6 @@ use serde_json::json;
 const STORAGE_DEPOSIT_GAS: u64 = 10_000_000_000_000;
 
 const LOG_METADATA_GAS: u64 = 300_000_000_000_000;
-const LOG_METADATA_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 
 const DEPLOY_TOKEN_GAS: u64 = 120_000_000_000_000;
 const DEPLOY_TOKEN_DEPOSIT: u128 = 4_000_000_000_000_000_000_000_000;
@@ -236,6 +235,37 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    pub async fn get_required_deposit_for_mpc(&self) -> Result<u128> {
+        let endpoint = self.endpoint()?;
+        let token_locker_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_locker_id,
+                method_name: "get_mpc_account".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await?;
+
+        let mpc_account = serde_json::from_slice::<AccountId>(&response)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: mpc_account,
+                method_name: "experimental_signature_deposit".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await?;
+
+        serde_json::from_slice::<String>(&response)
+            .map(|response| response.parse::<u128>().unwrap_or(SIGN_TRANSFER_DEPOSIT))
+            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))
+    }
+
     /// Logs token metadata to token_locker contract. The proof from this transaction is then used to deploy a corresponding token on other chains
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_token_metadata(&self, token_id: String) -> Result<CryptoHash> {
@@ -253,7 +283,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: LOG_METADATA_GAS,
-                deposit: LOG_METADATA_DEPOSIT,
+                deposit: self.get_required_deposit_for_mpc().await?,
             },
             near_primitives::views::TxExecutionStatus::Executed,
         )
@@ -368,32 +398,6 @@ impl NearBridgeClient {
         fee: Option<Fee>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: token_locker_id,
-                method_name: "get_mpc_account".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        let mpc_account = serde_json::from_slice::<AccountId>(&response)?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: mpc_account,
-                method_name: "experimental_signature_deposit".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        let required_deposit = serde_json::from_slice::<String>(&response)
-            .map(|response| response.parse::<u128>().unwrap_or(SIGN_TRANSFER_DEPOSIT))?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -409,7 +413,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: SIGN_TRANSFER_GAS,
-                deposit: required_deposit,
+                deposit: self.get_required_deposit_for_mpc().await?,
             },
             near_primitives::views::TxExecutionStatus::Executed,
         )
