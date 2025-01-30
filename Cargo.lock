@@ -861,13 +861,10 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dotenv",
- "eth-connector",
  "ethers-core",
  "evm-bridge-client",
- "fast-bridge",
  "near-bridge-client",
  "near-primitives",
- "nep141-connector",
  "omni-connector",
  "omni-types",
  "serde",
@@ -2017,25 +2014,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "eth-connector"
-version = "0.1.0"
-dependencies = [
- "borsh 1.5.5",
- "bridge-connector-common",
- "derive_builder",
- "eth-proof",
- "ethers",
- "hex",
- "near-crypto",
- "near-light-client-on-eth",
- "near-primitives",
- "near-rpc-client",
- "sha3",
- "thiserror 2.0.11",
- "tracing",
-]
-
-[[package]]
 name = "eth-keystore"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2454,25 +2432,6 @@ checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
 dependencies = [
  "indenter",
  "once_cell",
-]
-
-[[package]]
-name = "fast-bridge"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "borsh 1.5.5",
- "bridge-connector-common",
- "derive_builder",
- "eth-proof",
- "ethers",
- "hex",
- "near-crypto",
- "near-primitives",
- "near-rpc-client",
- "serde_json",
- "sha3",
- "tracing",
 ]
 
 [[package]]
@@ -4381,27 +4340,6 @@ checksum = "cd3e60aa26a74dc514b1b6408fdd06cefe2eb0ff029020956c1c6517594048fd"
 dependencies = [
  "borsh 1.5.5",
  "serde",
-]
-
-[[package]]
-name = "nep141-connector"
-version = "0.1.0"
-dependencies = [
- "borsh 1.5.5",
- "bridge-connector-common",
- "derive_builder",
- "eth-proof",
- "ethers",
- "hex",
- "near-crypto",
- "near-jsonrpc-client",
- "near-light-client-on-eth",
- "near-primitives",
- "near-rpc-client",
- "serde",
- "serde_json",
- "sha3",
- "tracing",
 ]
 
 [[package]]

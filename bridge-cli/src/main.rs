@@ -1,7 +1,4 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use eth_connector_command::EthConnectorSubCommand;
-use fast_bridge_command::FastBridgeSubCommand;
-use nep141_connector_command::Nep141ConnectorSubCommand;
 use omni_connector_command::OmniConnectorSubCommand;
 use serde::Deserialize;
 use std::{env, fs::File, io::BufReader};
@@ -9,9 +6,6 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{field::MakeExt, fmt::format, EnvFilter, FmtSubscriber};
 
 mod defaults;
-mod eth_connector_command;
-mod fast_bridge_command;
-mod nep141_connector_command;
 mod omni_connector_command;
 
 #[derive(Args, Debug, Clone, Deserialize, Default)]
@@ -35,10 +29,6 @@ struct CliConfig {
     eth_private_key: Option<String>,
     #[arg(long)]
     eth_bridge_token_factory_address: Option<String>,
-    #[arg(long)]
-    eth_custodian_address: Option<String>,
-    #[arg(long)]
-    eth_connector_account_id: Option<String>,
 
     #[arg(long)]
     base_rpc: Option<String>,
@@ -68,11 +58,6 @@ struct CliConfig {
     solana_keypair: Option<String>,
 
     #[arg(long)]
-    fast_bridge_account_id: Option<String>,
-    #[arg(long)]
-    fast_bridge_address: Option<String>,
-
-    #[arg(long)]
     wormhole_api: Option<String>,
 
     #[arg(long)]
@@ -96,10 +81,6 @@ impl CliConfig {
             eth_bridge_token_factory_address: self
                 .eth_bridge_token_factory_address
                 .or(other.eth_bridge_token_factory_address),
-            eth_custodian_address: self.eth_custodian_address.or(other.eth_custodian_address),
-            eth_connector_account_id: self
-                .eth_connector_account_id
-                .or(other.eth_connector_account_id),
 
             base_rpc: self.base_rpc.or(other.base_rpc),
             base_chain_id: self.base_chain_id.or(other.base_chain_id),
@@ -122,9 +103,6 @@ impl CliConfig {
                 .or(other.solana_wormhole_address),
             solana_keypair: self.solana_keypair.or(other.solana_keypair),
 
-            fast_bridge_account_id: self.fast_bridge_account_id.or(other.fast_bridge_account_id),
-            fast_bridge_address: self.fast_bridge_address.or(other.fast_bridge_address),
-
             wormhole_api: self.wormhole_api.or(other.wormhole_api),
 
             config_file: self.config_file.or(other.config_file),
@@ -146,8 +124,6 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         eth_private_key: env::var("ETH_PRIVATE_KEY").ok(),
         eth_bridge_token_factory_address: env::var("ETH_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
-        eth_custodian_address: env::var("ETH_CUSTODIAN_ADDRESS").ok(),
-        eth_connector_account_id: env::var("ETH_CONNECTOR_ACCOUNT_ID").ok(),
 
         base_rpc: env::var("BASE_RPC").ok(),
         base_chain_id: env::var("BASE_CHAIN_ID")
@@ -167,9 +143,6 @@ fn env_config() -> CliConfig {
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
         solana_wormhole_address: env::var("SOLANA_WORMHOLE_ADDRESS").ok(),
         solana_keypair: env::var("SOLANA_KEYPAIR").ok(),
-
-        fast_bridge_account_id: env::var("FAST_BRIDGE_ACCOUNT_ID").ok(),
-        fast_bridge_address: env::var("FAST_BRIDGE_ADDRESS").ok(),
 
         wormhole_api: env::var("WORMHOLE_API").ok(),
 
@@ -194,8 +167,6 @@ fn default_config(network: Network) -> CliConfig {
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
-            eth_connector_account_id: Some(defaults::ETH_CONNECTOR_ACCOUNT_ID_MAINNET.to_owned()),
-            eth_custodian_address: Some(defaults::ETH_CUSTODIAN_ADDRESS_MAINNET.to_owned()),
 
             base_rpc: Some(defaults::BASE_RPC_MAINNET.to_owned()),
             base_chain_id: Some(defaults::BASE_CHAIN_ID_MAINNET),
@@ -216,9 +187,6 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_MAINNET.to_owned()),
             solana_keypair: None,
 
-            fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_MAINNET.to_owned()),
-            fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_MAINNET.to_owned()),
-
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
 
             config_file: None,
@@ -238,8 +206,6 @@ fn default_config(network: Network) -> CliConfig {
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
-            eth_connector_account_id: Some(defaults::ETH_CONNECTOR_ACCOUNT_ID_TESTNET.to_owned()),
-            eth_custodian_address: Some(defaults::ETH_CUSTODIAN_ADDRESS_TESTNET.to_owned()),
 
             base_rpc: Some(defaults::BASE_RPC_TESTNET.to_owned()),
             base_chain_id: Some(defaults::BASE_CHAIN_ID_TESTNET),
@@ -259,9 +225,6 @@ fn default_config(network: Network) -> CliConfig {
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_TESTNET.to_owned()),
             solana_keypair: None,
-
-            fast_bridge_account_id: Some(defaults::FAST_BRIDGE_ACCOUNT_ID_TESTNET.to_owned()),
-            fast_bridge_address: Some(defaults::FAST_BRIDGE_ADDRESS_TESTNET.to_owned()),
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
 
@@ -291,18 +254,6 @@ fn combined_config(cli_config: CliConfig, network: Network) -> CliConfig {
 
 #[derive(Subcommand, Debug)]
 enum SubCommand {
-    Nep141Connector {
-        #[clap(subcommand)]
-        cmd: Nep141ConnectorSubCommand,
-    },
-    EthConnector {
-        #[clap(subcommand)]
-        cmd: EthConnectorSubCommand,
-    },
-    FastBridge {
-        #[clap(subcommand)]
-        cmd: FastBridgeSubCommand,
-    },
     OmniConnector {
         #[clap(subcommand)]
         cmd: OmniConnectorSubCommand,
@@ -330,15 +281,6 @@ async fn main() {
     let args = Arguments::parse();
 
     match args.cmd {
-        SubCommand::Nep141Connector { cmd } => {
-            nep141_connector_command::match_subcommand(cmd, args.network).await;
-        }
-        SubCommand::EthConnector { cmd } => {
-            eth_connector_command::match_subcommand(cmd, args.network).await;
-        }
-        SubCommand::FastBridge { cmd } => {
-            fast_bridge_command::match_subcommand(cmd, args.network).await;
-        }
         SubCommand::OmniConnector { cmd } => {
             omni_connector_command::match_subcommand(cmd, args.network).await;
         }
