@@ -96,6 +96,7 @@ pub enum InitTransferArgs {
         amount: u128,
         recipient: String,
         fee: Fee,
+        message: String,
     },
     SolanaInitTransfer {
         token: Pubkey,
@@ -394,10 +395,11 @@ impl OmniConnector {
         amount: u128,
         receiver: String,
         fee: Fee,
+        message: String,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
-            .init_transfer(near_token_id, amount, receiver, fee)
+            .init_transfer(near_token_id, amount, receiver, fee, message)
             .await
     }
 
@@ -748,8 +750,9 @@ impl OmniConnector {
                 amount,
                 recipient: receiver,
                 fee,
+                message,
             } => self
-                .evm_init_transfer(chain_kind, near_token_id, amount, receiver, fee)
+                .evm_init_transfer(chain_kind, near_token_id, amount, receiver, fee, message)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::SolanaInitTransfer {

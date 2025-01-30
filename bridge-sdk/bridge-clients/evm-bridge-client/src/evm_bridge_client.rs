@@ -115,6 +115,7 @@ impl EvmBridgeClient {
         amount: u128,
         receiver: String,
         fee: Fee,
+        message: String,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
@@ -157,7 +158,7 @@ impl EvmBridgeClient {
             fee.fee.into(),
             fee.native_fee.into(),
             receiver,
-            String::new(),
+            message,
         );
         self.prepare_tx_for_sending(&mut withdraw_call).await?;
         let tx = withdraw_call.send().await?;

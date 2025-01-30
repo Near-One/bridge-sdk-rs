@@ -126,6 +126,8 @@ pub enum OmniConnectorSubCommand {
         fee: u128,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: u128,
+        #[clap(short, long, help = "Additional message")]
+        message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -369,6 +371,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient,
             fee,
             native_fee,
+            message,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -381,6 +384,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         fee: fee.into(),
                         native_fee: native_fee.into(),
                     },
+                    message: message.unwrap_or_default(),
                 })
                 .await
                 .unwrap();
