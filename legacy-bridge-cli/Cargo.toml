@@ -1,0 +1,19 @@
+[package]
+name = "legacy-bridge-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap.workspace = true
+dotenv.workspace = true
+tokio.workspace = true
+ethers-core.workspace = true
+near-primitives.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+tracing.workspace = true
+omni-types.workspace = true
+legacy-nep141-connector = { path = "../legacy-bridge-sdk/connectors/nep141-connector" }
+legacy-eth-connector = { path = "../legacy-bridge-sdk/connectors/eth-connector" }
+legacy-fast-bridge = { path = "../legacy-bridge-sdk/connectors/fast-bridge" }
