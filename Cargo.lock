@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "dotenv",
@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-connector-common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eth-proof",
  "ethers",
@@ -1998,7 +1998,7 @@ dependencies = [
 
 [[package]]
 name = "eth-connector"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "bridge-connector-common",
@@ -2039,7 +2039,7 @@ dependencies = [
 
 [[package]]
 name = "eth-proof"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "cita_trie",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "evm-bridge-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "bridge-connector-common",
@@ -2438,7 +2438,7 @@ dependencies = [
 
 [[package]]
 name = "fast-bridge"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "borsh 1.5.4",
@@ -3873,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "bridge-connector-common",
@@ -4018,7 +4018,7 @@ dependencies = [
 
 [[package]]
 name = "near-light-client-on-eth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ethereum-types 0.14.1",
  "ethers",
@@ -4110,7 +4110,7 @@ dependencies = [
 
 [[package]]
 name = "near-rpc-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "hex",
@@ -4218,7 +4218,7 @@ dependencies = [
 
 [[package]]
 name = "nep141-connector"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "bridge-connector-common",
@@ -4483,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "bridge-connector-common",
@@ -6302,7 +6302,7 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "borsh 1.5.4",
  "derive_builder",
@@ -8813,9 +8813,9 @@ dependencies = [
 
 [[package]]
 name = "valuable"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vcpkg"
@@ -9241,7 +9241,7 @@ dependencies = [
 
 [[package]]
 name = "wormhole-bridge-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bridge-connector-common",
  "derive_builder",
