@@ -11,6 +11,7 @@ fn get_instruction_identifier(instruction_name: &str) -> [u8; 8] {
 
 pub struct Initialize {
     pub admin: Pubkey,
+    pub pausable_admin: Pubkey,
     pub derived_near_bridge_address: [u8; 64],
 }
 
@@ -18,7 +19,29 @@ impl BorshSerialize for Initialize {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&get_instruction_identifier("global:initialize"))?;
         writer.write_all(&self.admin.to_bytes())?;
+        writer.write_all(&self.pausable_admin.to_bytes())?;
         writer.write_all(&self.derived_near_bridge_address)?;
+        Ok(())
+    }
+}
+
+pub struct SetAdmin {
+    pub admin: Pubkey,
+}
+
+impl BorshSerialize for SetAdmin {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&get_instruction_identifier("global:set_admin"))?;
+        writer.write_all(&self.admin.to_bytes())?;
+        Ok(())
+    }
+}
+
+pub struct Pause {}
+
+impl BorshSerialize for Pause {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&get_instruction_identifier("global:pause"))?;
         Ok(())
     }
 }

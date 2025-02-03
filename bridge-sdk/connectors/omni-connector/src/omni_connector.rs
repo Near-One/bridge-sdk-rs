@@ -826,6 +826,34 @@ impl OmniConnector {
         }
     }
 
+    pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let tx_hash = solana_bridge_client
+            .set_admin(admin)
+            .await?;
+
+        tracing::info!(
+            tx_hash = format!("{:?}", tx_hash),
+            "Sent set admin transaction"
+        );
+
+        Ok(tx_hash)
+    }
+
+    pub async fn solana_pause(&self) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let tx_hash = solana_bridge_client.pause().await?;
+
+        tracing::info!(
+            tx_hash = format!("{:?}", tx_hash),
+            "Sent pause transaction"
+        );
+
+        Ok(tx_hash)
+    }
+
     pub async fn wormhole_get_vaa<E>(
         &self,
         chain_id: u64,

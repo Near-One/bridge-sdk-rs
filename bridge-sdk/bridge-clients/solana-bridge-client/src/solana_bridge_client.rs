@@ -88,6 +88,7 @@ impl SolanaBridgeClient {
 
         let instruction_data = Initialize {
             admin: keypair.pubkey(),
+            pausable_admin: keypair.pubkey(),
             derived_near_bridge_address,
         };
 
@@ -114,6 +115,54 @@ impl SolanaBridgeClient {
         self.send_and_confirm_transaction(
             vec![instruction],
             &[keypair, &wormhole_message, &program_keypair],
+        )
+        .await
+    }
+
+    pub async fn set_admin(&self, admin: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
+        let program_id = self.program_id()?;
+        let keypair = self.keypair()?;
+
+        let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
+
+        let instruction_data = SetAdmin { admin };
+
+        let instruction = Instruction::new_with_borsh(
+            *program_id,
+            &instruction_data,
+            vec![
+                AccountMeta::new(config, false),
+                AccountMeta::new(keypair.pubkey(), true),
+            ],
+        );
+
+        self.send_and_confirm_transaction(
+            vec![instruction],
+            &[keypair],
+        )
+        .await
+    }
+
+    pub async fn pause(&self) -> Result<Signature, SolanaBridgeClientError> {
+        let program_id = self.program_id()?;
+        let keypair = self.keypair()?;
+
+        let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
+
+        let instruction_data = Pause {};
+
+        let instruction = Instruction::new_with_borsh(
+            *program_id,
+            &instruction_data,
+            vec![
+                AccountMeta::new(config, false),
+                AccountMeta::new(keypair.pubkey(), true),
+            ],
+        );
+
+        self.send_and_confirm_transaction(
+            vec![instruction],
+            &[keypair],
         )
         .await
     }
