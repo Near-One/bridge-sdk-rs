@@ -90,6 +90,7 @@ pub struct InitTransfer {
     pub recipient: String,
     pub fee: u128,
     pub native_fee: u64,
+    pub message: String,
 }
 
 impl BorshSerialize for InitTransfer {
@@ -99,6 +100,7 @@ impl BorshSerialize for InitTransfer {
         self.recipient.serialize(writer)?;
         self.fee.serialize(writer)?;
         self.native_fee.serialize(writer)?;
+        self.message.serialize(writer)?;
         Ok(())
     }
 }
@@ -108,6 +110,7 @@ pub struct InitTransferSol {
     pub recipient: String,
     pub fee: u128,
     pub native_fee: u64,
+    pub message: String,
 }
 
 impl BorshSerialize for InitTransferSol {
@@ -117,6 +120,7 @@ impl BorshSerialize for InitTransferSol {
         self.recipient.serialize(writer)?;
         self.fee.serialize(writer)?;
         self.native_fee.serialize(writer)?;
+        self.message.serialize(writer)?;
         Ok(())
     }
 }

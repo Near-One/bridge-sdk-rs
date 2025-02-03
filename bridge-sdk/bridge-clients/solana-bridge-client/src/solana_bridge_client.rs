@@ -237,6 +237,7 @@ impl SolanaBridgeClient {
         token: Pubkey,
         amount: u128,
         recipient: String,
+        message: String,
     ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
@@ -270,6 +271,7 @@ impl SolanaBridgeClient {
             recipient,
             fee: 20,
             native_fee: 10,
+            message,
         };
 
         let instruction = Instruction::new_with_borsh(
@@ -310,6 +312,7 @@ impl SolanaBridgeClient {
         &self,
         amount: u128,
         recipient: String,
+        message: String,
     ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
@@ -329,6 +332,7 @@ impl SolanaBridgeClient {
             recipient,
             fee: 0,
             native_fee: 10,
+            message,
         };
 
         let instruction = Instruction::new_with_borsh(

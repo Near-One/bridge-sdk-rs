@@ -102,10 +102,12 @@ pub enum InitTransferArgs {
         token: Pubkey,
         amount: u128,
         recipient: String,
+        message: String,
     },
     SolanaInitTransferSol {
         amount: u128,
         recipient: String,
+        message: String,
     },
 }
 
@@ -524,11 +526,12 @@ impl OmniConnector {
         token: Pubkey,
         amount: u128,
         recipient: String,
+        message: String,
     ) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
         let signature = solana_bridge_client
-            .init_transfer(token, amount, recipient)
+            .init_transfer(token, amount, recipient, message)
             .await?;
 
         tracing::info!(
@@ -543,11 +546,12 @@ impl OmniConnector {
         &self,
         amount: u128,
         recipient: String,
+        message: String,
     ) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
         let signature = solana_bridge_client
-            .init_transfer_sol(amount, recipient)
+            .init_transfer_sol(amount, recipient, message)
             .await?;
 
         tracing::info!(
@@ -759,12 +763,17 @@ impl OmniConnector {
                 token,
                 amount,
                 recipient,
+                message,
             } => self
-                .solana_init_transfer(token, amount, recipient)
+                .solana_init_transfer(token, amount, recipient, message)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            InitTransferArgs::SolanaInitTransferSol { amount, recipient } => self
-                .solana_init_transfer_sol(amount, recipient)
+            InitTransferArgs::SolanaInitTransferSol {
+                amount,
+                recipient,
+                message,
+            } => self
+                .solana_init_transfer_sol(amount, recipient, message)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
         }

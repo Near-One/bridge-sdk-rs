@@ -423,6 +423,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token: token.parse().unwrap(),
                     amount,
                     recipient,
+                    message: String::new(),
                 })
                 .await
                 .unwrap();
@@ -433,7 +434,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .init_transfer(InitTransferArgs::SolanaInitTransferSol { amount, recipient })
+                .init_transfer(InitTransferArgs::SolanaInitTransferSol {
+                    amount,
+                    recipient,
+                    message: String::new(),
+                })
                 .await
                 .unwrap();
         }
