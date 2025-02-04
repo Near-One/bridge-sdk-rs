@@ -431,6 +431,29 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let signature = solana_bridge_client.set_admin(admin).await?;
+
+        tracing::info!(
+            signature = signature.to_string(),
+            "Sent set admin transaction"
+        );
+
+        Ok(signature)
+    }
+
+    pub async fn solana_pause(&self) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let signature = solana_bridge_client.pause().await?;
+
+        tracing::info!(signature = signature.to_string(), "Sent pause transaction");
+
+        Ok(signature)
+    }
+
     pub async fn solana_initialize(&self, program_keypair: Keypair) -> Result<Signature> {
         // Derived based on near bridge account id and derivation path (bridge-1)
         const DERIVED_NEAR_BRIDGE_ADDRESS: [u8; 64] = [
@@ -442,29 +465,29 @@ impl OmniConnector {
 
         let solana_bridge_client = self.solana_bridge_client()?;
 
-        let tx_hash = solana_bridge_client
+        let signature = solana_bridge_client
             .initialize(DERIVED_NEAR_BRIDGE_ADDRESS, program_keypair)
             .await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
+            signature = signature.to_string(),
             "Sent initialize transaction"
         );
 
-        Ok(tx_hash)
+        Ok(signature)
     }
 
     pub async fn solana_log_metadata(&self, token: Pubkey) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
-        let tx_hash = solana_bridge_client.log_metadata(token).await?;
+        let signature = solana_bridge_client.log_metadata(token).await?;
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
+            signature = signature.to_string(),
             "Sent register token transaction"
         );
 
-        Ok(tx_hash)
+        Ok(signature)
     }
 
     pub async fn solana_deploy_token_with_tx_hash(
@@ -824,34 +847,6 @@ impl OmniConnector {
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
         }
-    }
-
-    pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
-
-        let tx_hash = solana_bridge_client
-            .set_admin(admin)
-            .await?;
-
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent set admin transaction"
-        );
-
-        Ok(tx_hash)
-    }
-
-    pub async fn solana_pause(&self) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
-
-        let tx_hash = solana_bridge_client.pause().await?;
-
-        tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
-            "Sent pause transaction"
-        );
-
-        Ok(tx_hash)
     }
 
     pub async fn wormhole_get_vaa<E>(
