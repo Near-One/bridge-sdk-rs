@@ -472,7 +472,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 omni_connector(network, config_cli)
                     .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
-                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        tx_hash,
                     })
                     .await
                     .unwrap();
