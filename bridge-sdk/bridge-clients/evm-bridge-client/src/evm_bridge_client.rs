@@ -51,11 +51,15 @@ impl EvmBridgeClient {
 
     // Logs an ERC-20 token metadata
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
-    pub async fn log_metadata(&self, address: EvmAddress, nonce: Option<U256>) -> Result<TxHash> {
+    pub async fn log_metadata(
+        &self,
+        address: EvmAddress,
+        tx_nonce: Option<U256>,
+    ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
         let mut call = factory.log_metadata(address.0.into());
-        self.prepare_tx_for_sending(&mut call, nonce).await?;
+        self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -71,7 +75,7 @@ impl EvmBridgeClient {
     pub async fn deploy_token(
         &self,
         transfer_log: OmniBridgeEvent,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
@@ -100,7 +104,7 @@ impl EvmBridgeClient {
         let mut call = factory
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
-        self.prepare_tx_for_sending(&mut call, nonce).await?;
+        self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -120,7 +124,7 @@ impl EvmBridgeClient {
         receiver: OmniAddress,
         fee: Fee,
         message: String,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
@@ -147,7 +151,7 @@ impl EvmBridgeClient {
         if allowance < amount256 {
             let mut approval_call =
                 bridge_token.approve(bridge_token_factory_address, amount256 - allowance);
-            self.prepare_tx_for_sending(&mut approval_call, nonce)
+            self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
                 .await?;
             approval_call
                 .send()
@@ -167,7 +171,7 @@ impl EvmBridgeClient {
             message,
         );
         // Nonce is incremented since previous was used for approval
-        self.prepare_tx_for_sending(&mut withdraw_call, nonce.map(|nonce| nonce + 1))
+        self.prepare_tx_for_sending(&mut withdraw_call, tx_nonce.map(|nonce| nonce + 1))
             .await?;
         let tx = withdraw_call.send().await?;
 
@@ -184,7 +188,7 @@ impl EvmBridgeClient {
     pub async fn fin_transfer(
         &self,
         transfer_log: OmniBridgeEvent,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
@@ -232,7 +236,7 @@ impl EvmBridgeClient {
         };
 
         let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
-        self.prepare_tx_for_sending(&mut call, nonce).await?;
+        self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -382,7 +386,7 @@ impl EvmBridgeClient {
     pub async fn prepare_tx_for_sending<B, M, D>(
         &self,
         call: &mut FunctionCall<B, M, D>,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     ) -> Result<()> {
         let endpoint = self.endpoint()?;
         let client = Provider::<Http>::try_from(endpoint)
@@ -403,7 +407,7 @@ impl EvmBridgeClient {
             ));
         };
 
-        tx.nonce = nonce;
+        tx.nonce = tx_nonce;
 
         tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
         tx.max_fee_per_gas = Some(base_fee_per_gas * 2 + max_priority_fee_per_gas);

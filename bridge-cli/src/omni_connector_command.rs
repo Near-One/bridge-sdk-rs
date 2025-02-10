@@ -4,8 +4,8 @@ use clap::Subcommand;
 
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
-use near_bridge_client::NearBridgeClientBuilder;
-use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
+use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
+use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
     BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
     OmniConnectorBuilder,
@@ -226,7 +226,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token, None, Some(TxExecutionStatus::Included))
+                .log_metadata(token, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -242,8 +242,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                            nonce: None,
-                            wait_until: Some(TxExecutionStatus::Included),
+                            transaction_options: TransactionOptions::default(),
                         })
                         .await
                         .unwrap();
@@ -253,8 +252,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployToken {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                            nonce: None,
-                            wait_until: Some(TxExecutionStatus::Included),
+                            transaction_options: TransactionOptions::default(),
                         })
                         .await
                         .unwrap();
@@ -286,7 +284,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, None, TxExecutionStatus::Included)
+                .near_storage_deposit_for_token(token, amount, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -309,8 +307,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         fee: fee.into(),
                         native_fee: native_fee.into(),
                     }),
-                    None,
-                    TxExecutionStatus::Included,
+                    TransactionOptions::default(),
                 )
                 .await
                 .unwrap();
@@ -326,8 +323,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token,
                     amount,
                     recipient,
-                    nonce: None,
-                    wait_until: Some(TxExecutionStatus::Included),
+                    transaction_options: TransactionOptions::default(),
                 })
                 .await
                 .unwrap();
@@ -353,8 +349,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             }
                         })
                         .collect(),
-                    nonce: None,
-                    wait_until: Some(TxExecutionStatus::Included),
+                    transaction_options: TransactionOptions::default(),
                 })
                 .await
                 .unwrap();
@@ -380,8 +375,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     vaa,
-                    nonce: None,
-                    wait_until: Some(TxExecutionStatus::Included),
+                    transaction_options: TransactionOptions::default(),
                 })
                 .await
                 .unwrap();
@@ -407,7 +401,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     },
                     message: message.unwrap_or_default(),
-                    nonce: None,
+                    tx_nonce: None,
                 })
                 .await
                 .unwrap();
@@ -421,7 +415,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .fin_transfer(FinTransferArgs::EvmFinTransferWithTxHash {
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     chain_kind: chain,
-                    nonce: None,
+                    tx_nonce: None,
                 })
                 .await
                 .unwrap();
@@ -493,8 +487,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                        nonce: None,
-                        wait_until: Some(TxExecutionStatus::Included),
+                        transaction_options: TransactionOptions::default(),
                     })
                     .await
                     .unwrap();
@@ -504,8 +497,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
                         tx_hash,
-                        nonce: None,
-                        wait_until: Some(TxExecutionStatus::Included),
+                        transaction_options: TransactionOptions::default(),
                     })
                     .await
                     .unwrap();
