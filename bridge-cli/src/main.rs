@@ -60,7 +60,7 @@ struct CliConfig {
     #[arg(long)]
     wormhole_api: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(long)]
     config: Option<String>,
 }
 

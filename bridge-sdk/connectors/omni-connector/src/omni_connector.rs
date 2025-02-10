@@ -702,7 +702,7 @@ impl OmniConnector {
             payload: DepositPayload {
                 destination_nonce: message_payload.destination_nonce,
                 transfer_id: TransferId {
-                    origin_chain: 1,
+                    origin_chain: message_payload.transfer_id.origin_chain as u8,
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
                 amount: message_payload.amount.into(),
