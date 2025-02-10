@@ -48,11 +48,13 @@ pub enum DeployTokenArgs {
     NearDeployToken {
         chain_kind: ChainKind,
         tx_hash: TxHash,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     NearDeployTokenWithEvmProof {
         chain_kind: ChainKind,
         tx_hash: TxHash,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     EvmDeployToken {
@@ -76,16 +78,19 @@ pub enum BindTokenArgs {
     BindTokenWithArgs {
         chain_kind: ChainKind,
         prover_args: Vec<u8>,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     BindTokenWithEvmProofTx {
         chain_kind: ChainKind,
         tx_hash: TxHash,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     BindTokenWithVaaProofTx {
         chain_kind: ChainKind,
         tx_hash: String,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
 }
@@ -95,6 +100,7 @@ pub enum InitTransferArgs {
         token: String,
         amount: u128,
         recipient: OmniAddress,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     EvmInitTransfer {
@@ -123,12 +129,14 @@ pub enum FinTransferArgs {
         chain_kind: ChainKind,
         tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     NearFinTransferWithVaa {
         chain_kind: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
         vaa: String,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     },
     EvmFinTransfer {
@@ -168,17 +176,19 @@ impl OmniConnector {
     pub async fn near_log_metadata(
         &self,
         token_id: String,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .log_token_metadata(token_id, wait_until)
+            .log_token_metadata(token_id, nonce, wait_until)
             .await
     }
 
     pub async fn near_deploy_token_with_vaa_proof(
         &self,
         args: WormholeDeployTokenArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -194,12 +204,12 @@ impl OmniConnector {
                     .await?;
 
                 near_bridge_client
-                    .deploy_token_with_vaa_proof(chain_kind, &vaa, wait_until)
+                    .deploy_token_with_vaa_proof(chain_kind, &vaa, nonce, wait_until)
                     .await
             }
             WormholeDeployTokenArgs::VAA { chain_kind, vaa } => {
                 near_bridge_client
-                    .deploy_token_with_vaa_proof(chain_kind, &vaa, wait_until)
+                    .deploy_token_with_vaa_proof(chain_kind, &vaa, nonce, wait_until)
                     .await
             }
         }
@@ -208,11 +218,12 @@ impl OmniConnector {
     pub async fn near_bind_token(
         &self,
         bind_token_args: omni_types::locker_args::BindTokenArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .bind_token(bind_token_args, wait_until)
+            .bind_token(bind_token_args, nonce, wait_until)
             .await
     }
 
@@ -231,11 +242,12 @@ impl OmniConnector {
         &self,
         token_id: String,
         amount: u128,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .storage_deposit_for_token(token_id, amount, wait_until)
+            .storage_deposit_for_token(token_id, amount, nonce, wait_until)
             .await
     }
 
@@ -244,11 +256,12 @@ impl OmniConnector {
         transfer_id: omni_types::TransferId,
         fee_recipient: Option<AccountId>,
         fee: Option<Fee>,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .sign_transfer(transfer_id, fee_recipient, fee, wait_until)
+            .sign_transfer(transfer_id, fee_recipient, fee, nonce, wait_until)
             .await
     }
 
@@ -257,11 +270,12 @@ impl OmniConnector {
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .init_transfer(token_id, amount, receiver, wait_until)
+            .init_transfer(token_id, amount, receiver, nonce, wait_until)
             .await
     }
 
@@ -270,6 +284,7 @@ impl OmniConnector {
         chain_kind: ChainKind,
         tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -293,6 +308,7 @@ impl OmniConnector {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
                     })?,
                 },
+                nonce,
                 wait_until,
             )
             .await
@@ -303,6 +319,7 @@ impl OmniConnector {
         chain_kind: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
         vaa: String,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -321,6 +338,7 @@ impl OmniConnector {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
                     })?,
                 },
+                nonce,
                 wait_until,
             )
             .await
@@ -329,11 +347,12 @@ impl OmniConnector {
     pub async fn near_claim_fee(
         &self,
         claim_fee_args: ClaimFeeArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .claim_fee(claim_fee_args, wait_until)
+            .claim_fee(claim_fee_args, nonce, wait_until)
             .await
     }
 
@@ -341,6 +360,7 @@ impl OmniConnector {
         &self,
         chain_kind: ChainKind,
         tx_hash: TxHash,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -363,6 +383,7 @@ impl OmniConnector {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
                     })?,
                 },
+                nonce,
                 wait_until,
             )
             .await
@@ -372,6 +393,7 @@ impl OmniConnector {
         &self,
         chain_kind: ChainKind,
         tx_hash: TxHash,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -394,6 +416,7 @@ impl OmniConnector {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
                     })?,
                 },
+                nonce,
                 wait_until,
             )
             .await
@@ -701,6 +724,7 @@ impl OmniConnector {
     pub async fn log_metadata(
         &self,
         token: OmniAddress,
+        nonce: Option<u64>,
         wait_until: Option<TxExecutionStatus>,
     ) -> Result<String> {
         match &token {
@@ -712,6 +736,7 @@ impl OmniConnector {
             OmniAddress::Near(token_id) => self
                 .near_log_metadata(
                     token_id.to_string(),
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -730,6 +755,7 @@ impl OmniConnector {
             DeployTokenArgs::NearDeployToken {
                 chain_kind,
                 tx_hash,
+                nonce,
                 wait_until,
             } => self
                 .near_deploy_token_with_vaa_proof(
@@ -737,6 +763,7 @@ impl OmniConnector {
                         chain_kind,
                         tx_hash,
                     },
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -744,11 +771,13 @@ impl OmniConnector {
             DeployTokenArgs::NearDeployTokenWithEvmProof {
                 chain_kind,
                 tx_hash,
+                nonce,
                 wait_until,
             } => self
                 .near_deploy_token_with_evm_proof(
                     chain_kind,
                     tx_hash,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -783,6 +812,7 @@ impl OmniConnector {
             BindTokenArgs::BindTokenWithArgs {
                 chain_kind,
                 prover_args,
+                nonce,
                 wait_until,
             } => self
                 .near_bind_token(
@@ -790,6 +820,7 @@ impl OmniConnector {
                         chain_kind,
                         prover_args,
                     },
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -797,11 +828,13 @@ impl OmniConnector {
             BindTokenArgs::BindTokenWithEvmProofTx {
                 chain_kind,
                 tx_hash,
+                nonce,
                 wait_until,
             } => self
                 .near_bind_token_with_evm_proof(
                     chain_kind,
                     tx_hash,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -809,6 +842,7 @@ impl OmniConnector {
             BindTokenArgs::BindTokenWithVaaProofTx {
                 chain_kind,
                 tx_hash,
+                nonce,
                 wait_until,
             } => {
                 let vaa = self
@@ -826,6 +860,7 @@ impl OmniConnector {
 
                 self.near_bind_token(
                     bind_token_args,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -840,12 +875,14 @@ impl OmniConnector {
                 token: near_token_id,
                 amount,
                 recipient: receiver,
+                nonce,
                 wait_until,
             } => self
                 .near_init_transfer(
                     near_token_id,
                     amount,
                     receiver,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -887,12 +924,14 @@ impl OmniConnector {
                 chain_kind,
                 tx_hash: near_tx_hash,
                 storage_deposit_actions,
+                nonce,
                 wait_until,
             } => self
                 .near_fin_transfer_with_evm_proof(
                     chain_kind,
                     near_tx_hash,
                     storage_deposit_actions,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await
@@ -901,12 +940,14 @@ impl OmniConnector {
                 chain_kind,
                 storage_deposit_actions,
                 vaa,
+                nonce,
                 wait_until,
             } => self
                 .near_fin_transfer_with_vaa(
                     chain_kind,
                     storage_deposit_actions,
                     vaa,
+                    nonce,
                     wait_until.unwrap_or(TxExecutionStatus::Final),
                 )
                 .await

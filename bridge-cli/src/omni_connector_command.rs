@@ -226,7 +226,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token, Some(TxExecutionStatus::Included))
+                .log_metadata(token, None, Some(TxExecutionStatus::Included))
                 .await
                 .unwrap();
         }
@@ -242,6 +242,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            nonce: None,
                             wait_until: Some(TxExecutionStatus::Included),
                         })
                         .await
@@ -252,6 +253,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployToken {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            nonce: None,
                             wait_until: Some(TxExecutionStatus::Included),
                         })
                         .await
@@ -283,7 +285,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, TxExecutionStatus::Included)
+                .near_storage_deposit_for_token(token, amount, None, TxExecutionStatus::Included)
                 .await
                 .unwrap();
         }
@@ -306,6 +308,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         fee: fee.into(),
                         native_fee: native_fee.into(),
                     }),
+                    None,
                     TxExecutionStatus::Included,
                 )
                 .await
@@ -322,6 +325,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token,
                     amount,
                     recipient,
+                    nonce: None,
                     wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
@@ -348,6 +352,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             }
                         })
                         .collect(),
+                    nonce: None,
                     wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
@@ -374,6 +379,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     vaa,
+                    nonce: None,
                     wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
@@ -484,6 +490,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        nonce: None,
                         wait_until: Some(TxExecutionStatus::Included),
                     })
                     .await
@@ -494,6 +501,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
                         tx_hash,
+                        nonce: None,
                         wait_until: Some(TxExecutionStatus::Included),
                     })
                     .await

@@ -32,6 +32,7 @@ pub struct ViewRequest {
 #[derive(Clone)]
 pub struct ChangeRequest {
     pub signer: near_crypto::InMemorySigner,
+    pub nonce: Option<u64>,
     pub receiver_id: AccountId,
     pub method_name: String,
     pub args: Vec<u8>,
@@ -144,6 +145,7 @@ pub async fn change(
     change_request: ChangeRequest,
 ) -> Result<CryptoHash, NearRpcError> {
     let client = DEFAULT_CONNECTOR.connect(server_addr);
+
     let rpc_request = methods::query::RpcQueryRequest {
         block_reference: BlockReference::latest(),
         request: near_primitives::views::QueryRequest::ViewAccessKey {
@@ -151,16 +153,24 @@ pub async fn change(
             public_key: change_request.signer.public_key.clone(),
         },
     };
+
     let access_key_query_response = client.call(rpc_request).await?;
 
-    let current_nonce = match access_key_query_response.kind {
-        QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-        _ => Err(NearRpcError::NonceError)?,
+    let nonce = if let Some(nonce) = change_request.nonce {
+        nonce
+    } else {
+        let current_nonce = match access_key_query_response.kind {
+            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
+            _ => Err(NearRpcError::NonceError)?,
+        };
+
+        current_nonce + 1
     };
+
     let transaction = Transaction::V0(TransactionV0 {
         signer_id: change_request.signer.account_id.clone(),
         public_key: change_request.signer.public_key.clone(),
-        nonce: current_nonce + 1,
+        nonce,
         receiver_id: change_request.receiver_id,
         block_hash: access_key_query_response.block_hash,
         actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {

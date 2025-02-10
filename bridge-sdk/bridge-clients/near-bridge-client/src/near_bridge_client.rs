@@ -173,6 +173,7 @@ impl NearBridgeClient {
         &self,
         token_id: String,
         amount: u128,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -182,6 +183,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_id.parse().map_err(|err| {
                     BridgeSdkError::ConfigError(format!("Failed to parse token_id: {}", err))
                 })?,
@@ -209,6 +211,7 @@ impl NearBridgeClient {
     pub async fn storage_deposit(
         &self,
         amount: u128,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -218,6 +221,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_locker_id,
                 method_name: "storage_deposit".to_string(),
                 args: json!({
@@ -276,6 +280,7 @@ impl NearBridgeClient {
     pub async fn log_token_metadata(
         &self,
         token_id: String,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -284,6 +289,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: self.token_locker_id()?,
                 method_name: "log_metadata".to_string(),
                 args: serde_json::json!({
@@ -308,6 +314,7 @@ impl NearBridgeClient {
         &self,
         chain_kind: ChainKind,
         vaa: &str,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -327,6 +334,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_locker_id,
                 method_name: "deploy_token".to_string(),
                 args: borsh::to_vec(&args)
@@ -350,6 +358,7 @@ impl NearBridgeClient {
     pub async fn deploy_token_with_evm_proof(
         &self,
         args: DeployTokenArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -359,6 +368,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_locker_id,
                 method_name: "deploy_token".to_string(),
                 args: borsh::to_vec(&args)
@@ -383,6 +393,7 @@ impl NearBridgeClient {
     pub async fn bind_token(
         &self,
         args: BindTokenArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -392,6 +403,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_locker_id,
                 method_name: "bind_token".to_string(),
                 args: borsh::to_vec(&args)
@@ -414,6 +426,7 @@ impl NearBridgeClient {
         transfer_id: TransferId,
         fee_recipient: Option<AccountId>,
         fee: Option<Fee>,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -422,6 +435,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: self.token_locker_id()?,
                 method_name: "sign_transfer".to_string(),
                 args: serde_json::json!({
@@ -478,6 +492,7 @@ impl NearBridgeClient {
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -497,6 +512,7 @@ impl NearBridgeClient {
         if existing_balance < required_balance {
             self.storage_deposit(
                 required_balance - existing_balance,
+                nonce,
                 TxExecutionStatus::Final,
             )
             .await?;
@@ -509,6 +525,8 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                // Increment nonce since previous was used for storage deposit
+                nonce: nonce.map(|nonce| nonce + 1),
                 receiver_id: token_id.parse().map_err(|err| {
                     BridgeSdkError::ConfigError(format!("Failed to parse token_id: {}", err))
                 })?,
@@ -541,6 +559,7 @@ impl NearBridgeClient {
     pub async fn fin_transfer(
         &self,
         args: FinTransferArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -549,6 +568,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: self.token_locker_id()?,
                 method_name: "fin_transfer".to_string(),
                 args: borsh::to_vec(&args)
@@ -572,6 +592,7 @@ impl NearBridgeClient {
     pub async fn claim_fee(
         &self,
         args: ClaimFeeArgs,
+        nonce: Option<u64>,
         wait_until: TxExecutionStatus,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -581,6 +602,7 @@ impl NearBridgeClient {
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
+                nonce,
                 receiver_id: token_locker_id,
                 method_name: "claim_fee".to_string(),
                 args: borsh::to_vec(&args)
