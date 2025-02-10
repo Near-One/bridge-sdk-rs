@@ -265,6 +265,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
                         near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        nonce: None,
                     })
                     .await
                     .unwrap();
@@ -406,6 +407,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     },
                     message: message.unwrap_or_default(),
+                    nonce: None,
                 })
                 .await
                 .unwrap();
@@ -419,6 +421,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .fin_transfer(FinTransferArgs::EvmFinTransferWithTxHash {
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     chain_kind: chain,
+                    nonce: None,
                 })
                 .await
                 .unwrap();

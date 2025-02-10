@@ -51,11 +51,11 @@ impl EvmBridgeClient {
 
     // Logs an ERC-20 token metadata
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
-    pub async fn log_metadata(&self, address: EvmAddress) -> Result<TxHash> {
+    pub async fn log_metadata(&self, address: EvmAddress, nonce: Option<U256>) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
         let mut call = factory.log_metadata(address.0.into());
-        self.prepare_tx_for_sending(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call, nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -68,7 +68,11 @@ impl EvmBridgeClient {
 
     /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from log_metadata transaction on Near
     #[tracing::instrument(skip_all, name = "EVM DEPLOY TOKEN")]
-    pub async fn deploy_token(&self, transfer_log: OmniBridgeEvent) -> Result<TxHash> {
+    pub async fn deploy_token(
+        &self,
+        transfer_log: OmniBridgeEvent,
+        nonce: Option<U256>,
+    ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
         let OmniBridgeEvent::LogMetadataEvent {
@@ -96,7 +100,7 @@ impl EvmBridgeClient {
         let mut call = factory
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
-        self.prepare_tx_for_sending(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call, nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -116,6 +120,7 @@ impl EvmBridgeClient {
         receiver: OmniAddress,
         fee: Fee,
         message: String,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
@@ -142,7 +147,8 @@ impl EvmBridgeClient {
         if allowance < amount256 {
             let mut approval_call =
                 bridge_token.approve(bridge_token_factory_address, amount256 - allowance);
-            self.prepare_tx_for_sending(&mut approval_call).await?;
+            self.prepare_tx_for_sending(&mut approval_call, nonce)
+                .await?;
             approval_call
                 .send()
                 .await?
@@ -160,7 +166,9 @@ impl EvmBridgeClient {
             receiver.to_string(),
             message,
         );
-        self.prepare_tx_for_sending(&mut withdraw_call).await?;
+        // Nonce is incremented since previous was used for approval
+        self.prepare_tx_for_sending(&mut withdraw_call, nonce.map(|nonce| nonce + 1))
+            .await?;
         let tx = withdraw_call.send().await?;
 
         tracing::info!(
@@ -173,7 +181,11 @@ impl EvmBridgeClient {
 
     /// Mints the corresponding bridged tokens on EVM. Requires an MPC signature
     #[tracing::instrument(skip_all, name = "EVM FIN TRANSFER")]
-    pub async fn fin_transfer(&self, transfer_log: OmniBridgeEvent) -> Result<TxHash> {
+    pub async fn fin_transfer(
+        &self,
+        transfer_log: OmniBridgeEvent,
+        nonce: Option<U256>,
+    ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
         let OmniBridgeEvent::SignTransferEvent {
@@ -220,7 +232,7 @@ impl EvmBridgeClient {
         };
 
         let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
-        self.prepare_tx_for_sending(&mut call).await?;
+        self.prepare_tx_for_sending(&mut call, nonce).await?;
         let tx = call.send().await?;
 
         tracing::info!(
@@ -370,6 +382,7 @@ impl EvmBridgeClient {
     pub async fn prepare_tx_for_sending<B, M, D>(
         &self,
         call: &mut FunctionCall<B, M, D>,
+        nonce: Option<U256>,
     ) -> Result<()> {
         let endpoint = self.endpoint()?;
         let client = Provider::<Http>::try_from(endpoint)
@@ -388,6 +401,8 @@ impl EvmBridgeClient {
                 "Transaction is not EIP-1559 compatible".to_string(),
             ));
         };
+
+        tx.nonce = nonce;
 
         tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
         tx.max_fee_per_gas = Some(base_fee_per_gas * 2 + max_priority_fee_per_gas);

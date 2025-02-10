@@ -60,10 +60,12 @@ pub enum DeployTokenArgs {
     EvmDeployToken {
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
+        nonce: Option<U256>,
     },
     EvmDeployTokenWithTxHash {
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
+        nonce: Option<U256>,
     },
     SolanaDeployToken {
         event: OmniBridgeEvent,
@@ -110,6 +112,7 @@ pub enum InitTransferArgs {
         recipient: OmniAddress,
         fee: Fee,
         message: String,
+        nonce: Option<U256>,
     },
     SolanaInitTransfer {
         token: Pubkey,
@@ -142,10 +145,12 @@ pub enum FinTransferArgs {
     EvmFinTransfer {
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
+        nonce: Option<U256>,
     },
     EvmFinTransferWithTxHash {
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
+        nonce: Option<U256>,
     },
     SolanaFinTransfer {
         event: OmniBridgeEvent,
@@ -426,24 +431,27 @@ impl OmniConnector {
         &self,
         address: EvmAddress,
         chain_kind: ChainKind,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.log_metadata(address).await
+        evm_bridge_client.log_metadata(address, nonce).await
     }
 
     pub async fn evm_deploy_token(
         &self,
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.deploy_token(event).await
+        evm_bridge_client.deploy_token(event, nonce).await
     }
 
     pub async fn evm_deploy_token_with_tx_hash(
         &self,
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
@@ -453,10 +461,11 @@ impl OmniConnector {
             .await?;
 
         evm_bridge_client
-            .deploy_token(serde_json::from_str(&transfer_log)?)
+            .deploy_token(serde_json::from_str(&transfer_log)?, nonce)
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn evm_init_transfer(
         &self,
         chain_kind: ChainKind,
@@ -465,10 +474,11 @@ impl OmniConnector {
         receiver: OmniAddress,
         fee: Fee,
         message: String,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
-            .init_transfer(near_token_id, amount, receiver, fee, message)
+            .init_transfer(near_token_id, amount, receiver, fee, message, nonce)
             .await
     }
 
@@ -476,15 +486,17 @@ impl OmniConnector {
         &self,
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.fin_transfer(event).await
+        evm_bridge_client.fin_transfer(event, nonce).await
     }
 
     pub async fn evm_fin_transfer_with_tx_hash(
         &self,
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
+        nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         let near_bridge_client = self.near_bridge_client()?;
@@ -494,7 +506,7 @@ impl OmniConnector {
             .await?;
 
         evm_bridge_client
-            .fin_transfer(serde_json::from_str(&transfer_log)?)
+            .fin_transfer(serde_json::from_str(&transfer_log)?, nonce)
             .await
     }
 
@@ -729,9 +741,13 @@ impl OmniConnector {
     ) -> Result<String> {
         match &token {
             OmniAddress::Eth(address) | OmniAddress::Arb(address) | OmniAddress::Base(address) => {
-                self.evm_log_metadata(address.clone(), token.get_chain())
-                    .await
-                    .map(|hash| hash.to_string())
+                self.evm_log_metadata(
+                    address.clone(),
+                    token.get_chain(),
+                    nonce.map(|nonce| nonce.into()),
+                )
+                .await
+                .map(|hash| hash.to_string())
             }
             OmniAddress::Near(token_id) => self
                 .near_log_metadata(
@@ -782,15 +798,20 @@ impl OmniConnector {
                 )
                 .await
                 .map(|hash| hash.to_string()),
-            DeployTokenArgs::EvmDeployToken { chain_kind, event } => self
-                .evm_deploy_token(chain_kind, event)
+            DeployTokenArgs::EvmDeployToken {
+                chain_kind,
+                event,
+                nonce,
+            } => self
+                .evm_deploy_token(chain_kind, event, nonce)
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::EvmDeployTokenWithTxHash {
                 chain_kind,
                 near_tx_hash,
+                nonce,
             } => self
-                .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash)
+                .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash, nonce)
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::SolanaDeployToken { event } => self
@@ -894,8 +915,17 @@ impl OmniConnector {
                 recipient: receiver,
                 fee,
                 message,
+                nonce,
             } => self
-                .evm_init_transfer(chain_kind, near_token_id, amount, receiver, fee, message)
+                .evm_init_transfer(
+                    chain_kind,
+                    near_token_id,
+                    amount,
+                    receiver,
+                    fee,
+                    message,
+                    nonce,
+                )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::SolanaInitTransfer {
@@ -952,15 +982,20 @@ impl OmniConnector {
                 )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            FinTransferArgs::EvmFinTransfer { chain_kind, event } => self
-                .evm_fin_transfer(chain_kind, event)
+            FinTransferArgs::EvmFinTransfer {
+                chain_kind,
+                event,
+                nonce,
+            } => self
+                .evm_fin_transfer(chain_kind, event, nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
+                nonce,
             } => self
-                .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash)
+                .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::SolanaFinTransfer {
