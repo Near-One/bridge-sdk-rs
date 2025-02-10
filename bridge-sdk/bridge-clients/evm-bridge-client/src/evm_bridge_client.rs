@@ -388,8 +388,9 @@ impl EvmBridgeClient {
         let client = Provider::<Http>::try_from(endpoint)
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
 
+        let signer_address = self.signer()?.address();
         client
-            .estimate_gas(&call.tx, None)
+            .estimate_gas(call.tx.set_from(signer_address), None)
             .await
             .map_err(|err| BridgeSdkError::EvmGasEstimateError(err.to_string()))?;
 
