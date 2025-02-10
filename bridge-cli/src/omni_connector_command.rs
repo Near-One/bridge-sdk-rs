@@ -263,7 +263,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
                         near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                        nonce: None,
+                        tx_nonce: None,
                     })
                     .await
                     .unwrap();

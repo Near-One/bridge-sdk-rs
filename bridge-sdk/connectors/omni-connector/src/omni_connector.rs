@@ -57,12 +57,12 @@ pub enum DeployTokenArgs {
     EvmDeployToken {
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     },
     EvmDeployTokenWithTxHash {
         chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
-        nonce: Option<U256>,
+        tx_nonce: Option<U256>,
     },
     SolanaDeployToken {
         event: OmniBridgeEvent,
@@ -764,17 +764,17 @@ impl OmniConnector {
             DeployTokenArgs::EvmDeployToken {
                 chain_kind,
                 event,
-                nonce,
+                tx_nonce,
             } => self
-                .evm_deploy_token(chain_kind, event, nonce)
+                .evm_deploy_token(chain_kind, event, tx_nonce)
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::EvmDeployTokenWithTxHash {
                 chain_kind,
                 near_tx_hash,
-                nonce,
+                tx_nonce,
             } => self
-                .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash, nonce)
+                .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::SolanaDeployToken { event } => self
@@ -858,7 +858,7 @@ impl OmniConnector {
                 recipient: receiver,
                 fee,
                 message,
-                tx_nonce: nonce,
+                tx_nonce,
             } => self
                 .evm_init_transfer(
                     chain_kind,
@@ -867,7 +867,7 @@ impl OmniConnector {
                     receiver,
                     fee,
                     message,
-                    nonce,
+                    tx_nonce,
                 )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
@@ -924,17 +924,17 @@ impl OmniConnector {
             FinTransferArgs::EvmFinTransfer {
                 chain_kind,
                 event,
-                tx_nonce: nonce,
+                tx_nonce,
             } => self
-                .evm_fin_transfer(chain_kind, event, nonce)
+                .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
-                tx_nonce: nonce,
+                tx_nonce,
             } => self
-                .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, nonce)
+                .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::SolanaFinTransfer {
