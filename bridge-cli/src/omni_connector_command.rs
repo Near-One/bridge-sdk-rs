@@ -5,7 +5,7 @@ use clap::Subcommand;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::NearBridgeClientBuilder;
-use near_primitives::{hash::CryptoHash, types::AccountId};
+use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use omni_connector::{
     BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
     OmniConnectorBuilder,
@@ -226,7 +226,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token)
+                .log_metadata(token, Some(TxExecutionStatus::Included))
                 .await
                 .unwrap();
         }
@@ -242,6 +242,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            wait_until: Some(TxExecutionStatus::Included),
                         })
                         .await
                         .unwrap();
@@ -251,6 +252,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .deploy_token(DeployTokenArgs::NearDeployToken {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            wait_until: Some(TxExecutionStatus::Included),
                         })
                         .await
                         .unwrap();
@@ -281,7 +283,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount)
+                .near_storage_deposit_for_token(token, amount, TxExecutionStatus::Included)
                 .await
                 .unwrap();
         }
@@ -304,6 +306,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         fee: fee.into(),
                         native_fee: native_fee.into(),
                     }),
+                    TxExecutionStatus::Included,
                 )
                 .await
                 .unwrap();
@@ -319,6 +322,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token,
                     amount,
                     recipient,
+                    wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
                 .unwrap();
@@ -344,6 +348,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             }
                         })
                         .collect(),
+                    wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
                 .unwrap();
@@ -369,6 +374,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     vaa,
+                    wait_until: Some(TxExecutionStatus::Included),
                 })
                 .await
                 .unwrap();
@@ -478,6 +484,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        wait_until: Some(TxExecutionStatus::Included),
                     })
                     .await
                     .unwrap();
@@ -487,6 +494,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
                         tx_hash,
+                        wait_until: Some(TxExecutionStatus::Included),
                     })
                     .await
                     .unwrap();
@@ -497,13 +505,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .solana_set_admin(admin.parse().unwrap())
                 .await
                 .unwrap();
-        },
+        }
         OmniConnectorSubCommand::SolanaPause { config_cli } => {
             omni_connector(network, config_cli)
                 .solana_pause()
                 .await
                 .unwrap();
-        },
+        }
     }
 }
 
