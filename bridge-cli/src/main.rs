@@ -230,6 +230,45 @@ fn default_config(network: Network) -> CliConfig {
 
             config: None,
         },
+        Network::Devnet => CliConfig {
+            near_rpc: Some(defaults::NEAR_RPC_DEVNET.to_owned()),
+            near_signer: None,
+            near_private_key: None,
+            near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
+            near_light_client_eth_address: Some(
+                defaults::NEAR_LIGHT_CLIENT_ETH_ADDRESS_DEVNET.to_owned(),
+            ),
+
+            eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
+            eth_chain_id: Some(defaults::ETH_CHAIN_ID_DEVNET),
+            eth_private_key: None,
+            eth_bridge_token_factory_address: Some(
+                defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+
+            base_rpc: Some(defaults::BASE_RPC_DEVNET.to_owned()),
+            base_chain_id: Some(defaults::BASE_CHAIN_ID_DEVNET),
+            base_private_key: None,
+            base_bridge_token_factory_address: Some(
+                defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+
+            arb_rpc: Some(defaults::ARB_RPC_DEVNET.to_owned()),
+            arb_chain_id: Some(defaults::ARB_CHAIN_ID_DEVNET),
+            arb_private_key: None,
+            arb_bridge_token_factory_address: Some(
+                defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+
+            solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
+            solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
+            solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+            solana_keypair: None,
+
+            wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
+
+            config: None,
+        },
     }
 }
 
@@ -256,6 +295,7 @@ fn combined_config(cli_config: CliConfig, network: Network) -> CliConfig {
 enum Network {
     Mainnet,
     Testnet,
+    Devnet,
 }
 
 #[derive(Parser, Debug)]
