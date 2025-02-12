@@ -150,6 +150,7 @@ fn env_config() -> CliConfig {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn default_config(network: Network) -> CliConfig {
     match network {
         Network::Mainnet => CliConfig {
