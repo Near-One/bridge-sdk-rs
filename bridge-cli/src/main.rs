@@ -18,8 +18,6 @@ struct CliConfig {
     near_private_key: Option<String>,
     #[arg(long)]
     near_token_locker_id: Option<String>,
-    #[arg(long)]
-    near_light_client_eth_address: Option<String>,
 
     #[arg(long)]
     eth_rpc: Option<String>,
@@ -71,9 +69,6 @@ impl CliConfig {
             near_signer: self.near_signer.or(other.near_signer),
             near_private_key: self.near_private_key.or(other.near_private_key),
             near_token_locker_id: self.near_token_locker_id.or(other.near_token_locker_id),
-            near_light_client_eth_address: self
-                .near_light_client_eth_address
-                .or(other.near_light_client_eth_address),
 
             eth_rpc: self.eth_rpc.or(other.eth_rpc),
             eth_chain_id: self.eth_chain_id.or(other.eth_chain_id),
@@ -116,7 +111,6 @@ fn env_config() -> CliConfig {
         near_signer: env::var("NEAR_SIGNER").ok(),
         near_private_key: env::var("NEAR_PRIVATE_KEY").ok(),
         near_token_locker_id: env::var("TOKEN_LOCKER_ID").ok(),
-        near_light_client_eth_address: env::var("NEAR_LIGHT_CLIENT_ADDRESS").ok(),
 
         eth_rpc: env::var("ETH_RPC").ok(),
         eth_chain_id: env::var("ETH_CHAIN_ID")
@@ -158,9 +152,6 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
-            near_light_client_eth_address: Some(
-                defaults::NEAR_LIGHT_CLIENT_ETH_ADDRESS_MAINNET.to_owned(),
-            ),
 
             eth_rpc: Some(defaults::ETH_RPC_MAINNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_MAINNET),
@@ -197,9 +188,6 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
-            near_light_client_eth_address: Some(
-                defaults::NEAR_LIGHT_CLIENT_ETH_ADDRESS_TESTNET.to_owned(),
-            ),
 
             eth_rpc: Some(defaults::ETH_RPC_TESTNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_TESTNET),
@@ -236,9 +224,6 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
-            near_light_client_eth_address: Some(
-                defaults::NEAR_LIGHT_CLIENT_ETH_ADDRESS_DEVNET.to_owned(),
-            ),
 
             eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_DEVNET),

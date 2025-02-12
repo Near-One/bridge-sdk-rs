@@ -1,8 +1,6 @@
 /// Mainnet
 pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
-pub const NEAR_LIGHT_CLIENT_ETH_ADDRESS_MAINNET: &str =
-    "0x3FEFc5A4B1c02f21cBc8D3613643ba0635b9a873";
 
 pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
@@ -28,8 +26,6 @@ pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
-pub const NEAR_LIGHT_CLIENT_ETH_ADDRESS_TESTNET: &str =
-    "0x202cdf10bfa45a3d2190901373edd864f071d707";
 
 pub const ETH_RPC_TESTNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_TESTNET: u64 = 11_155_111;
@@ -55,8 +51,6 @@ pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_DEVNET: &str = "omni-locker.testnet";
-pub const NEAR_LIGHT_CLIENT_ETH_ADDRESS_DEVNET: &str =
-    "0x202cdf10bfa45a3d2190901373edd864f071d707";
 
 pub const ETH_RPC_DEVNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_DEVNET: u64 = 11_155_111;
