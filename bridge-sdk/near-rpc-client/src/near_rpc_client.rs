@@ -14,7 +14,7 @@ use near_primitives::views::{FinalExecutionOutcomeView, QueryRequest};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use tokio::time;
 
-pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 180;
+pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 500;
 
 lazy_static! {
     static ref DEFAULT_CONNECTOR: JsonRpcClientConnector = JsonRpcClient::with(
