@@ -195,6 +195,7 @@ pub async fn change_and_wait(
     server_addr: &str,
     change_request: ChangeRequest,
     wait_until: near_primitives::views::TxExecutionStatus,
+    wait_final_outcome_timeout_sec: Option<u64>,
 ) -> Result<CryptoHash, NearRpcError> {
     let tx_hash = change(server_addr, change_request.clone()).await?;
 
@@ -203,7 +204,7 @@ pub async fn change_and_wait(
         tx_hash,
         change_request.signer.account_id,
         wait_until,
-        DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC,
+        wait_final_outcome_timeout_sec.unwrap_or(DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC),
     )
     .await
 }

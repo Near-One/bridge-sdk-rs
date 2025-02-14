@@ -188,6 +188,7 @@ impl NearBridgeClient {
         token_id: String,
         amount: u128,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker = self.token_locker_id()?;
@@ -210,6 +211,7 @@ impl NearBridgeClient {
                 deposit: amount,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -225,6 +227,7 @@ impl NearBridgeClient {
         &self,
         amount: u128,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id()?;
@@ -245,6 +248,7 @@ impl NearBridgeClient {
                 deposit: amount,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -293,6 +297,7 @@ impl NearBridgeClient {
         &self,
         token_id: String,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -312,6 +317,7 @@ impl NearBridgeClient {
                 deposit: self.get_required_deposit_for_mpc().await?,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -326,6 +332,7 @@ impl NearBridgeClient {
         chain_kind: ChainKind,
         vaa: &str,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id()?;
@@ -353,6 +360,7 @@ impl NearBridgeClient {
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -369,6 +377,7 @@ impl NearBridgeClient {
         &self,
         args: DeployTokenArgs,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id()?;
@@ -386,6 +395,7 @@ impl NearBridgeClient {
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -403,6 +413,7 @@ impl NearBridgeClient {
         &self,
         args: BindTokenArgs,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id()?;
@@ -420,6 +431,7 @@ impl NearBridgeClient {
                 deposit: BIND_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -435,6 +447,7 @@ impl NearBridgeClient {
         fee_recipient: Option<AccountId>,
         fee: Option<Fee>,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -456,6 +469,7 @@ impl NearBridgeClient {
                 deposit: self.get_required_deposit_for_mpc().await?,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -500,6 +514,7 @@ impl NearBridgeClient {
         amount: u128,
         receiver: OmniAddress,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker = self.token_locker_id()?;
@@ -522,6 +537,7 @@ impl NearBridgeClient {
                     nonce: transaction_options.nonce,
                     wait_until: TxExecutionStatus::Final,
                 },
+                wait_final_outcome_timeout_sec,
             )
             .await?;
         }
@@ -555,6 +571,7 @@ impl NearBridgeClient {
                 deposit: INIT_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -568,6 +585,7 @@ impl NearBridgeClient {
         &self,
         args: FinTransferArgs,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -584,6 +602,7 @@ impl NearBridgeClient {
                 deposit: FIN_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -600,6 +619,7 @@ impl NearBridgeClient {
         &self,
         args: ClaimFeeArgs,
         transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let token_locker_id = self.token_locker_id()?;
@@ -617,6 +637,7 @@ impl NearBridgeClient {
                 deposit: CLAIM_FEE_DEPOSIT,
             },
             transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
         )
         .await?;
 

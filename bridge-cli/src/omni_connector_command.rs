@@ -234,7 +234,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token, TransactionOptions::default())
+                .log_metadata(token, TransactionOptions::default(), None)
                 .await
                 .unwrap();
         }
@@ -251,6 +251,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                             transaction_options: TransactionOptions::default(),
+                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -261,6 +262,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                             transaction_options: TransactionOptions::default(),
+                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -292,7 +294,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, TransactionOptions::default())
+                .near_storage_deposit_for_token(token, amount, TransactionOptions::default(), None)
                 .await
                 .unwrap();
         }
@@ -316,6 +318,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     }),
                     TransactionOptions::default(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -332,6 +335,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     amount,
                     recipient,
                     transaction_options: TransactionOptions::default(),
+                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -358,6 +362,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     transaction_options: TransactionOptions::default(),
+                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -384,6 +389,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .collect(),
                     vaa,
                     transaction_options: TransactionOptions::default(),
+                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -504,6 +510,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                         transaction_options: TransactionOptions::default(),
+                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
@@ -514,6 +521,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash,
                         transaction_options: TransactionOptions::default(),
+                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
