@@ -1,0 +1,10 @@
+[package]
+name = "crypto-utils"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+near-crypto.workspace = true
+crypto-shared.workspace = true
+ethers.workspace = true
+near-primitives.workspace = true
