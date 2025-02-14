@@ -33,7 +33,7 @@ const FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const FIN_TRANSFER_DEPOSIT: u128 = 60_000_000_000_000_000_000_000;
 
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
-const CLAIM_FEE_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
+const CLAIM_FEE_DEPOSIT: u128 = 1;
 
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
