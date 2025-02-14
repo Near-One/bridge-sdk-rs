@@ -30,7 +30,7 @@ const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_TRANSFER_DEPOSIT: u128 = 1;
 
 const FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
-const FIN_TRANSFER_DEPOSIT: u128 = 60_000_000_000_000_000_000_000;
+const FIN_TRANSFER_DEPOSIT: u128 = 600_000_000_000_000_000_000;
 
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
@@ -571,6 +571,13 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
+        let mut required_deposit = FIN_TRANSFER_DEPOSIT;
+        for storage_deposit_action in args.storage_deposit_actions.clone() {
+            if let Some(amount) = storage_deposit_action.storage_deposit_amount {
+                required_deposit += amount;
+            }
+        }
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -581,7 +588,7 @@ impl NearBridgeClient {
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
                 gas: FIN_TRANSFER_GAS,
-                deposit: FIN_TRANSFER_DEPOSIT,
+                deposit: required_deposit,
             },
             transaction_options.wait_until,
         )
