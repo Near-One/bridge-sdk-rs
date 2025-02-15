@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: rainbow-bridge-sdk-crypto-utils
+  title: Rainbow Bridge SDK Cryptography Utilities
+  tags:
+    - crypto-utils
+  links: []
+  annotations:
+    aurora.dev/security-tier: "1"
+spec:
+  owner: nearone-team
+  type: library
+  lifecycle: production

@@ -576,18 +576,14 @@ impl OmniConnector {
     }
 
     pub async fn solana_initialize(&self, program_keypair: Keypair) -> Result<Signature> {
-        // Derived based on near bridge account id and derivation path (bridge-1)
-        const DERIVED_NEAR_BRIDGE_ADDRESS: [u8; 64] = [
-            19, 55, 243, 130, 164, 28, 152, 3, 170, 254, 187, 182, 135, 17, 208, 98, 216, 182, 238,
-            146, 2, 127, 83, 201, 149, 246, 138, 221, 29, 111, 186, 167, 150, 196, 102, 219, 89,
-            69, 115, 114, 185, 116, 6, 233, 154, 114, 222, 142, 167, 206, 157, 39, 177, 221, 224,
-            86, 146, 61, 226, 206, 55, 2, 119, 12,
-        ];
+        let near_bridge_account_id = self.near_bridge_client()?.token_locker_id()?;
+        let derived_bridge_address =
+            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1");
 
         let solana_bridge_client = self.solana_bridge_client()?;
 
         let signature = solana_bridge_client
-            .initialize(DERIVED_NEAR_BRIDGE_ADDRESS, program_keypair)
+            .initialize(derived_bridge_address, program_keypair)
             .await?;
 
         tracing::info!(

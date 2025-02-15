@@ -20,6 +20,7 @@ tracing.workspace = true
 solana-sdk.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
+crypto-utils = { path = "../../crypto-utils" }
 bridge-connector-common = { path = "../bridge-connector-common" }
 
 near-bridge-client = { path = "../../bridge-clients/near-bridge-client" }
