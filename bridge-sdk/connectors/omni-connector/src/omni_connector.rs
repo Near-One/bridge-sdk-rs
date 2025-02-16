@@ -575,6 +575,19 @@ impl OmniConnector {
         Ok(signature)
     }
 
+    pub async fn solana_update_metadata(&self, token: Pubkey, uri: String) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let signature = solana_bridge_client.update_metadata(token, uri).await?;
+
+        tracing::info!(
+            signature = signature.to_string(),
+            "Sent update metadata transaction"
+        );
+
+        Ok(signature)
+    }
+
     pub async fn solana_initialize(&self, program_keypair: Keypair) -> Result<Signature> {
         let near_bridge_account_id = self.near_bridge_client()?.token_locker_id()?;
         let derived_bridge_address =

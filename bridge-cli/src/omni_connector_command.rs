@@ -214,6 +214,14 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    SolanaUpdateMetadata {
+        #[clap(short, long, help = "Token to update the metadata for")]
+        token: String,
+        #[clap(short, long, help = "URI to update the metadata to")]
+        uri: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Bind a token on a chain that supports Wormhole")]
     BindToken {
         #[clap(short, long, help = "Chain to bind the token from")]
@@ -536,6 +544,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::SolanaPause { config_cli } => {
             omni_connector(network, config_cli)
                 .solana_pause()
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::SolanaUpdateMetadata {
+            token,
+            uri,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .solana_update_metadata(token.parse().unwrap(), uri)
                 .await
                 .unwrap();
         }
