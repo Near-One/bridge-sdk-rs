@@ -23,7 +23,7 @@ The repository also contains the CLI tool, which provides a way to perform bridg
 
 ### Installation
 
-The SDK is not yet published so you must refer to this github repo in your `Cargo.toml`. For instance:
+The SDK is not yet published so you must refer to this GitHub repo in your `Cargo.toml`. For example:
 ```toml
 [dependencies]
 omni-connector = { git = "https://github.com/Near-One/bridge-sdk-rs", package = "omni-connector" }
@@ -104,4 +104,4 @@ The [Bridge CLI](bridge-cli/README.md) is the recommended interface for most use
 
 ## License
 
-This project is licensed under the GPL v3 License - see the [LICENSE](../LICENSE) file for details.
+This project is licensed under the GPL v3 License - see the [LICENSE](./LICENSE) file for details.
