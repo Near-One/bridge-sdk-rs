@@ -166,6 +166,22 @@ pub enum FinTransferArgs {
     },
 }
 
+trait IntoChainId {
+    fn into_chain_id(self) -> u8;
+}
+
+impl IntoChainId for ChainKind {
+    fn into_chain_id(self) -> u8 {
+        match self {
+            ChainKind::Eth => 0,
+            ChainKind::Near => 1,
+            ChainKind::Sol => 2,
+            ChainKind::Arb => 3,
+            ChainKind::Base => 4,
+        }
+    }
+}
+
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
@@ -755,7 +771,7 @@ impl OmniConnector {
             payload: DepositPayload {
                 destination_nonce: message_payload.destination_nonce,
                 transfer_id: TransferId {
-                    origin_chain: message_payload.transfer_id.origin_chain as u8,
+                    origin_chain: message_payload.transfer_id.origin_chain.into_chain_id(),
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
                 amount: message_payload.amount.into(),
