@@ -6,8 +6,24 @@ use ethers::{abi::Address, prelude::*};
 use omni_types::prover_args::EvmProof;
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
-use omni_types::{EvmAddress, Fee};
+use omni_types::{ChainKind, EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
+
+trait IntoChainId {
+    fn into_chain_id(self) -> u8;
+}
+
+impl IntoChainId for ChainKind {
+    fn into_chain_id(self) -> u8 {
+        match self {
+            ChainKind::Eth => 0,
+            ChainKind::Near => 1,
+            ChainKind::Sol => 2,
+            ChainKind::Arb => 3,
+            ChainKind::Base => 4,
+        }
+    }
+}
 
 abigen!(
     BridgeTokenFactory,
@@ -203,7 +219,7 @@ impl EvmBridgeClient {
 
         let bridge_deposit = TransferMessagePayload {
             destination_nonce: message_payload.destination_nonce,
-            origin_chain: message_payload.transfer_id.origin_chain as u8,
+            origin_chain: message_payload.transfer_id.origin_chain.into_chain_id(),
             origin_nonce: message_payload.transfer_id.origin_nonce,
             token_address: match message_payload.token_address {
                 OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {
