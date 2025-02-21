@@ -1,6 +1,6 @@
 [package]
 name = "solana-bridge-client"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -11,6 +11,7 @@ solana-client.workspace = true
 solana-sdk.workspace = true
 mpl-token-metadata.workspace = true
 spl-token.workspace = true
+spl-token-2022.workspace = true
 spl-associated-token-account.workspace = true
 thiserror.workspace = true
 

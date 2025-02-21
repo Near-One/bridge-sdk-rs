@@ -53,6 +53,7 @@ omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
 spl-token = "7.0.0"
+spl-token-2022 = "7.0.0"
 spl-associated-token-account = "6.0.0"
 mpl-token-metadata = "5.1.0"
 

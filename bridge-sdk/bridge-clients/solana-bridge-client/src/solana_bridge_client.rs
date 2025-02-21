@@ -184,6 +184,11 @@ impl SolanaBridgeClient {
             &metadata_program_id,
         );
 
+        let token_program_id = self.get_mint_owner(token).await?;
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+            return Err(SolanaBridgeClientError::InvalidArgument(format!("Not a Solana token: {token}")));
+        }
+
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
@@ -212,7 +217,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(system_program::ID, false),
                 AccountMeta::new_readonly(system_program::ID, false),
-                AccountMeta::new_readonly(spl_token::ID, false),
+                AccountMeta::new_readonly(token_program_id, false),
                 AccountMeta::new_readonly(spl_associated_token_account::ID, false),
             ],
         );
@@ -612,6 +617,17 @@ impl SolanaBridgeClient {
             .map_err(|e| SolanaBridgeClientError::InvalidAccountData(e.to_string()))?;
 
         Ok(mint_data.mint_authority)
+    }
+
+    async fn get_mint_owner(
+        &self,
+        token: Pubkey,
+    ) -> Result<Pubkey, SolanaBridgeClientError> {
+        let client = self.client()?;
+
+        let mint_account = client.get_account(&token).await?;
+        
+        Ok(mint_account.owner)
     }
 
     pub fn client(&self) -> Result<&RpcClient, SolanaBridgeClientError> {
