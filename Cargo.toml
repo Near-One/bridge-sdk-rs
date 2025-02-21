@@ -55,6 +55,7 @@ solana-client = "2.0.13"
 spl-token = "7.0.0"
 spl-associated-token-account = "6.0.0"
 mpl-token-metadata = "5.1.0"
+openssl-sys = { version = "*", features = ["vendored"] }
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"
