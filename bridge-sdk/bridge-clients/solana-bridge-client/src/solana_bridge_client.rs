@@ -613,7 +613,8 @@ impl SolanaBridgeClient {
 
         let mint_account = client.get_account(&token).await?;
 
-        let mint_data = Mint::unpack(&mint_account.data)
+        const MINT_BASIC_DATA_SIZE: usize = 82;
+        let mint_data = Mint::unpack(&mint_account.data[..MINT_BASIC_DATA_SIZE])
             .map_err(|e| SolanaBridgeClientError::InvalidAccountData(e.to_string()))?;
 
         Ok(mint_data.mint_authority)

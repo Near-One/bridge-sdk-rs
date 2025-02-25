@@ -863,7 +863,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "clap",
  "dotenv",
@@ -4634,7 +4634,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "borsh 1.5.5",
  "bridge-connector-common",
@@ -6517,7 +6517,7 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "borsh 1.5.5",
  "derive_builder",
