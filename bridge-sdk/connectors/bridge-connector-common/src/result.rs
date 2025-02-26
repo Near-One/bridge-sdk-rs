@@ -50,6 +50,7 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
             SolanaBridgeClientError::InvalidEvent => {
                 Self::SolanaOtherError("Invalid event".to_string())
             }
+            SolanaBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
         }
     }
 }

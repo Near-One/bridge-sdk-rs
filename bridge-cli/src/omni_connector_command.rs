@@ -268,7 +268,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     omni_connector(network, config_cli)
                         .deploy_token(DeployTokenArgs::NearDeployToken {
                             chain_kind: source_chain,
-                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            tx_hash,
                             transaction_options: TransactionOptions::default(),
                             wait_final_outcome_timeout_sec: None,
                         })

@@ -203,7 +203,7 @@ impl EvmBridgeClient {
 
         let bridge_deposit = TransferMessagePayload {
             destination_nonce: message_payload.destination_nonce,
-            origin_chain: message_payload.transfer_id.origin_chain as u8,
+            origin_chain: message_payload.transfer_id.origin_chain.into(),
             origin_nonce: message_payload.transfer_id.origin_nonce,
             token_address: match message_payload.token_address {
                 OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {

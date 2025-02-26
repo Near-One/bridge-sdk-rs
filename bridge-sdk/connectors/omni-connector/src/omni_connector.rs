@@ -35,7 +35,7 @@ pub struct OmniConnector {
 pub enum WormholeDeployTokenArgs {
     Transaction {
         chain_kind: ChainKind,
-        tx_hash: TxHash,
+        tx_hash: String,
     },
     VAA {
         chain_kind: ChainKind,
@@ -46,7 +46,7 @@ pub enum WormholeDeployTokenArgs {
 pub enum DeployTokenArgs {
     NearDeployToken {
         chain_kind: ChainKind,
-        tx_hash: TxHash,
+        tx_hash: String,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     },
@@ -212,7 +212,7 @@ impl OmniConnector {
             } => {
                 let wormhole_bridge_client = self.wormhole_bridge_client()?;
                 let vaa = wormhole_bridge_client
-                    .get_vaa_by_tx_hash(tx_hash.to_string())
+                    .get_vaa_by_tx_hash(tx_hash)
                     .await?;
 
                 near_bridge_client
@@ -764,7 +764,7 @@ impl OmniConnector {
             payload: DepositPayload {
                 destination_nonce: message_payload.destination_nonce,
                 transfer_id: TransferId {
-                    origin_chain: message_payload.transfer_id.origin_chain as u8,
+                    origin_chain: message_payload.transfer_id.origin_chain.into(),
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
                 amount: message_payload.amount.into(),
