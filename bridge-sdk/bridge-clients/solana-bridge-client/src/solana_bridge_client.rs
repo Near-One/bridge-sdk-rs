@@ -152,7 +152,9 @@ impl SolanaBridgeClient {
     pub async fn update_metadata(
         &self,
         token: Pubkey,
-        uri: String,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
     ) -> Result<Signature, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let keypair = self.keypair()?;
@@ -166,11 +168,7 @@ impl SolanaBridgeClient {
             &metadata_program_id,
         );
 
-        let instruction_data = UpdateMetadata {
-            uri: Some(uri),
-            name: None,
-            symbol: None,
-        };
+        let instruction_data = UpdateMetadata { name, symbol, uri };
 
         let instruction = Instruction::new_with_borsh(
             *program_id,
@@ -228,7 +226,9 @@ impl SolanaBridgeClient {
 
         let token_program_id = self.get_mint_owner(token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
-            return Err(SolanaBridgeClientError::InvalidArgument(format!("Not a Solana token: {token}")));
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Not a Solana token: {token}"
+            )));
         }
 
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
@@ -349,7 +349,9 @@ impl SolanaBridgeClient {
 
         let token_program_id = self.get_mint_owner(token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
-            return Err(SolanaBridgeClientError::InvalidArgument(format!("Not a Solana token: {token}")));
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Not a Solana token: {token}"
+            )));
         }
 
         let (from_token_account, _) = Pubkey::find_program_address(
@@ -491,7 +493,9 @@ impl SolanaBridgeClient {
 
         let token_program_id = self.get_mint_owner(solana_token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
-            return Err(SolanaBridgeClientError::InvalidArgument(format!("Not a Solana token: {solana_token}")));
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Not a Solana token: {solana_token}"
+            )));
         }
 
         let (token_account, _) = Pubkey::find_program_address(
@@ -673,14 +677,11 @@ impl SolanaBridgeClient {
         Ok(mint_data.mint_authority)
     }
 
-    async fn get_mint_owner(
-        &self,
-        token: Pubkey,
-    ) -> Result<Pubkey, SolanaBridgeClientError> {
+    async fn get_mint_owner(&self, token: Pubkey) -> Result<Pubkey, SolanaBridgeClientError> {
         let client = self.client()?;
 
         let mint_account = client.get_account(&token).await?;
-        
+
         Ok(mint_account.owner)
     }
 

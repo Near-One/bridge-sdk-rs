@@ -211,9 +211,7 @@ impl OmniConnector {
                 tx_hash,
             } => {
                 let wormhole_bridge_client = self.wormhole_bridge_client()?;
-                let vaa = wormhole_bridge_client
-                    .get_vaa_by_tx_hash(tx_hash)
-                    .await?;
+                let vaa = wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await?;
 
                 near_bridge_client
                     .deploy_token_with_vaa_proof(
@@ -575,10 +573,18 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_update_metadata(&self, token: Pubkey, uri: String) -> Result<Signature> {
+    pub async fn solana_update_metadata(
+        &self,
+        token: Pubkey,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
+    ) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
-        let signature = solana_bridge_client.update_metadata(token, uri).await?;
+        let signature = solana_bridge_client
+            .update_metadata(token, name, symbol, uri)
+            .await?;
 
         tracing::info!(
             signature = signature.to_string(),
