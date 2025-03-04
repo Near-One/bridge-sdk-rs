@@ -24,7 +24,6 @@ const BIND_TOKEN_GAS: u64 = 300_000_000_000_000;
 const BIND_TOKEN_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 
 const SIGN_TRANSFER_GAS: u64 = 300_000_000_000_000;
-const SIGN_TRANSFER_DEPOSIT: u128 = 500_000_000_000_000_000_000_000;
 
 const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_TRANSFER_DEPOSIT: u128 = 1;
@@ -34,6 +33,8 @@ const FIN_TRANSFER_DEPOSIT: u128 = 600_000_000_000_000_000_000;
 
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
+
+const MPC_DEPOSIT: u128 = 1;
 
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
@@ -260,37 +261,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    pub async fn get_required_deposit_for_mpc(&self) -> Result<u128> {
-        let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: token_locker_id,
-                method_name: "get_mpc_account".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        let mpc_account = serde_json::from_slice::<AccountId>(&response)?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: mpc_account,
-                method_name: "experimental_signature_deposit".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        serde_json::from_slice::<String>(&response)
-            .map(|response| response.parse::<u128>().unwrap_or(SIGN_TRANSFER_DEPOSIT))
-            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))
-    }
-
     /// Logs token metadata to token_locker contract. The proof from this transaction is then used to deploy a corresponding token on other chains
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_token_metadata(
@@ -314,7 +284,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: LOG_METADATA_GAS,
-                deposit: self.get_required_deposit_for_mpc().await?,
+                deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
@@ -466,7 +436,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: SIGN_TRANSFER_GAS,
-                deposit: self.get_required_deposit_for_mpc().await?,
+                deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
