@@ -211,9 +211,7 @@ impl OmniConnector {
                 tx_hash,
             } => {
                 let wormhole_bridge_client = self.wormhole_bridge_client()?;
-                let vaa = wormhole_bridge_client
-                    .get_vaa_by_tx_hash(tx_hash)
-                    .await?;
+                let vaa = wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await?;
 
                 near_bridge_client
                     .deploy_token_with_vaa_proof(
@@ -1082,6 +1080,11 @@ impl OmniConnector {
         wormhole_bridge_client
             .get_vaa(chain_id, emitter, sequence)
             .await
+    }
+
+    pub async fn wormhole_get_vaa_by_tx_hash(&self, tx_hash: String) -> Result<String> {
+        let wormhole_bridge_client = self.wormhole_bridge_client()?;
+        wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
     pub fn near_bridge_client(&self) -> Result<&NearBridgeClient> {
