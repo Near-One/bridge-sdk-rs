@@ -210,8 +210,7 @@ impl OmniConnector {
                 chain_kind,
                 tx_hash,
             } => {
-                let wormhole_bridge_client = self.wormhole_bridge_client()?;
-                let vaa = wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await?;
+                let vaa = self.wormhole_get_vaa_by_tx_hash(tx_hash).await?;
 
                 near_bridge_client
                     .deploy_token_with_vaa_proof(
@@ -913,10 +912,7 @@ impl OmniConnector {
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             } => {
-                let vaa = self
-                    .wormhole_bridge_client()?
-                    .get_vaa_by_tx_hash(tx_hash)
-                    .await?;
+                let vaa = self.wormhole_get_vaa_by_tx_hash(tx_hash).await?;
                 let args = omni_types::prover_args::WormholeVerifyProofArgs {
                     proof_kind: omni_types::prover_result::ProofKind::DeployToken,
                     vaa,
