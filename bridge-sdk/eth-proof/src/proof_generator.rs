@@ -147,6 +147,7 @@ fn encode_header(header: &BlockHeader) -> Vec<u8> {
         .parent_beacon_block_root
         .as_ref()
         .map(|v| stream.append(v));
+    header.requests_hash.as_ref().map(|v| stream.append(v));
 
     stream.finalize_unbounded_list();
     stream.out().to_vec()
