@@ -69,10 +69,7 @@ pub struct NearBridgeClient {
 }
 
 impl NearBridgeClient {
-    pub async fn get_transfer_message(
-        &self,
-        transfer_id: TransferId,
-    ) -> Result<Option<TransferMessage>> {
+    pub async fn get_transfer_message(&self, transfer_id: TransferId) -> Result<TransferMessage> {
         let endpoint = self.endpoint()?;
         let token_id = self.token_locker_id()?;
 
@@ -88,7 +85,7 @@ impl NearBridgeClient {
         )
         .await?;
 
-        let transfer_message = serde_json::from_slice::<TransferMessage>(&response).ok();
+        let transfer_message = serde_json::from_slice::<TransferMessage>(&response)?;
 
         Ok(transfer_message)
     }

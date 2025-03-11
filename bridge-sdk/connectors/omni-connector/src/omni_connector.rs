@@ -174,7 +174,7 @@ impl OmniConnector {
     pub async fn near_get_transfer_message(
         &self,
         transfer_id: omni_types::TransferId,
-    ) -> Result<Option<TransferMessage>> {
+    ) -> Result<TransferMessage> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_transfer_message(transfer_id).await
     }
