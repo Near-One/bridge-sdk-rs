@@ -54,8 +54,8 @@ omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
 spl-token = "7.0.0"
-spl-token-2022 = "7.0.0"
-spl-associated-token-account = "6.0.0"
+spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }
