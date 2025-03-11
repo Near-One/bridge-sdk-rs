@@ -9,7 +9,7 @@ use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
-    ChainKind, Fee, OmniAddress, TransferId,
+    ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
 
@@ -69,6 +69,30 @@ pub struct NearBridgeClient {
 }
 
 impl NearBridgeClient {
+    pub async fn get_transfer_message(
+        &self,
+        transfer_id: TransferId,
+    ) -> Result<Option<TransferMessage>> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_transfer_message".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let transfer_message = serde_json::from_slice::<TransferMessage>(&response).ok();
+
+        Ok(transfer_message)
+    }
+
     pub async fn get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
         let token_id = self.token_locker_id()?;

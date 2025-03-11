@@ -9,7 +9,7 @@ use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
-use omni_types::{EvmAddress, Fee, OmniAddress};
+use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage};
 
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
@@ -169,6 +169,14 @@ pub enum FinTransferArgs {
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub async fn near_get_transfer_message(
+        &self,
+        transfer_id: omni_types::TransferId,
+    ) -> Result<Option<TransferMessage>> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.get_transfer_message(transfer_id).await
     }
 
     pub async fn near_get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
