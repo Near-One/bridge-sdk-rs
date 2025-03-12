@@ -3,7 +3,7 @@ use std::str::FromStr;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
-use near_crypto::SecretKey;
+use near_crypto::{SecretKey, Signer};
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
@@ -707,11 +707,17 @@ impl NearBridgeClient {
             ))?;
         let signer_id = self.account_id()?;
 
-        Ok(near_crypto::InMemorySigner::from_secret_key(
+        if let Signer::InMemory(signer) = near_crypto::InMemorySigner::from_secret_key(
             signer_id,
             SecretKey::from_str(private_key)
                 .map_err(|_| BridgeSdkError::ConfigError("Invalid near private key".to_string()))?,
-        ))
+        ) {
+            Ok(signer)
+        } else {
+            Err(BridgeSdkError::ConfigError(
+                "Failed to create near signer".to_string(),
+            ))
+        }
     }
 
     pub fn token_locker_id(&self) -> Result<AccountId> {

@@ -239,13 +239,19 @@ impl EthConnector {
                 "Near signer account id is not set".to_string(),
             ))?;
 
-        Ok(near_crypto::InMemorySigner::from_secret_key(
+        if let near_crypto::Signer::InMemory(signer) = near_crypto::InMemorySigner::from_secret_key(
             AccountId::from_str(near_signer).map_err(|_| {
                 BridgeSdkError::ConfigError("Invalid near signer account id".to_string())
             })?,
             SecretKey::from_str(near_private_key)
                 .map_err(|_| BridgeSdkError::ConfigError("Invalid near private key".to_string()))?,
-        ))
+        ) {
+            Ok(signer)
+        } else {
+            Err(BridgeSdkError::ConfigError(
+                "Failed to create near signer".to_string(),
+            ))
+        }
     }
 
     fn eth_custodian(&self) -> Result<EthCustodian<SignerMiddleware<Provider<Http>, LocalWallet>>> {
