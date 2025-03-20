@@ -90,6 +90,27 @@ impl NearBridgeClient {
         Ok(transfer_message)
     }
 
+    pub async fn is_transfer_finalised(&self, transfer_id: TransferId) -> Result<bool> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "is_transfer_finalised".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let is_transfer_finalised = serde_json::from_slice::<bool>(&response)?;
+
+        Ok(is_transfer_finalised)
+    }
+
     pub async fn get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
         let token_id = self.token_locker_id()?;
