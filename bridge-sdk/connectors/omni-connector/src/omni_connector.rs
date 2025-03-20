@@ -179,6 +179,14 @@ impl OmniConnector {
         near_bridge_client.get_transfer_message(transfer_id).await
     }
 
+    pub async fn near_is_transfer_finalised(
+        &self,
+        transfer_id: omni_types::TransferId,
+    ) -> Result<bool> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.is_transfer_finalised(transfer_id).await
+    }
+
     pub async fn near_get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_token_id(token_address).await
