@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::prelude::*;
@@ -525,7 +527,16 @@ impl OmniConnector {
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
-            .init_transfer(token, amount, receiver, fee, message, tx_nonce)
+            .init_transfer(
+                H160::from_str(&token).map_err(|_| {
+                    BridgeSdkError::InvalidArgument("Invalid token address".to_string())
+                })?,
+                amount,
+                receiver,
+                fee,
+                message,
+                tx_nonce,
+            )
             .await
     }
 

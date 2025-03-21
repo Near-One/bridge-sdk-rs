@@ -118,7 +118,7 @@ impl EvmBridgeClient {
     #[tracing::instrument(skip_all, name = "EVM INIT TRANSFER")]
     pub async fn init_transfer(
         &self,
-        token: String,
+        token: H160,
         amount: u128,
         receiver: OmniAddress,
         fee: Fee,
@@ -126,9 +126,6 @@ impl EvmBridgeClient {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
-
-        let token = H160::from_str(&token)
-            .map_err(|_| BridgeSdkError::InvalidArgument("Invalid token address".to_string()))?;
 
         let bridge_token = &self.bridge_token(token)?;
 
