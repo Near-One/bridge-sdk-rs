@@ -516,7 +516,7 @@ impl OmniConnector {
     pub async fn evm_init_transfer(
         &self,
         chain_kind: ChainKind,
-        near_token_id: String,
+        token: String,
         amount: u128,
         receiver: OmniAddress,
         fee: Fee,
@@ -525,7 +525,7 @@ impl OmniConnector {
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
-            .init_transfer(near_token_id, amount, receiver, fee, message, tx_nonce)
+            .init_transfer(token, amount, receiver, fee, message, tx_nonce)
             .await
     }
 
@@ -961,22 +961,14 @@ impl OmniConnector {
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::EvmInitTransfer {
                 chain_kind,
-                token: near_token_id,
+                token,
                 amount,
                 recipient: receiver,
                 fee,
                 message,
                 tx_nonce,
             } => self
-                .evm_init_transfer(
-                    chain_kind,
-                    near_token_id,
-                    amount,
-                    receiver,
-                    fee,
-                    message,
-                    tx_nonce,
-                )
+                .evm_init_transfer(chain_kind, token, amount, receiver, fee, message, tx_nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::SolanaInitTransfer {
