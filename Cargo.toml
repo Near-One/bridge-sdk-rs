@@ -10,15 +10,6 @@ members = [
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
     "bridge-sdk/crypto-utils",
-
-    "legacy-bridge-cli",
-    "legacy-bridge-sdk/eth-proof",
-    "legacy-bridge-sdk/near-rpc-client",
-    "legacy-bridge-sdk/near-light-client-on-eth",
-    "legacy-bridge-sdk/connectors/nep141-connector",
-    "legacy-bridge-sdk/connectors/eth-connector",
-    "legacy-bridge-sdk/connectors/bridge-connector-common",
-    "legacy-bridge-sdk/connectors/fast-bridge",
 ]
 
 [workspace.dependencies]
