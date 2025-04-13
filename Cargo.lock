@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "clap",
  "dotenv",
