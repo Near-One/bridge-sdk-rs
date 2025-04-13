@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use crate::error::NearRpcError;
 use crate::light_client_proof::LightClientExecutionProof;
-use lazy_static::lazy_static;
 use near_jsonrpc_client::errors::{
     JsonRpcError, JsonRpcServerError, JsonRpcServerResponseStatusError,
 };
@@ -16,11 +17,11 @@ use tokio::time;
 
 pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 500;
 
-lazy_static! {
-    static ref DEFAULT_CONNECTOR: JsonRpcClientConnector = JsonRpcClient::with(
-        new_near_rpc_client(Some(std::time::Duration::from_secs(30)))
-    );
-}
+static DEFAULT_CONNECTOR: LazyLock<JsonRpcClientConnector> = LazyLock::new(|| {
+    JsonRpcClient::with(new_near_rpc_client(Some(std::time::Duration::from_secs(
+        30,
+    ))))
+});
 
 #[derive(Clone)]
 pub struct ViewRequest {
@@ -239,7 +240,6 @@ pub async fn wait_for_tx(
                     ),
                 ) => {
                     time::sleep(time::Duration::from_secs(2)).await;
-                    continue;
                 }
                 _ => return Err(NearRpcError::RpcTransactionError(err)),
             },
