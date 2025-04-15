@@ -525,6 +525,8 @@ impl NearBridgeClient {
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
+        fee: u128,
+        native_fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
@@ -553,9 +555,6 @@ impl NearBridgeClient {
             )
             .await?;
         }
-
-        let fee = 0;
-        let native_fee = 0;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,

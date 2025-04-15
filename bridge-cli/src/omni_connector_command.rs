@@ -75,6 +75,10 @@ pub enum OmniConnectorSubCommand {
         amount: u128,
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
+        #[clap(short, long, help = "Fee to charge for the transfer")]
+        fee: Option<u128>,
+        #[clap(short, long, help = "Native fee to charge for the transfer")]
+        native_fee: Option<u128>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -327,6 +331,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             token,
             amount,
             recipient,
+            fee,
+            native_fee,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -334,6 +340,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token,
                     amount,
                     recipient,
+                    fee: fee.unwrap_or(0),
+                    native_fee: native_fee.unwrap_or(0),
                     transaction_options: TransactionOptions::default(),
                     wait_final_outcome_timeout_sec: None,
                 })
