@@ -520,6 +520,7 @@ impl NearBridgeClient {
 
     /// Transfers NEP-141 tokens to the token locker. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
         &self,
         token_id: String,

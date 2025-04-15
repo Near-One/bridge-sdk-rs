@@ -319,6 +319,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_init_transfer(
         &self,
         token_id: String,
