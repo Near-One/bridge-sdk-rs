@@ -284,7 +284,7 @@ impl EvmBridgeClient {
 
         let init_transfer =
             <InitTransferFilter as EthEvent>::decode_log(&raw_log).map_err(|err| {
-                BridgeSdkError::UnknownError(format!("Failed to decode event log: {}", err))
+                BridgeSdkError::UnknownError(format!("Failed to decode event log: {err}"))
             })?;
 
         Ok(init_transfer)

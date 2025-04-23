@@ -501,8 +501,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         if let ChainKind::Sol | ChainKind::Near = chain_kind {
             return Err(BridgeSdkError::ConfigError(format!(
-                "Fast transfer is not supported for chain kind: {:?}",
-                chain_kind
+                "Fast transfer is not supported for chain kind: {chain_kind:?}"
             )));
         }
 
@@ -510,7 +509,7 @@ impl OmniConnector {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
         let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
-            BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {}", e))
+            BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {e}"))
         })?;
 
         let transfer_event = evm_bridge_client.get_transfer_event(tx_hash).await?;
