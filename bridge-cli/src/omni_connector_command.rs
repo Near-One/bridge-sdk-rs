@@ -116,6 +116,21 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Finalize a transfer on NEAR using fast transfer")]
+    NearFastFinTransfer {
+        #[clap(short, long, help = "Origin chain of the transfer")]
+        chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the init transfer call on origin chain"
+        )]
+        tx_hash: String,
+        #[clap(long, help = "Storage deposit amount for tokens receiver")]
+        storage_deposit_amount: Option<u128>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on EVM")]
     EvmInitTransfer {
         #[clap(short, long, help = "Chain to initialize the transfer on")]
@@ -399,6 +414,23 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     transaction_options: TransactionOptions::default(),
                     wait_final_outcome_timeout_sec: None,
                 })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearFastFinTransfer {
+            chain,
+            tx_hash,
+            storage_deposit_amount,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_fast_transfer(
+                    chain,
+                    tx_hash,
+                    storage_deposit_amount,
+                    TransactionOptions::default(),
+                    None,
+                )
                 .await
                 .unwrap();
         }

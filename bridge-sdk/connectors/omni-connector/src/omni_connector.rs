@@ -11,7 +11,7 @@ use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
-use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage};
+use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
@@ -491,6 +491,72 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_fast_transfer(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: String,
+        storage_deposit_amount: Option<u128>,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        if let ChainKind::Sol | ChainKind::Near = chain_kind {
+            return Err(BridgeSdkError::ConfigError(format!(
+                "Fast transfer is not supported for chain kind: {:?}",
+                chain_kind
+            )));
+        }
+
+        let near_bridge_client = self.near_bridge_client()?;
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+
+        let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
+            BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {}", e))
+        })?;
+
+        let transfer_event = evm_bridge_client.get_transfer_event(tx_hash).await?;
+
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+        let token_id = near_bridge_client
+            .get_token_id(
+                OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
+                    .map_err(|_| {
+                        BridgeSdkError::InvalidArgument(format!(
+                            "Failed to parse token address: {}",
+                            transfer_event.token_address
+                        ))
+                    })?,
+            )
+            .await?;
+
+        near_bridge_client
+            .fast_fin_transfer(
+                near_bridge_client::FastFinTransferArgs {
+                    token_id,
+                    amount: transfer_event.amount,
+                    recipient,
+                    fee: Fee {
+                        fee: transfer_event.fee.into(),
+                        native_fee: transfer_event.native_token_fee.into(),
+                    },
+                    transfer_id: omni_types::TransferId {
+                        origin_chain: chain_kind,
+                        origin_nonce: transfer_event.origin_nonce,
+                    },
+                    msg: transfer_event.message,
+                    storage_deposit_amount,
+                    relayer: near_bridge_client.signer()?.account_id,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await
+    }
+
     pub async fn evm_log_metadata(
         &self,
         address: EvmAddress,
@@ -543,7 +609,7 @@ impl OmniConnector {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
             .init_transfer(
-                H160::from_str(&token).map_err(|_| {
+                ethers::types::H160::from_str(&token).map_err(|_| {
                     BridgeSdkError::InvalidArgument("Invalid token address".to_string())
                 })?,
                 amount,

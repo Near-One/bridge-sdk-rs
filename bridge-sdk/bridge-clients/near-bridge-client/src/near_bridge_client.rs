@@ -26,7 +26,7 @@ const BIND_TOKEN_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 const SIGN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
-const INIT_TRANSFER_DEPOSIT: u128 = 1;
+const FT_TRANSFER_DEPOSIT: u128 = 1;
 
 const FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const FIN_TRANSFER_DEPOSIT: u128 = 600_000_000_000_000_000_000;
@@ -34,8 +34,11 @@ const FIN_TRANSFER_DEPOSIT: u128 = 600_000_000_000_000_000_000;
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
 
+const FAST_FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
+
 const MPC_DEPOSIT: u128 = 1;
 
+#[derive(Clone)]
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
     pub wait_until: TxExecutionStatus,
@@ -53,6 +56,18 @@ impl Default for TransactionOptions {
 #[derive(serde::Deserialize)]
 struct StorageBalanceBounds {
     min: NearToken,
+}
+
+#[derive(serde::Serialize)]
+pub struct FastFinTransferArgs {
+    pub token_id: AccountId,
+    pub amount: u128,
+    pub transfer_id: TransferId,
+    pub recipient: OmniAddress,
+    pub fee: Fee,
+    pub msg: String,
+    pub storage_deposit_amount: Option<u128>,
+    pub relayer: AccountId,
 }
 
 /// Bridging NEAR-originated NEP-141 tokens
@@ -155,15 +170,15 @@ impl NearBridgeClient {
 
     pub async fn get_storage_balance(
         &self,
-        token_id: AccountId,
+        contract_id: AccountId,
         account_id: AccountId,
-    ) -> Result<u128> {
+    ) -> Result<StorageBalance> {
         let endpoint = self.endpoint()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: contract_id,
                 method_name: "storage_balance_of".to_string(),
                 args: serde_json::json!({
                     "account_id": account_id
@@ -174,7 +189,10 @@ impl NearBridgeClient {
 
         let storage_balance: Option<StorageBalance> = serde_json::from_slice(&response)?;
 
-        storage_balance.map_or(Ok(0), |balance| Ok(balance.total.as_yoctonear()))
+        Ok(storage_balance.unwrap_or(StorageBalance {
+            total: NearToken::from_yoctonear(0),
+            available: NearToken::from_yoctonear(0),
+        }))
     }
 
     pub async fn get_required_balance_for_account(&self) -> Result<u128> {
@@ -215,8 +233,7 @@ impl NearBridgeClient {
 
         let storage_balance_bounds = serde_json::from_slice::<StorageBalanceBounds>(&response)?;
 
-        let total_balance =
-            NearToken::from_yoctonear(self.get_storage_balance(token_id, account_id).await?);
+        let total_balance = self.get_storage_balance(token_id, account_id).await?.total;
 
         Ok(storage_balance_bounds
             .min
@@ -539,30 +556,26 @@ impl NearBridgeClient {
                 &receiver,
                 &OmniAddress::Near(self.account_id()?),
             )
-            .await?
-            + self.get_required_balance_for_account().await?;
-        let existing_balance = self
-            .get_storage_balance(token_locker.clone(), self.account_id()?)
             .await?;
 
-        if existing_balance < required_balance {
-            self.storage_deposit(
-                required_balance - existing_balance,
-                TransactionOptions {
-                    nonce: transaction_options.nonce,
-                    wait_until: TxExecutionStatus::Final,
-                },
+        let nonce = if self
+            .deposit_storage_if_required(
+                required_balance,
+                transaction_options.clone(),
                 wait_final_outcome_timeout_sec,
             )
-            .await?;
-        }
+            .await?
+        {
+            transaction_options.nonce.map(|nonce| nonce + 1)
+        } else {
+            transaction_options.nonce
+        };
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
-                // Increment nonce since previous was used for storage deposit
-                nonce: transaction_options.nonce.map(|nonce| nonce + 1),
+                nonce,
                 receiver_id: token_id.parse().map_err(|err| {
                     BridgeSdkError::ConfigError(format!("Failed to parse token_id: {err}"))
                 })?,
@@ -580,7 +593,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: INIT_TRANSFER_GAS,
-                deposit: INIT_TRANSFER_DEPOSIT,
+                deposit: FT_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
@@ -662,6 +675,120 @@ impl NearBridgeClient {
 
         tracing::info!(tx_hash = tx_hash.to_string(), "Sent claim fee request");
         Ok(tx_hash)
+    }
+
+    /// Gets the required balance for the fast fin transfer
+    pub async fn get_required_balance_for_fast_fin_transfer(&self) -> Result<u128> {
+        let endpoint = self.endpoint()?;
+        let token_locker_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_locker_id,
+                method_name: "required_balance_for_fast_transfer".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        let required_balance = serde_json::from_slice::<NearToken>(&response)?;
+        Ok(required_balance.as_yoctonear())
+    }
+
+    /// Fast finalize transfer on NEAR chain using the token locker
+    #[tracing::instrument(skip_all, name = "FAST FIN TRANSFER")]
+    pub async fn fast_fin_transfer(
+        &self,
+        args: FastFinTransferArgs,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let token_locker_id = self.token_locker_id()?;
+
+        let required_balance = self.get_required_balance_for_fast_fin_transfer().await?
+            + args.storage_deposit_amount.unwrap_or(0);
+
+        let nonce = if self
+            .deposit_storage_if_required(
+                required_balance,
+                transaction_options.clone(),
+                wait_final_outcome_timeout_sec,
+            )
+            .await?
+        {
+            transaction_options.nonce.map(|nonce| nonce + 1)
+        } else {
+            transaction_options.nonce
+        };
+
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce,
+                receiver_id: args.token_id,
+                method_name: "ft_transfer_call".to_string(),
+                args: serde_json::json!({
+                    "receiver_id": token_locker_id,
+                    "amount": args.amount.to_string(),
+                    "msg": serde_json::json!({
+                        "FastFinTransfer": {
+                            "recipient": args.recipient,
+                            "fee": args.fee,
+                            "transfer_id": args.transfer_id,
+                            "msg": args.msg,
+                            "storage_deposit_amount": args.storage_deposit_amount,
+                            "relayer": args.relayer,
+                        }
+                    })
+                    .to_string()
+                })
+                .to_string()
+                .into_bytes(),
+                gas: FAST_FIN_TRANSFER_GAS,
+                deposit: FT_TRANSFER_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent fast finalize transfer transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    pub async fn deposit_storage_if_required(
+        &self,
+        required_balance: u128,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<bool> {
+        let existing_balance = self
+            .get_storage_balance(self.token_locker_id()?, self.account_id()?)
+            .await?
+            .available
+            .as_yoctonear();
+
+        if existing_balance < required_balance {
+            self.storage_deposit(
+                required_balance - existing_balance,
+                TransactionOptions {
+                    nonce: transaction_options.nonce,
+                    wait_until: TxExecutionStatus::Final,
+                },
+                wait_final_outcome_timeout_sec,
+            )
+            .await?;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     pub async fn extract_transfer_log(

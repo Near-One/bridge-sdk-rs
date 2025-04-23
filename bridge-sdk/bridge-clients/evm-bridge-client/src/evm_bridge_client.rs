@@ -19,6 +19,7 @@ abigen!(
       function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external
       function nearToEthToken(string nearTokenId) external view returns (address)
       function logMetadata(address tokenAddress) external
+      event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message)
     ]"#
 );
 
@@ -257,6 +258,36 @@ impl EvmBridgeClient {
         let proof = eth_proof::get_proof_for_event(tx_hash, event_topic, endpoint).await?;
 
         Ok(proof)
+    }
+
+    pub async fn get_transfer_event(&self, tx_hash: TxHash) -> Result<InitTransferFilter> {
+        let provider = Provider::<Http>::try_from(self.endpoint()?)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let receipt = provider.get_transaction_receipt(tx_hash).await?.ok_or(
+            BridgeSdkError::InvalidArgument("Transaction receipt not found".to_string()),
+        )?;
+
+        let event_signature = InitTransferFilter::signature();
+        let log = receipt
+            .logs
+            .iter()
+            .find(|log| log.topics.contains(&event_signature))
+            .ok_or(BridgeSdkError::InvalidArgument(
+                "Transfer event not found".to_string(),
+            ))?;
+
+        let raw_log = ethers::core::abi::RawLog {
+            topics: log.topics.clone(),
+            data: log.data.to_vec(),
+        };
+
+        let init_transfer =
+            <InitTransferFilter as EthEvent>::decode_log(&raw_log).map_err(|err| {
+                BridgeSdkError::UnknownError(format!("Failed to decode event log: {}", err))
+            })?;
+
+        Ok(init_transfer)
     }
 
     pub fn endpoint(&self) -> Result<&str> {
