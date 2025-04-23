@@ -10,15 +10,6 @@ members = [
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
     "bridge-sdk/crypto-utils",
-
-    "legacy-bridge-cli",
-    "legacy-bridge-sdk/eth-proof",
-    "legacy-bridge-sdk/near-rpc-client",
-    "legacy-bridge-sdk/near-light-client-on-eth",
-    "legacy-bridge-sdk/connectors/nep141-connector",
-    "legacy-bridge-sdk/connectors/eth-connector",
-    "legacy-bridge-sdk/connectors/bridge-connector-common",
-    "legacy-bridge-sdk/connectors/fast-bridge",
 ]
 
 [workspace.dependencies]
@@ -38,10 +29,10 @@ cita_trie = "5.0.1"
 rlp = "0.5.2"
 hasher = "0.1.4"
 lazy_static = "1.4.0"
-near-jsonrpc-client = "0.15.1"
-near-jsonrpc-primitives = "0.28.0"
-near-primitives = "0.28.0"
-near-crypto = "0.28.0"
+near-jsonrpc-client = "0.16.0"
+near-jsonrpc-primitives = "0.29.1"
+near-primitives = "0.29.1"
+near-crypto = "0.29.1"
 derive_builder = "0.20.0"
 clap = { version = "4.5", features = ["derive"] }
 dotenv = { version = "0.15" }
@@ -50,12 +41,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "06b273b9986abf42e0e9a52ca279c6c3a941c405" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "3662269ae0bd92fafae19767d57de048fc8d8b8c" }
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
 spl-token = "7.0.0"
-spl-token-2022 = "7.0.0"
-spl-associated-token-account = "6.0.0"
+spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }

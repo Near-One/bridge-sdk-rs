@@ -5,7 +5,7 @@ pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
 pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x252e87862A3A720287E7fd527cE6e8d0738427A2";
+    "0xe00c629aFaCCb0510995A2B95560E446A24c85B9";
 
 pub const BASE_RPC_MAINNET: &str = "https://base.llamarpc.com";
 pub const BASE_CHAIN_ID_MAINNET: u64 = 8453;

@@ -3,13 +3,13 @@ use std::str::FromStr;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
-use near_crypto::SecretKey;
+use near_crypto::{SecretKey, Signer};
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
-    ChainKind, Fee, OmniAddress, TransferId,
+    ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
 
@@ -24,7 +24,6 @@ const BIND_TOKEN_GAS: u64 = 300_000_000_000_000;
 const BIND_TOKEN_DEPOSIT: u128 = 200_000_000_000_000_000_000_000;
 
 const SIGN_TRANSFER_GAS: u64 = 300_000_000_000_000;
-const SIGN_TRANSFER_DEPOSIT: u128 = 500_000_000_000_000_000_000_000;
 
 const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_TRANSFER_DEPOSIT: u128 = 1;
@@ -34,6 +33,8 @@ const FIN_TRANSFER_DEPOSIT: u128 = 600_000_000_000_000_000_000;
 
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
+
+const MPC_DEPOSIT: u128 = 1;
 
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
@@ -68,6 +69,48 @@ pub struct NearBridgeClient {
 }
 
 impl NearBridgeClient {
+    pub async fn get_transfer_message(&self, transfer_id: TransferId) -> Result<TransferMessage> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_transfer_message".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let transfer_message = serde_json::from_slice::<TransferMessage>(&response)?;
+
+        Ok(transfer_message)
+    }
+
+    pub async fn is_transfer_finalised(&self, transfer_id: TransferId) -> Result<bool> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.token_locker_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "is_transfer_finalised".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let is_transfer_finalised = serde_json::from_slice::<bool>(&response)?;
+
+        Ok(is_transfer_finalised)
+    }
+
     pub async fn get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
         let token_id = self.token_locker_id()?;
@@ -260,37 +303,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    pub async fn get_required_deposit_for_mpc(&self) -> Result<u128> {
-        let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: token_locker_id,
-                method_name: "get_mpc_account".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        let mpc_account = serde_json::from_slice::<AccountId>(&response)?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: mpc_account,
-                method_name: "experimental_signature_deposit".to_string(),
-                args: serde_json::Value::Null,
-            },
-        )
-        .await?;
-
-        serde_json::from_slice::<String>(&response)
-            .map(|response| response.parse::<u128>().unwrap_or(SIGN_TRANSFER_DEPOSIT))
-            .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))
-    }
-
     /// Logs token metadata to token_locker contract. The proof from this transaction is then used to deploy a corresponding token on other chains
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_token_metadata(
@@ -314,7 +326,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: LOG_METADATA_GAS,
-                deposit: self.get_required_deposit_for_mpc().await?,
+                deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
@@ -466,7 +478,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: SIGN_TRANSFER_GAS,
-                deposit: self.get_required_deposit_for_mpc().await?,
+                deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
@@ -508,11 +520,14 @@ impl NearBridgeClient {
 
     /// Transfers NEP-141 tokens to the token locker. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
+    #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
         &self,
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
+        fee: u128,
+        native_fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
@@ -541,9 +556,6 @@ impl NearBridgeClient {
             )
             .await?;
         }
-
-        let fee = 0;
-        let native_fee = 0;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -716,11 +728,17 @@ impl NearBridgeClient {
             ))?;
         let signer_id = self.account_id()?;
 
-        Ok(near_crypto::InMemorySigner::from_secret_key(
+        if let Signer::InMemory(signer) = near_crypto::InMemorySigner::from_secret_key(
             signer_id,
             SecretKey::from_str(private_key)
                 .map_err(|_| BridgeSdkError::ConfigError("Invalid near private key".to_string()))?,
-        ))
+        ) {
+            Ok(signer)
+        } else {
+            Err(BridgeSdkError::ConfigError(
+                "Failed to create near signer".to_string(),
+            ))
+        }
     }
 
     pub fn token_locker_id(&self) -> Result<AccountId> {

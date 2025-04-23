@@ -1,6 +1,6 @@
 [package]
 name = "omni-connector"
-version = "0.2.7"
+version = "0.2.9"
 edition = "2021"
 
 [dependencies]

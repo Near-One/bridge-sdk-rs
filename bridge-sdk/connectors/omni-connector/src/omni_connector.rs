@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::prelude::*;
@@ -9,7 +11,7 @@ use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
-use omni_types::{EvmAddress, Fee, OmniAddress};
+use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage};
 
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
@@ -101,6 +103,8 @@ pub enum InitTransferArgs {
         token: String,
         amount: u128,
         recipient: OmniAddress,
+        fee: u128,
+        native_fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     },
@@ -171,6 +175,22 @@ impl OmniConnector {
         Self::default()
     }
 
+    pub async fn near_get_transfer_message(
+        &self,
+        transfer_id: omni_types::TransferId,
+    ) -> Result<TransferMessage> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.get_transfer_message(transfer_id).await
+    }
+
+    pub async fn near_is_transfer_finalised(
+        &self,
+        transfer_id: omni_types::TransferId,
+    ) -> Result<bool> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.is_transfer_finalised(transfer_id).await
+    }
+
     pub async fn near_get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_token_id(token_address).await
@@ -210,8 +230,7 @@ impl OmniConnector {
                 chain_kind,
                 tx_hash,
             } => {
-                let wormhole_bridge_client = self.wormhole_bridge_client()?;
-                let vaa = wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await?;
+                let vaa = self.wormhole_get_vaa_by_tx_hash(tx_hash).await?;
 
                 near_bridge_client
                     .deploy_token_with_vaa_proof(
@@ -300,11 +319,14 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_init_transfer(
         &self,
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
+        fee: u128,
+        native_fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
@@ -314,6 +336,8 @@ impl OmniConnector {
                 token_id,
                 amount,
                 receiver,
+                fee,
+                native_fee,
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             )
@@ -509,7 +533,7 @@ impl OmniConnector {
     pub async fn evm_init_transfer(
         &self,
         chain_kind: ChainKind,
-        near_token_id: String,
+        token: String,
         amount: u128,
         receiver: OmniAddress,
         fee: Fee,
@@ -518,7 +542,16 @@ impl OmniConnector {
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client
-            .init_transfer(near_token_id, amount, receiver, fee, message, tx_nonce)
+            .init_transfer(
+                H160::from_str(&token).map_err(|_| {
+                    BridgeSdkError::InvalidArgument("Invalid token address".to_string())
+                })?,
+                amount,
+                receiver,
+                fee,
+                message,
+                tx_nonce,
+            )
             .await
     }
 
@@ -934,10 +967,7 @@ impl OmniConnector {
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             } => {
-                let vaa = self
-                    .wormhole_bridge_client()?
-                    .get_vaa_by_tx_hash(tx_hash)
-                    .await?;
+                let vaa = self.wormhole_get_vaa_by_tx_hash(tx_hash).await?;
                 let args = omni_types::prover_args::WormholeVerifyProofArgs {
                     proof_kind: omni_types::prover_result::ProofKind::DeployToken,
                     vaa,
@@ -964,6 +994,8 @@ impl OmniConnector {
                 token: near_token_id,
                 amount,
                 recipient: receiver,
+                fee,
+                native_fee,
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             } => self
@@ -971,6 +1003,8 @@ impl OmniConnector {
                     near_token_id,
                     amount,
                     receiver,
+                    fee,
+                    native_fee,
                     transaction_options,
                     wait_final_outcome_timeout_sec,
                 )
@@ -978,22 +1012,14 @@ impl OmniConnector {
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::EvmInitTransfer {
                 chain_kind,
-                token: near_token_id,
+                token,
                 amount,
                 recipient: receiver,
                 fee,
                 message,
                 tx_nonce,
             } => self
-                .evm_init_transfer(
-                    chain_kind,
-                    near_token_id,
-                    amount,
-                    receiver,
-                    fee,
-                    message,
-                    tx_nonce,
-                )
+                .evm_init_transfer(chain_kind, token, amount, receiver, fee, message, tx_nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::SolanaInitTransfer {
@@ -1101,6 +1127,11 @@ impl OmniConnector {
         wormhole_bridge_client
             .get_vaa(chain_id, emitter, sequence)
             .await
+    }
+
+    pub async fn wormhole_get_vaa_by_tx_hash(&self, tx_hash: String) -> Result<String> {
+        let wormhole_bridge_client = self.wormhole_bridge_client()?;
+        wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
     pub fn near_bridge_client(&self) -> Result<&NearBridgeClient> {

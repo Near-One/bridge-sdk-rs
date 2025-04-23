@@ -118,7 +118,7 @@ impl EvmBridgeClient {
     #[tracing::instrument(skip_all, name = "EVM INIT TRANSFER")]
     pub async fn init_transfer(
         &self,
-        near_token_id: String,
+        token: H160,
         amount: u128,
         receiver: OmniAddress,
         fee: Fee,
@@ -127,17 +127,7 @@ impl EvmBridgeClient {
     ) -> Result<TxHash> {
         let factory = self.bridge_token_factory()?;
 
-        let erc20_address = factory
-            .near_to_eth_token(near_token_id.clone())
-            .call()
-            .await?;
-
-        tracing::debug!(
-            address = format!("{:?}", erc20_address),
-            "Retrieved ERC20 address"
-        );
-
-        let bridge_token = &self.bridge_token(erc20_address)?;
+        let bridge_token = &self.bridge_token(token)?;
 
         let signer = self.signer()?;
         let bridge_token_factory_address = self.bridge_token_factory_address()?;
@@ -162,7 +152,7 @@ impl EvmBridgeClient {
         }
 
         let mut withdraw_call = factory.init_transfer(
-            erc20_address,
+            token,
             amount,
             fee.fee.into(),
             fee.native_fee.into(),
