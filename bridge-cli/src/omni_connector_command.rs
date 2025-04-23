@@ -253,7 +253,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token, TransactionOptions::default(), None)
+                .log_metadata(token, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -270,7 +270,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                             transaction_options: TransactionOptions::default(),
-                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -281,7 +280,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash,
                             transaction_options: TransactionOptions::default(),
-                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -313,7 +311,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, TransactionOptions::default(), None)
+                .near_storage_deposit_for_token(token, amount, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -337,7 +335,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     }),
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
@@ -358,7 +355,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     fee: fee.unwrap_or(0),
                     native_fee: native_fee.unwrap_or(0),
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -385,7 +381,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -412,7 +407,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .collect(),
                     vaa,
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -429,7 +423,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     tx_hash,
                     storage_deposit_amount,
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
@@ -550,7 +543,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                         transaction_options: TransactionOptions::default(),
-                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
@@ -561,7 +553,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash,
                         transaction_options: TransactionOptions::default(),
-                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
@@ -589,7 +580,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.near_rpc)
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
-        .token_locker_id(combined_config.near_token_locker_id)
+        .omni_bridge_id(combined_config.near_token_locker_id)
         .build()
         .unwrap();
 
@@ -597,7 +588,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.eth_rpc)
         .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
-        .bridge_token_factory_address(combined_config.eth_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
         .build()
         .unwrap();
 
@@ -605,7 +596,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.base_rpc)
         .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
-        .bridge_token_factory_address(combined_config.base_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.base_bridge_token_factory_address)
         .build()
         .unwrap();
 
@@ -613,7 +604,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.arb_rpc)
         .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
-        .bridge_token_factory_address(combined_config.arb_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
         .build()
         .unwrap();
 

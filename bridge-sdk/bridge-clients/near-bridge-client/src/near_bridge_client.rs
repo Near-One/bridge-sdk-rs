@@ -42,6 +42,7 @@ const MPC_DEPOSIT: u128 = 1;
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
     pub wait_until: TxExecutionStatus,
+    pub wait_final_outcome_timeout_sec: Option<u64>,
 }
 
 impl Default for TransactionOptions {
@@ -49,6 +50,7 @@ impl Default for TransactionOptions {
         Self {
             nonce: None,
             wait_until: TxExecutionStatus::Final,
+            wait_final_outcome_timeout_sec: None,
         }
     }
 }
@@ -79,14 +81,14 @@ pub struct NearBridgeClient {
     private_key: Option<String>,
     #[doc = r"NEAR account id of the transaction signer"]
     signer: Option<String>,
-    #[doc = r"Token locker account id on Near"]
-    token_locker_id: Option<String>,
+    #[doc = r"OmniBridge account id on Near"]
+    omni_bridge_id: Option<String>,
 }
 
 impl NearBridgeClient {
     pub async fn get_transfer_message(&self, transfer_id: TransferId) -> Result<TransferMessage> {
         let endpoint = self.endpoint()?;
-        let token_id = self.token_locker_id()?;
+        let token_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -107,7 +109,7 @@ impl NearBridgeClient {
 
     pub async fn is_transfer_finalised(&self, transfer_id: TransferId) -> Result<bool> {
         let endpoint = self.endpoint()?;
-        let token_id = self.token_locker_id()?;
+        let token_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -128,7 +130,7 @@ impl NearBridgeClient {
 
     pub async fn get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
-        let token_id = self.token_locker_id()?;
+        let token_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -149,7 +151,7 @@ impl NearBridgeClient {
 
     pub async fn get_native_token_id(&self, origin_chain: ChainKind) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
-        let token_id = self.token_locker_id()?;
+        let token_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -197,12 +199,12 @@ impl NearBridgeClient {
 
     pub async fn get_required_balance_for_account(&self) -> Result<u128> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_locker_id,
+                contract_account_id: omni_bridge_id,
                 method_name: "required_balance_for_account".to_string(),
                 args: serde_json::Value::Null,
             },
@@ -241,17 +243,16 @@ impl NearBridgeClient {
             .as_yoctonear())
     }
 
-    /// Performs a storage deposit on behalf of the token_locker so that the tokens can be transferred to the locker. To be called once for each NEP-141
+    /// Performs a storage deposit on behalf of the OmniBridge so that the tokens can be transferred to the bridge contract. To be called once for each NEP-141
     #[tracing::instrument(skip_all, name = "STORAGE DEPOSIT")]
     pub async fn storage_deposit_for_token(
         &self,
         token_id: String,
         amount: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -263,7 +264,7 @@ impl NearBridgeClient {
                 })?,
                 method_name: "storage_deposit".to_string(),
                 args: serde_json::json!({
-                    "account_id": token_locker
+                    "account_id": omni_bridge_id
                 })
                 .to_string()
                 .into_bytes(),
@@ -271,7 +272,7 @@ impl NearBridgeClient {
                 deposit: amount,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -287,17 +288,16 @@ impl NearBridgeClient {
         &self,
         amount: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_locker_id,
+                receiver_id: omni_bridge_id,
                 method_name: "storage_deposit".to_string(),
                 args: json!({
                     "account_id": None::<AccountId>
@@ -308,7 +308,7 @@ impl NearBridgeClient {
                 deposit: amount,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -320,13 +320,12 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Logs token metadata to token_locker contract. The proof from this transaction is then used to deploy a corresponding token on other chains
+    /// Logs token metadata to OmniBridge contract. The proof from this transaction is then used to deploy a corresponding token on other chains
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_token_metadata(
         &self,
         token_id: String,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -335,7 +334,7 @@ impl NearBridgeClient {
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: self.token_locker_id()?,
+                receiver_id: self.omni_bridge_id()?,
                 method_name: "log_metadata".to_string(),
                 args: serde_json::json!({
                     "token_id": token_id
@@ -346,7 +345,7 @@ impl NearBridgeClient {
                 deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -361,10 +360,9 @@ impl NearBridgeClient {
         chain_kind: ChainKind,
         vaa: &str,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let prover_args = omni_types::prover_args::WormholeVerifyProofArgs {
             proof_kind: omni_types::prover_result::ProofKind::LogMetadata,
@@ -381,7 +379,7 @@ impl NearBridgeClient {
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_locker_id,
+                receiver_id: omni_bridge_id,
                 method_name: "deploy_token".to_string(),
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
@@ -389,7 +387,7 @@ impl NearBridgeClient {
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -406,17 +404,16 @@ impl NearBridgeClient {
         &self,
         args: DeployTokenArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_locker_id,
+                receiver_id: omni_bridge_id,
                 method_name: "deploy_token".to_string(),
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
@@ -424,7 +421,7 @@ impl NearBridgeClient {
                 deposit: DEPLOY_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -436,23 +433,22 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Binds token on NEAR chain using the token locker
+    /// Binds token on NEAR chain using OmniBridge
     #[tracing::instrument(skip_all, name = "BIND TOKEN")]
     pub async fn bind_token(
         &self,
         args: BindTokenArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_locker_id,
+                receiver_id: omni_bridge_id,
                 method_name: "bind_token".to_string(),
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
@@ -460,7 +456,7 @@ impl NearBridgeClient {
                 deposit: BIND_TOKEN_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -468,7 +464,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Signs transfer using the token locker
+    /// Signs transfer using OmniBridge
     #[tracing::instrument(skip_all, name = "SIGN TRANSFER")]
     pub async fn sign_transfer(
         &self,
@@ -476,7 +472,6 @@ impl NearBridgeClient {
         fee_recipient: Option<AccountId>,
         fee: Option<Fee>,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -485,7 +480,7 @@ impl NearBridgeClient {
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: self.token_locker_id()?,
+                receiver_id: self.omni_bridge_id()?,
                 method_name: "sign_transfer".to_string(),
                 args: serde_json::json!({
                     "transfer_id": transfer_id,
@@ -498,7 +493,7 @@ impl NearBridgeClient {
                 deposit: MPC_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -516,12 +511,12 @@ impl NearBridgeClient {
         sender: &OmniAddress,
     ) -> Result<u128> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_locker_id,
+                contract_account_id: omni_bridge_id,
                 method_name: "required_balance_for_init_transfer".to_string(),
                 args: serde_json::json!({
                     "recipient": recipient,
@@ -535,7 +530,7 @@ impl NearBridgeClient {
         Ok(required_balance.as_yoctonear())
     }
 
-    /// Transfers NEP-141 tokens to the token locker. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
+    /// Transfers NEP-141 tokens to OmniBridge. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -546,10 +541,9 @@ impl NearBridgeClient {
         fee: u128,
         native_fee: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let required_balance = self
             .get_required_balance_for_init_transfer(
@@ -559,11 +553,7 @@ impl NearBridgeClient {
             .await?;
 
         let nonce = if self
-            .deposit_storage_if_required(
-                required_balance,
-                transaction_options.clone(),
-                wait_final_outcome_timeout_sec,
-            )
+            .deposit_storage_if_required(required_balance, transaction_options.clone())
             .await?
         {
             transaction_options.nonce.map(|nonce| nonce + 1)
@@ -581,7 +571,7 @@ impl NearBridgeClient {
                 })?,
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
-                    "receiver_id": token_locker,
+                    "receiver_id": omni_bridge_id,
                     "amount": amount.to_string(),
                     "msg": serde_json::json!({
                         "recipient": receiver,
@@ -596,7 +586,7 @@ impl NearBridgeClient {
                 deposit: FT_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -604,13 +594,12 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Withdraws NEP-141 tokens from the token locker. Requires a proof from the burn transaction
+    /// Withdraws NEP-141 tokens from OmniBridge. Requires a proof from the burn transaction
     #[tracing::instrument(skip_all, name = "NEAR FIN TRANSFER")]
     pub async fn fin_transfer(
         &self,
         args: FinTransferArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
@@ -626,7 +615,7 @@ impl NearBridgeClient {
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: self.token_locker_id()?,
+                receiver_id: self.omni_bridge_id()?,
                 method_name: "fin_transfer".to_string(),
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
@@ -634,7 +623,7 @@ impl NearBridgeClient {
                 deposit: required_deposit,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -645,23 +634,22 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Claims fee on NEAR chain using the token locker
+    /// Claims fee on NEAR chain
     #[tracing::instrument(skip_all, name = "CLAIM FEE")]
     pub async fn claim_fee(
         &self,
         args: ClaimFeeArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_locker_id,
+                receiver_id: omni_bridge_id,
                 method_name: "claim_fee".to_string(),
                 args: borsh::to_vec(&args)
                     .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
@@ -669,7 +657,7 @@ impl NearBridgeClient {
                 deposit: CLAIM_FEE_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -680,12 +668,12 @@ impl NearBridgeClient {
     /// Gets the required balance for the fast fin transfer
     pub async fn get_required_balance_for_fast_fin_transfer(&self) -> Result<u128> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_locker_id,
+                contract_account_id: omni_bridge_id,
                 method_name: "required_balance_for_fast_transfer".to_string(),
                 args: serde_json::json!({}),
             },
@@ -696,26 +684,21 @@ impl NearBridgeClient {
         Ok(required_balance.as_yoctonear())
     }
 
-    /// Fast finalize transfer on NEAR chain using the token locker
+    /// Fast finalize transfer on NEAR
     #[tracing::instrument(skip_all, name = "FAST FIN TRANSFER")]
     pub async fn fast_fin_transfer(
         &self,
         args: FastFinTransferArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let token_locker_id = self.token_locker_id()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
 
         let required_balance = self.get_required_balance_for_fast_fin_transfer().await?
             + args.storage_deposit_amount.unwrap_or(0);
 
         let nonce = if self
-            .deposit_storage_if_required(
-                required_balance,
-                transaction_options.clone(),
-                wait_final_outcome_timeout_sec,
-            )
+            .deposit_storage_if_required(required_balance, transaction_options.clone())
             .await?
         {
             transaction_options.nonce.map(|nonce| nonce + 1)
@@ -731,7 +714,7 @@ impl NearBridgeClient {
                 receiver_id: args.token_id,
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
-                    "receiver_id": token_locker_id,
+                    "receiver_id": omni_bridge_id,
                     "amount": args.amount.to_string(),
                     "msg": serde_json::json!({
                         "FastFinTransfer": {
@@ -751,7 +734,7 @@ impl NearBridgeClient {
                 deposit: FT_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -766,10 +749,9 @@ impl NearBridgeClient {
         &self,
         required_balance: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<bool> {
         let existing_balance = self
-            .get_storage_balance(self.token_locker_id()?, self.account_id()?)
+            .get_storage_balance(self.omni_bridge_id()?, self.account_id()?)
             .await?
             .available
             .as_yoctonear();
@@ -780,8 +762,9 @@ impl NearBridgeClient {
                 TransactionOptions {
                     nonce: transaction_options.nonce,
                     wait_until: TxExecutionStatus::Final,
+                    wait_final_outcome_timeout_sec: transaction_options
+                        .wait_final_outcome_timeout_sec,
                 },
-                wait_final_outcome_timeout_sec,
             )
             .await?;
 
@@ -868,13 +851,13 @@ impl NearBridgeClient {
         }
     }
 
-    pub fn token_locker_id(&self) -> Result<AccountId> {
-        self.token_locker_id
+    pub fn omni_bridge_id(&self) -> Result<AccountId> {
+        self.omni_bridge_id
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "Token locker account id is not set".to_string(),
+                "OmniBridge account id is not set".to_string(),
             ))?
             .parse::<AccountId>()
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid token locker account id".to_string()))
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid omni bridge account id".to_string()))
     }
 }
