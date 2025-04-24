@@ -13,10 +13,10 @@ const VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 
 #[derive(Debug)]
 pub struct TxProof {
-    tx_bytes: Vec<u8>,
-    tx_block_blockhash: String,
-    tx_index: u64,
-    merkle_proof: Vec<String>,
+    pub tx_bytes: Vec<u8>,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]

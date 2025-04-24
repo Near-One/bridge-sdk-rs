@@ -398,15 +398,23 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
-        let btc_bridge = self.btc_bridge_client().unwrap();
+        let btc_bridge = self.btc_bridge_client()?;
+        let near_bridge_client = self.near_bridge_client()?;
+        let proof_data = btc_bridge.extract_btc_proof(btc_tx_hash.clone(), tx_block_height);
+        let args = near_bridge_client::FinBtcTransferArgs {
+            deposit_msg: near_bridge_client::DepositMsg {
+                recipient_id: recipient_id.parse().unwrap(),
+                post_actions: None,
+                extra_msg: None,
+            },
+            tx_bytes: proof_data.tx_bytes,
+            vout,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
 
-        btc_bridge.fin_btc_transfer(btc_tx_hash, tx_block_height, vout, btc_bridge_client::DepositMsg {
-            recipient_id: recipient_id.parse().unwrap(),
-            post_actions: None,
-            extra_msg: None,
-        }).await;
-
-        return Ok(CryptoHash::default())
+        near_bridge_client.fin_btc_transfer(args, transaction_options, wait_final_outcome_timeout_sec).await
     }
 
     pub async fn near_fin_transfer_with_vaa(

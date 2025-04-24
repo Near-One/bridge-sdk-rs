@@ -560,12 +560,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::NearFinTransferBTC { btc_tx_hash, tx_block_height, recipient_id, config_cli } => {
-            let btc_client = BtcBridgeClient::new(config_cli.btc_endpoint.unwrap());
-            btc_client.fin_btc_transfer(btc_tx_hash, tx_block_height, 0, DepositMsg {
-                recipient_id: recipient_id.parse().unwrap(),
-                post_actions: None,
-                extra_msg: None,
-            }).await;
+            omni_connector(network, config_cli)
+                .near_fin_transfer_btc(btc_tx_hash, tx_block_height, 0, recipient_id, TransactionOptions::default(), None)
+                .await
+                .unwrap();
         }
     }
 }
@@ -578,6 +576,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
         .token_locker_id(combined_config.near_token_locker_id)
+        .btc_connector(combined_config.btc_connector)
         .build()
         .unwrap();
 
@@ -631,6 +630,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let btc_bridge_client = BtcBridgeClient::new(combined_config.btc_endpoint.unwrap());
+
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))
         .eth_bridge_client(Some(eth_bridge_client))
@@ -638,6 +639,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .arb_bridge_client(Some(arb_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
+        .btc_bridge_client(Some(btc_bridge_client))
         .build()
         .unwrap()
 }
