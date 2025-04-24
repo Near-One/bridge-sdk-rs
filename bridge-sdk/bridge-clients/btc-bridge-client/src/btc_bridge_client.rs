@@ -1,11 +1,8 @@
-use std::str::FromStr;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use bitcoincore_rpc::bitcoin;
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
-use btc_relayer_lib::near_client::NearClient;
 use btc_relayer_lib::config::{BitcoinConfig, Config, NearConfig};
 use bitcoin::consensus::serialize;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug)]
 pub struct TxProof {
