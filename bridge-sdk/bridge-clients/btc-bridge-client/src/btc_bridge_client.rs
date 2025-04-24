@@ -38,12 +38,12 @@ pub struct DepositMsg {
 }
 
 
-pub struct BtcClient {
+pub struct BtcBridgeClient {
     bitcoin_client: BitcoinClient,
     near_client: NearClient
 }
 
-impl BtcClient {
+impl BtcBridgeClient {
     pub fn new(btc_endpoint: String) -> Self {
         let config = Config {
             max_fork_len: 500,
@@ -68,7 +68,7 @@ impl BtcClient {
 
         let bitcoin_client = BitcoinClient::new(&config);
         let near_client = NearClient::new(&config.near);
-        BtcClient {
+        BtcBridgeClient {
             bitcoin_client,
             near_client
         }
@@ -163,12 +163,12 @@ impl BtcClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::{BtcClient, DepositMsg};
+    use crate::{BtcBridgeClient, DepositMsg};
     pub const BTC_ENDPOINT_TESTNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
 
     #[tokio::test]
     async fn test_get_proof() {
-        let btc_client = BtcClient::new(BTC_ENDPOINT_TESTNET.to_string());
+        let btc_client = BtcBridgeClient::new(BTC_ENDPOINT_TESTNET.to_string());
         btc_client.fin_btc_transfer("eac6198e86cda16867ac7ad81ba93eedb0ec4db9efd6b3b24bf581f8549cb3cb".to_string(), 4297082, 0, DepositMsg {
             recipient_id: "olga24912_3.testnet".parse().unwrap(),
             post_actions: None,

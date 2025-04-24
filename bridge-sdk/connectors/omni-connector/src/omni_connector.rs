@@ -13,6 +13,7 @@ use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage};
 
+use btc_bridge_client::{BtcBridgeClient, DepositMsg};
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -32,6 +33,7 @@ pub struct OmniConnector {
     arb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
+    btc_bridge_client: Option<BtcBridgeClient>,
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -146,6 +148,14 @@ pub enum FinTransferArgs {
         chain_kind: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
         vaa: String,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    },
+    NearFinTransferBTC {
+        btc_tx_hash: String,
+        tx_block_height: usize,
+        vout: usize,
+        recipient_id: String,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     },
@@ -377,6 +387,26 @@ impl OmniConnector {
                 wait_final_outcome_timeout_sec,
             )
             .await
+    }
+
+    pub async fn near_fin_transfer_btc(
+        &self,
+        btc_tx_hash: String,
+        tx_block_height: usize,
+        vout: usize,
+        recipient_id: String,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let btc_bridge = self.btc_bridge_client().unwrap();
+
+        btc_bridge.fin_btc_transfer(btc_tx_hash, tx_block_height, vout, btc_bridge_client::DepositMsg {
+            recipient_id: recipient_id.parse().unwrap(),
+            post_actions: None,
+            extra_msg: None,
+        }).await;
+
+        return Ok(CryptoHash::default())
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1059,6 +1089,21 @@ impl OmniConnector {
                 )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
+            FinTransferArgs::NearFinTransferBTC {
+                btc_tx_hash,
+                tx_block_height,
+                vout,
+                recipient_id,
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            } => self.near_fin_transfer_btc(
+                btc_tx_hash,
+                tx_block_height,
+                vout,
+                recipient_id,
+                transaction_options,
+                wait_final_outcome_timeout_sec
+            ).await.map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::EvmFinTransfer {
                 chain_kind,
                 event,
@@ -1147,6 +1192,14 @@ impl OmniConnector {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Wormhole bridge client not configured".to_string(),
+            ))
+    }
+
+    pub fn btc_bridge_client(&self) -> Result<&BtcBridgeClient> {
+        self.btc_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC bridge client not configured".to_string(),
             ))
     }
 }

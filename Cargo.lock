@@ -1088,7 +1088,7 @@ dependencies = [
 name = "bridge-cli"
 version = "0.2.14"
 dependencies = [
- "btc-connector-sdk",
+ "btc-bridge-client",
  "clap",
  "dotenv",
  "ethers-core",
@@ -1160,7 +1160,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "btc-connector-sdk"
+name = "btc-bridge-client"
 version = "0.2.0"
 dependencies = [
  "bitcoin",
@@ -5867,6 +5867,7 @@ version = "0.2.9"
 dependencies = [
  "borsh 1.5.7",
  "bridge-connector-common",
+ "btc-bridge-client",
  "crypto-utils",
  "derive_builder",
  "eth-proof",

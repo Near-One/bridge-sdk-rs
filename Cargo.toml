@@ -9,8 +9,8 @@ members = [
     "bridge-sdk/bridge-clients/near-bridge-client",
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
+    "bridge-sdk/bridge-clients/btc-bridge-client",
     "bridge-sdk/crypto-utils",
-    "bridge-sdk/btc-clients"
 ]
 
 [workspace.dependencies]

@@ -1,5 +1,5 @@
 [package]
-name = "btc-connector-sdk"
+name = "btc-bridge-client"
 version = "0.2.0"
 edition = "2021"
 
@@ -13,9 +13,9 @@ serde.workspace = true
 serde_json.workspace = true
 near-sdk.workspace = true
 near-crypto.workspace = true
-near-rpc-client = { path = "../near-rpc-client" }
+near-rpc-client = { path = "../../near-rpc-client" }
 near-primitives.workspace = true
 tokio.workspace = true
 
 [lib]
-path = "src/btc_proof.rs"
+path = "src/btc_bridge_client.rs"
