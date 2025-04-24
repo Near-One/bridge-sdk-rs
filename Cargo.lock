@@ -4851,6 +4851,7 @@ dependencies = [
  "near-jsonrpc-client 0.16.1",
  "near-primitives 0.29.2",
  "near-rpc-client",
+ "near-sdk",
  "near-token",
  "omni-types",
  "serde",
