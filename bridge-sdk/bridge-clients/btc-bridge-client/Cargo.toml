@@ -9,6 +9,7 @@ edition = "2021"
 bitcoincore-rpc.workspace = true
 btc-relayer.workspace = true
 bitcoin.workspace = true
+bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 serde.workspace = true
 serde_json.workspace = true
 near-sdk.workspace = true

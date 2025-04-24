@@ -35,6 +35,8 @@ pub enum BridgeSdkError {
     SolanaOtherError(String),
     #[error("Wormhole client error: {0}")]
     WormholeClientError(String),
+    #[error("BTC Client Error: {0}")]
+    BtcClientError(String),
     #[error("Invalid argument provided: {0}")]
     InvalidArgument(String),
     #[error("Unexpected error occured: {0}")]

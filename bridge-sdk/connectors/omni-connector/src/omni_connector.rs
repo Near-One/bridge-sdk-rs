@@ -13,7 +13,7 @@ use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage};
 
-use btc_bridge_client::{BtcBridgeClient, DepositMsg};
+use btc_bridge_client::BtcBridgeClient;
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -400,7 +400,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(btc_tx_hash.clone(), tx_block_height);
+        let proof_data = btc_bridge.extract_btc_proof(btc_tx_hash.clone(), tx_block_height)?;
         let args = near_bridge_client::FinBtcTransferArgs {
             deposit_msg: near_bridge_client::DepositMsg {
                 recipient_id: recipient_id.parse().unwrap(),
