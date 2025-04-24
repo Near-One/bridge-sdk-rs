@@ -5,16 +5,20 @@ members = [
     "bridge-sdk/eth-proof",
     "bridge-sdk/near-rpc-client",
     "bridge-sdk/near-light-client-on-eth",
-    "bridge-sdk/bridge-clients/solana-bridge-client", 
+    "bridge-sdk/bridge-clients/solana-bridge-client",
     "bridge-sdk/bridge-clients/near-bridge-client",
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
     "bridge-sdk/crypto-utils",
+    "bridge-sdk/btc-clients"
 ]
 
 [workspace.dependencies]
 sha3 = "0.10.8"
 sha2 = "0.10.8"
+bitcoincore-rpc = "0.19.0"
+btc-relayer = { git = "https://github.com/Near-One/btc-light-client-contract", rev = "b11788c7b90a24a66602ac092d64d0ab39bda8f4" }
+bitcoin = "0.32.5"
 borsh = "1.5.1"
 thiserror = "2.0.3"
 ethers = "2.0.14"
@@ -33,6 +37,7 @@ near-jsonrpc-client = "0.16.0"
 near-jsonrpc-primitives = "0.29.1"
 near-primitives = "0.29.1"
 near-crypto = "0.29.1"
+near-sdk = "5.9.0"
 derive_builder = "0.20.0"
 clap = { version = "4.5", features = ["derive"] }
 dotenv = { version = "0.15" }

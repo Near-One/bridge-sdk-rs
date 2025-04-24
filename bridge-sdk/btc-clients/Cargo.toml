@@ -1,0 +1,21 @@
+[package]
+name = "btc-connector-sdk"
+version = "0.2.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bitcoincore-rpc.workspace = true
+btc-relayer.workspace = true
+bitcoin.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+near-sdk.workspace = true
+near-crypto.workspace = true
+near-rpc-client = { path = "../near-rpc-client" }
+near-primitives.workspace = true
+tokio.workspace = true
+
+[lib]
+path = "src/btc_proof.rs"

@@ -2,6 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
+use btc_connector_sdk::{BtcClient, DepositMsg};
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -228,6 +229,17 @@ pub enum OmniConnectorSubCommand {
             help = "Transaction hash of deploy_token on the destination chain"
         )]
         tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize Transfer from Bitcoin on Near")]
+    FinalizeBtcTransfer {
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "The block height of bitcoin tx hash")]
+        tx_block_height: usize,
+        #[clap(short, long, help = "The BTC recipient on NEAR")]
+        recipient_id: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -546,6 +558,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .solana_pause()
                 .await
                 .unwrap();
+        }
+        OmniConnectorSubCommand::FinalizeBtcTransfer { btc_tx_hash, tx_block_height, recipient_id, config_cli } => {
+            let btc_client = BtcClient::new(config_cli.btc_endpoint.unwrap());
+            btc_client.fin_btc_transfer(btc_tx_hash, tx_block_height, 0, DepositMsg {
+                recipient_id: recipient_id.parse().unwrap(),
+                post_actions: None,
+                extra_msg: None,
+            }).await;
         }
     }
 }
