@@ -559,9 +559,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearFinTransferBTC { btc_tx_hash, tx_block_height, recipient_id, config_cli } => {
+        OmniConnectorSubCommand::NearFinTransferBTC {
+            btc_tx_hash,
+            tx_block_height,
+            recipient_id,
+            config_cli,
+        } => {
             omni_connector(network, config_cli)
-                .near_fin_transfer_btc(btc_tx_hash, tx_block_height, 0, recipient_id, TransactionOptions::default(), None)
+                .near_fin_transfer_btc(
+                    btc_tx_hash,
+                    tx_block_height,
+                    0,
+                    recipient_id,
+                    TransactionOptions::default(),
+                    None,
+                )
                 .await
                 .unwrap();
         }
