@@ -825,6 +825,4 @@ impl NearBridgeClient {
             .parse::<AccountId>()
             .map_err(|_| BridgeSdkError::ConfigError("Invalid btc connector account id".to_string()))
     }
-
-
 }
