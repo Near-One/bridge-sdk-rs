@@ -3,7 +3,7 @@ use crate::TransactionOptions;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
-use near_rpc_client::ChangeRequest;
+use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_sdk::json_types::U128;
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -66,6 +66,29 @@ impl NearBridgeClient {
             "Sent BTC finalize transfer transaction"
         );
         Ok(tx_hash)
+    }
+
+    pub async fn get_btc_address(&self,
+                                 recipient_id: &str,
+                                 amount: u128) -> Result<String> {
+        let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount)?;
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_user_deposit_address".to_string(),
+                args: serde_json::json!({
+                    "deposit_msg": deposit_msg
+                }),
+            },
+        )
+            .await?;
+
+        let btc_address = serde_json::from_slice::<String>(&response)?;
+        Ok(btc_address)
     }
 
     pub fn get_deposit_msg_by_recipient_id(
