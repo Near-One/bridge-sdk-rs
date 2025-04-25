@@ -1,8 +1,8 @@
-use bridge_connector_common::result::{BridgeSdkError, Result};
+use bitcoin::consensus::serialize;
 use bitcoincore_rpc::bitcoin;
+use bridge_connector_common::result::{BridgeSdkError, Result};
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
 use btc_relayer_lib::config::{BitcoinConfig, Config, NearConfig};
-use bitcoin::consensus::serialize;
 
 #[derive(Debug)]
 pub struct TxProof {
@@ -26,12 +26,12 @@ impl BtcBridgeClient {
             batch_size: 4,
             bitcoin: BitcoinConfig {
                 endpoint: btc_endpoint,
-                node_user: "".to_string(),
-                node_password: "".to_string(),
+                node_user: String::new(),
+                node_password: String::new(),
             },
             near: NearConfig {
-                endpoint: "".to_string(),
-                btc_light_client_account_id: "".to_string(),
+                endpoint: String::new(),
+                btc_light_client_account_id: String::new(),
                 account_name: None,
                 secret_key: None,
                 near_credentials_path: None,
@@ -40,15 +40,16 @@ impl BtcBridgeClient {
         };
 
         let bitcoin_client = BitcoinClient::new(&config);
-        BtcBridgeClient {
-            bitcoin_client
-        }
+        BtcBridgeClient { bitcoin_client }
     }
 
-    pub fn extract_btc_proof(&self, tx_hash: String, tx_block_height: usize) -> Result<TxProof> {
-        let block = self.bitcoin_client
+    pub fn extract_btc_proof(&self, tx_hash: &str, tx_block_height: usize) -> Result<TxProof> {
+        let block = self
+            .bitcoin_client
             .get_block_by_height(tx_block_height as u64)
-            .map_err(|err| BridgeSdkError::BtcClientError(format!("error on getting block by height: {}", err.to_string())))?;
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("error on getting block by height: {err}"))
+            })?;
         let tx_block_blockhash = block.header.block_hash();
 
         let transactions = block
@@ -57,10 +58,18 @@ impl BtcBridgeClient {
             .map(|tx| tx.compute_txid().to_string())
             .collect::<Vec<_>>();
 
-        let tx_index = transactions.iter().position(|hash| *hash == tx_hash).ok_or(BridgeSdkError::BtcClientError("btc tx not found in block".to_string()))?;
+        let tx_index = transactions
+            .iter()
+            .position(|hash| *hash == tx_hash)
+            .ok_or(BridgeSdkError::BtcClientError(
+                "btc tx not found in block".to_string(),
+            ))?;
 
         let merkle_proof = BitcoinClient::compute_merkle_proof(&block, tx_index);
-        let merkle_proof_str = merkle_proof.iter().map(|hash| hash.to_string()).collect();
+        let merkle_proof_str = merkle_proof
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         let tx_data = serialize(&block.txdata[tx_index]);
 

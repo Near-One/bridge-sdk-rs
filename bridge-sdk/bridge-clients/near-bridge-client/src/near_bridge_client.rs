@@ -4,8 +4,8 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::{SecretKey, Signer};
-use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_primitives::types::Gas;
+use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_sdk::json_types::U128;
 use near_token::NearToken;
@@ -81,7 +81,6 @@ pub struct DepositMsg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra_msg: Option<String>,
 }
-
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct FinBtcTransferArgs {
@@ -669,10 +668,12 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    pub async fn fin_btc_transfer(&self,
-                                  args: FinBtcTransferArgs,
-                                  transaction_options: TransactionOptions,
-                                  wait_final_outcome_timeout_sec: Option<u64>) -> Result<CryptoHash> {
+    pub async fn fin_btc_transfer(
+        &self,
+        args: FinBtcTransferArgs,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
         let tx_hash = near_rpc_client::change_and_wait(
@@ -682,15 +683,14 @@ impl NearBridgeClient {
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
                 method_name: "verify_deposit".to_string(),
-                args: serde_json::json!(args)
-                    .to_string()
-                    .into_bytes(),
+                args: serde_json::json!(args).to_string().into_bytes(),
                 gas: FIN_BTC_TRANSFER_GAS,
                 deposit: 0,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
-        ).await?;
+        )
+        .await?;
 
         tracing::info!(
             tx_hash = tx_hash.to_string(),
@@ -933,6 +933,8 @@ impl NearBridgeClient {
                 "BTC Connector account id is not set".to_string(),
             ))?
             .parse::<AccountId>()
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid btc connector account id".to_string()))
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
+            })
     }
 }
