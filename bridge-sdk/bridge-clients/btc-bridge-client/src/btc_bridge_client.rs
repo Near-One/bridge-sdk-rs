@@ -46,7 +46,7 @@ impl BtcBridgeClient {
     pub fn extract_btc_proof(&self, tx_hash: &str, tx_block_height: usize) -> Result<TxProof> {
         let block = self
             .bitcoin_client
-            .get_block_by_height(tx_block_height as u64)
+            .get_block_by_height(tx_block_height.try_into().unwrap())
             .map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("error on getting block by height: {err}"))
             })?;
@@ -76,7 +76,7 @@ impl BtcBridgeClient {
         Ok(TxProof {
             tx_bytes: tx_data,
             tx_block_blockhash: tx_block_blockhash.to_string(),
-            tx_index: tx_index as u64,
+            tx_index: tx_index.try_into().unwrap(),
             merkle_proof: merkle_proof_str,
         })
     }
