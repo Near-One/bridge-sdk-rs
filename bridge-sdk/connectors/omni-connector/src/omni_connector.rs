@@ -22,6 +22,7 @@ use solana_bridge_client::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
+use near_bridge_client::btc_connector::{DepositMsg, FinBtcTransferArgs};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[derive(Builder, Default)]
@@ -355,8 +356,8 @@ impl OmniConnector {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash, tx_block_height)?;
-        let args = near_bridge_client::FinBtcTransferArgs {
-            deposit_msg: near_bridge_client::DepositMsg {
+        let args = FinBtcTransferArgs {
+            deposit_msg: DepositMsg {
                 recipient_id: recipient_id.parse().unwrap(),
                 post_actions: None,
                 extra_msg: None,
