@@ -255,6 +255,17 @@ pub enum OmniConnectorSubCommand {
         tx_block_height: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
         recipient_id: String,
+        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        amount: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network")]
+    GetBitcoinAddress {
+        #[clap(short, long, help = "The recipient in format <chain_id>:<address> for transferring using OmniBridge")]
+        recipient_id: String,
+        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        amount: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -586,6 +597,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             btc_tx_hash,
             tx_block_height,
             recipient_id,
+            amount,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -594,11 +606,25 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     tx_block_height,
                     0,
                     recipient_id,
+                    amount,
                     TransactionOptions::default(),
                     None,
                 )
                 .await
                 .unwrap();
+        }
+        OmniConnectorSubCommand::GetBitcoinAddress  {
+            recipient_id,
+            amount,
+            config_cli,
+        } => {
+            let btc_address = omni_connector(network, config_cli)
+                .get_btc_address(&recipient_id,
+                                 amount)
+                .await
+                .unwrap();
+
+            tracing::info!("BTC Address: {btc_address}");
         }
     }
 }
