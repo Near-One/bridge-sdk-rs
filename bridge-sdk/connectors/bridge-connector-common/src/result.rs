@@ -92,3 +92,9 @@ impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for Brid
         Self::EthRpcError(EthRpcError::SignerContractError(error))
     }
 }
+
+impl From<ProviderError> for BridgeSdkError {
+    fn from(error: ProviderError) -> Self {
+        Self::EthRpcError(EthRpcError::ProviderError(error))
+    }
+}

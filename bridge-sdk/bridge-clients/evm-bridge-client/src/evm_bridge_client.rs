@@ -10,7 +10,7 @@ use omni_types::{EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
 
 abigen!(
-    BridgeTokenFactory,
+    OmniBridge,
     r#"[
       struct MetadataPayload { string token; string name; string symbol; uint8 decimals; }
       struct TransferMessagePayload { uint64 destinationNonce; uint8 originChain; uint64 originNonce; address tokenAddress; uint128 amount; address recipient; string feeRecipient; }
@@ -19,6 +19,7 @@ abigen!(
       function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external
       function nearToEthToken(string nearTokenId) external view returns (address)
       function logMetadata(address tokenAddress) external
+      event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message)
     ]"#
 );
 
@@ -39,8 +40,8 @@ pub struct EvmBridgeClient {
     chain_id: Option<u64>,
     #[doc = r"EVM private key. Required for `deploy_token`, `mint`, `burn`"]
     private_key: Option<String>,
-    #[doc = r"Bridged token factory address on EVM. Required for `deploy_token`, `mint`, `burn`"]
-    bridge_token_factory_address: Option<String>,
+    #[doc = r"OmniBridge address on EVM. Required for `deploy_token`, `mint`, `burn`"]
+    omni_bridge_address: Option<String>,
 }
 
 impl EvmBridgeClient {
@@ -56,9 +57,9 @@ impl EvmBridgeClient {
         address: EvmAddress,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let factory = self.bridge_token_factory()?;
+        let omni_bridge = self.omni_bridge()?;
 
-        let mut call = factory.log_metadata(address.0.into());
+        let mut call = omni_bridge.log_metadata(address.0.into());
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -77,7 +78,7 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let factory = self.bridge_token_factory()?;
+        let omni_bridge = self.omni_bridge()?;
 
         let OmniBridgeEvent::LogMetadataEvent {
             signature,
@@ -100,7 +101,7 @@ impl EvmBridgeClient {
 
         assert!(serialized_signature.len() == 65);
 
-        let mut call = factory
+        let mut call = omni_bridge
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
@@ -125,21 +126,21 @@ impl EvmBridgeClient {
         message: String,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let factory = self.bridge_token_factory()?;
+        let omni_bridge = self.omni_bridge()?;
 
         let bridge_token = &self.bridge_token(token)?;
 
         let signer = self.signer()?;
-        let bridge_token_factory_address = self.bridge_token_factory_address()?;
+        let omni_bridge_address = self.omni_bridge_address()?;
         let allowance = bridge_token
-            .allowance(signer.address(), bridge_token_factory_address)
+            .allowance(signer.address(), omni_bridge_address)
             .call()
             .await?;
 
         let amount256: ethers::types::U256 = amount.into();
         if allowance < amount256 {
             let mut approval_call =
-                bridge_token.approve(bridge_token_factory_address, amount256 - allowance);
+                bridge_token.approve(omni_bridge_address, amount256 - allowance);
             self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
                 .await?;
             approval_call
@@ -151,7 +152,7 @@ impl EvmBridgeClient {
             tracing::debug!("Approved tokens for spending");
         }
 
-        let mut withdraw_call = factory.init_transfer(
+        let mut withdraw_call = omni_bridge.init_transfer(
             token,
             amount,
             fee.fee.into(),
@@ -179,7 +180,7 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let factory = self.bridge_token_factory()?;
+        let omni_bridge = self.omni_bridge()?;
 
         let OmniBridgeEvent::SignTransferEvent {
             message_payload,
@@ -223,7 +224,7 @@ impl EvmBridgeClient {
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let mut call = factory.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+        let mut call = omni_bridge.fin_transfer(signature.to_bytes().into(), bridge_deposit);
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -259,30 +260,58 @@ impl EvmBridgeClient {
         Ok(proof)
     }
 
+    pub async fn get_transfer_event(&self, tx_hash: TxHash) -> Result<InitTransferFilter> {
+        let provider = Provider::<Http>::try_from(self.endpoint()?)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let receipt = provider.get_transaction_receipt(tx_hash).await?.ok_or(
+            BridgeSdkError::InvalidArgument("Transaction receipt not found".to_string()),
+        )?;
+
+        let event_signature = InitTransferFilter::signature();
+        let log = receipt
+            .logs
+            .iter()
+            .find(|log| log.topics.contains(&event_signature))
+            .ok_or(BridgeSdkError::InvalidArgument(
+                "Transfer event not found".to_string(),
+            ))?;
+
+        let raw_log = ethers::core::abi::RawLog {
+            topics: log.topics.clone(),
+            data: log.data.to_vec(),
+        };
+
+        let init_transfer =
+            <InitTransferFilter as EthEvent>::decode_log(&raw_log).map_err(|err| {
+                BridgeSdkError::UnknownError(format!("Failed to decode event log: {err}"))
+            })?;
+
+        Ok(init_transfer)
+    }
+
     pub fn endpoint(&self) -> Result<&str> {
         Ok(self.endpoint.as_ref().ok_or(BridgeSdkError::ConfigError(
             "EVM rpc endpoint is not set".to_string(),
         ))?)
     }
 
-    pub fn bridge_token_factory_address(&self) -> Result<Address> {
-        self.bridge_token_factory_address
+    pub fn omni_bridge_address(&self) -> Result<Address> {
+        self.omni_bridge_address
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "Bridge token factory address is not set".to_string(),
+                "OmniBridge address is not set".to_string(),
             ))
             .and_then(|addr| {
                 Address::from_str(addr).map_err(|_| {
                     BridgeSdkError::ConfigError(
-                        "bridge_token_factory_address is not a valid EVM address".to_string(),
+                        "omni_bridge_address is not a valid EVM address".to_string(),
                     )
                 })
             })
     }
 
-    pub fn bridge_token_factory(
-        &self,
-    ) -> Result<BridgeTokenFactory<SignerMiddleware<Provider<Http>, LocalWallet>>> {
+    pub fn omni_bridge(&self) -> Result<OmniBridge<SignerMiddleware<Provider<Http>, LocalWallet>>> {
         let endpoint = self.endpoint()?;
 
         let provider = Provider::<Http>::try_from(endpoint)
@@ -293,10 +322,7 @@ impl EvmBridgeClient {
         let signer = SignerMiddleware::new(provider, wallet);
         let client = Arc::new(signer);
 
-        Ok(BridgeTokenFactory::new(
-            self.bridge_token_factory_address()?,
-            client,
-        ))
+        Ok(OmniBridge::new(self.omni_bridge_address()?, client))
     }
 
     pub fn bridge_token(
