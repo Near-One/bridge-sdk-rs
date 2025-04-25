@@ -15,6 +15,7 @@ use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use btc_bridge_client::BtcBridgeClient;
 use evm_bridge_client::EvmBridgeClient;
+use near_bridge_client::btc_connector::{DepositMsg, FinBtcTransferArgs};
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
@@ -22,7 +23,6 @@ use solana_bridge_client::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
-use near_bridge_client::btc_connector::{DepositMsg, FinBtcTransferArgs};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[derive(Builder, Default)]
