@@ -64,7 +64,6 @@ struct StorageBalanceBounds {
     min: NearToken,
 }
 
-<<<<<<< HEAD
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct PostAction {
     pub receiver_id: AccountId,
