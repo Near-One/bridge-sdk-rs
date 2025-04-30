@@ -253,6 +253,8 @@ pub enum OmniConnectorSubCommand {
         btc_tx_hash: String,
         #[clap(short, long, help = "The block height of bitcoin tx hash")]
         tx_block_height: usize,
+        #[clap(short, long, help = "The index of the output in the Bitcoin transaction", default_value = "0")]
+        vout: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
         recipient_id: String,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
@@ -596,6 +598,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::NearFinTransferBTC {
             btc_tx_hash,
             tx_block_height,
+            vout,
             recipient_id,
             amount,
             config_cli,
@@ -604,7 +607,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .near_fin_transfer_btc(
                     btc_tx_hash,
                     tx_block_height,
-                    0,
+                    vout,
                     recipient_id,
                     amount,
                     TransactionOptions::default(),
