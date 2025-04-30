@@ -103,8 +103,9 @@ impl NearBridgeClient {
     ) -> Result<DepositMsg> {
         if recipient_id.contains(':') {
             let omni_bridge_id = self.omni_bridge_id()?;
+            let account_id = self.account_id()?;
             Ok(DepositMsg {
-                recipient_id: "olga24912_3.testnet".parse().unwrap(),
+                recipient_id: account_id,
                 post_actions: Some(vec![PostAction {
                     receiver_id: omni_bridge_id,
                     amount,
