@@ -61,7 +61,7 @@ impl BtcBridgeClient {
         let tx_index = transactions
             .iter()
             .position(|hash| *hash == tx_hash)
-            .ok_or(BridgeSdkError::BtcClientError(
+            .ok_or(BridgeSdkError::InvalidArgument(
                 "btc tx not found in block".to_string(),
             ))?;
 

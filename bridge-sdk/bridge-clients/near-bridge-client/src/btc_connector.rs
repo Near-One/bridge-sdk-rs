@@ -4,15 +4,17 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
-use near_sdk::json_types::U128;
 use serde_json::json;
+use serde_with::{serde_as, DisplayFromStr};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
+#[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct PostAction {
     pub receiver_id: AccountId,
-    pub amount: U128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub amount: u128,
     pub memo: Option<String>,
     pub msg: String,
     pub gas: Option<Gas>,
@@ -38,6 +40,8 @@ pub struct FinBtcTransferArgs {
 }
 
 impl NearBridgeClient {
+    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
+    #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
         args: FinBtcTransferArgs,
@@ -103,7 +107,7 @@ impl NearBridgeClient {
                 recipient_id: "olga24912_3.testnet".parse().unwrap(),
                 post_actions: Some(vec![PostAction {
                     receiver_id: omni_bridge_id,
-                    amount: U128(amount),
+                    amount,
                     memo: None,
                     msg: json!({
                         "recipient": recipient_id.to_string(),

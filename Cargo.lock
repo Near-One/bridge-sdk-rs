@@ -1170,7 +1170,6 @@ dependencies = [
  "near-crypto 0.29.2",
  "near-primitives 0.29.2",
  "near-rpc-client",
- "near-sdk",
  "serde",
  "serde_json",
  "tokio",
@@ -4852,11 +4851,11 @@ dependencies = [
  "near-jsonrpc-client 0.16.1",
  "near-primitives 0.29.2",
  "near-rpc-client",
- "near-sdk",
  "near-token",
  "omni-types",
  "serde",
  "serde_json",
+ "serde_with",
  "tracing",
 ]
 
