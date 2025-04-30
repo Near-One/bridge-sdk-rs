@@ -75,8 +75,9 @@ impl NearBridgeClient {
 
     pub async fn get_btc_address(&self,
                                  recipient_id: &str,
-                                 amount: u128) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount)?;
+                                 amount: u128,
+                                 fee: u128) -> Result<String> {
+        let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
@@ -100,6 +101,7 @@ impl NearBridgeClient {
         &self,
         recipient_id: &str,
         amount: u128,
+        fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.contains(':') {
             let omni_bridge_id = self.omni_bridge_id()?;
@@ -112,7 +114,7 @@ impl NearBridgeClient {
                     memo: None,
                     msg: json!({
                         "recipient": recipient_id.to_string(),
-                        "fee": "0",
+                        "fee": fee.to_string(),
                         "native_token_fee": "0",
                     }).to_string(),
                     gas: None,

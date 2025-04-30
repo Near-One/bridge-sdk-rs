@@ -150,6 +150,7 @@ pub enum FinTransferArgs {
         vout: usize,
         recipient_id: String,
         amount: u128,
+        fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     },
@@ -352,13 +353,14 @@ impl OmniConnector {
         vout: usize,
         recipient_id: String,
         amount: u128,
+        fee: u128,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash, tx_block_height)?;
-        let deposit_msg = near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount)?;
+        let deposit_msg = near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount, fee)?;
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
@@ -376,9 +378,10 @@ impl OmniConnector {
     pub async fn get_btc_address(
         &self,
         recipient_id: &str,
-        amount: u128) -> Result<String> {
+        amount: u128,
+        fee: u128) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client.get_btc_address(recipient_id, amount).await
+        near_bridge_client.get_btc_address(recipient_id, amount, fee).await
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1087,6 +1090,7 @@ impl OmniConnector {
                 vout,
                 recipient_id,
                 amount,
+                fee,
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             } => self
@@ -1096,6 +1100,7 @@ impl OmniConnector {
                     vout,
                     recipient_id,
                     amount,
+                    fee,
                     transaction_options,
                     wait_final_outcome_timeout_sec,
                 )

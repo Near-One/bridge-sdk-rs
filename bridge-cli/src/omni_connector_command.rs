@@ -257,8 +257,10 @@ pub enum OmniConnectorSubCommand {
         vout: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
         recipient_id: String,
-        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        #[clap(short, long, help = "The amount to be transferred, in satoshis", default_value = "0")]
         amount: u128,
+        #[clap(short, long, help = "The Omni Bridge Fee in satoshi", default_value = "0")]
+        fee: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -266,8 +268,10 @@ pub enum OmniConnectorSubCommand {
     GetBitcoinAddress {
         #[clap(short, long, help = "The recipient in format <chain_id>:<address> for transferring using OmniBridge")]
         recipient_id: String,
-        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        #[clap(short, long, help = "The amount to be transferred, in satoshis", default_value = "0")]
         amount: u128,
+        #[clap(short, long, help = "The Omni Bridge Fee in satoshi", default_value = "0")]
+        fee: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -601,6 +605,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             vout,
             recipient_id,
             amount,
+            fee,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -610,6 +615,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     vout,
                     recipient_id,
                     amount,
+                    fee,
                     TransactionOptions::default(),
                     None,
                 )
@@ -619,11 +625,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::GetBitcoinAddress  {
             recipient_id,
             amount,
+            fee,
             config_cli,
         } => {
             let btc_address = omni_connector(network, config_cli)
                 .get_btc_address(&recipient_id,
-                                 amount)
+                                 amount,
+                                 fee)
                 .await
                 .unwrap();
 
