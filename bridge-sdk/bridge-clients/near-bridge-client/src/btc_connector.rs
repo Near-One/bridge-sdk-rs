@@ -5,6 +5,7 @@ use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_sdk::json_types::U128;
+use serde_json::json;
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
@@ -99,12 +100,16 @@ impl NearBridgeClient {
         if recipient_id.contains(':') {
             let omni_bridge_id = self.omni_bridge_id()?;
             Ok(DepositMsg {
-                recipient_id: omni_bridge_id.clone(),
+                recipient_id: "olga24912_3.testnet".parse().unwrap(),
                 post_actions: Some(vec![PostAction {
                     receiver_id: omni_bridge_id,
                     amount: U128(amount),
                     memo: None,
-                    msg: recipient_id.to_string(),
+                    msg: json!({
+                        "recipient": recipient_id.to_string(),
+                        "fee": "0",
+                        "native_token_fee": "0",
+                    }).to_string(),
                     gas: None,
                 }]),
                 extra_msg: None,
