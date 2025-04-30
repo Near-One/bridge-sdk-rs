@@ -73,10 +73,12 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    pub async fn get_btc_address(&self,
-                                 recipient_id: &str,
-                                 amount: u128,
-                                 fee: u128) -> Result<String> {
+    pub async fn get_btc_address(
+        &self,
+        recipient_id: &str,
+        amount: u128,
+        fee: u128,
+    ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
@@ -91,7 +93,7 @@ impl NearBridgeClient {
                 }),
             },
         )
-            .await?;
+        .await?;
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
@@ -116,7 +118,8 @@ impl NearBridgeClient {
                         "recipient": recipient_id.to_string(),
                         "fee": fee.to_string(),
                         "native_token_fee": "0",
-                    }).to_string(),
+                    })
+                    .to_string(),
                     gas: None,
                 }]),
                 extra_msg: None,

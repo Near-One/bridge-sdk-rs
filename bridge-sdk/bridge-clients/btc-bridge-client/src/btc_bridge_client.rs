@@ -4,6 +4,12 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
 use btc_relayer_lib::config::{BitcoinConfig, Config, NearConfig};
 
+pub struct BtcOutpoint {
+    pub tx_hash: String,
+    pub block_height: usize,
+    pub vout: usize,
+}
+
 #[derive(Debug)]
 pub struct TxProof {
     pub tx_bytes: Vec<u8>,
@@ -43,10 +49,10 @@ impl BtcBridgeClient {
         BtcBridgeClient { bitcoin_client }
     }
 
-    pub fn extract_btc_proof(&self, tx_hash: &str, tx_block_height: usize) -> Result<TxProof> {
+    pub fn extract_btc_proof(&self, btc_outpoint: &BtcOutpoint) -> Result<TxProof> {
         let block = self
             .bitcoin_client
-            .get_block_by_height(tx_block_height.try_into().unwrap())
+            .get_block_by_height(btc_outpoint.block_height.try_into().unwrap())
             .map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("error on getting block by height: {err}"))
             })?;
@@ -60,7 +66,7 @@ impl BtcBridgeClient {
 
         let tx_index = transactions
             .iter()
-            .position(|hash| *hash == tx_hash)
+            .position(|hash| *hash == btc_outpoint.tx_hash)
             .ok_or(BridgeSdkError::InvalidArgument(
                 "btc tx not found in block".to_string(),
             ))?;

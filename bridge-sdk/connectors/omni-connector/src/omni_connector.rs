@@ -13,7 +13,7 @@ use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
-use btc_bridge_client::BtcBridgeClient;
+use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::btc_connector::FinBtcTransferArgs;
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
@@ -348,9 +348,7 @@ impl OmniConnector {
 
     pub async fn near_fin_transfer_btc(
         &self,
-        btc_tx_hash: String,
-        tx_block_height: usize,
-        vout: usize,
+        btc_outpoint: BtcOutpoint,
         recipient_id: String,
         amount: u128,
         fee: u128,
@@ -359,12 +357,13 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash, tx_block_height)?;
-        let deposit_msg = near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount, fee)?;
+        let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
+        let deposit_msg =
+            near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount, fee)?;
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
-            vout,
+            vout: btc_outpoint.vout,
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
@@ -379,9 +378,12 @@ impl OmniConnector {
         &self,
         recipient_id: &str,
         amount: u128,
-        fee: u128) -> Result<String> {
+        fee: u128,
+    ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client.get_btc_address(recipient_id, amount, fee).await
+        near_bridge_client
+            .get_btc_address(recipient_id, amount, fee)
+            .await
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1095,9 +1097,11 @@ impl OmniConnector {
                 wait_final_outcome_timeout_sec,
             } => self
                 .near_fin_transfer_btc(
-                    btc_tx_hash,
-                    tx_block_height,
-                    vout,
+                    BtcOutpoint {
+                        tx_hash: btc_tx_hash,
+                        block_height: tx_block_height,
+                        vout,
+                    },
                     recipient_id,
                     amount,
                     fee,
