@@ -670,6 +670,8 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
+    #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
         args: FinBtcTransferArgs,
@@ -685,7 +687,7 @@ impl NearBridgeClient {
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
                 method_name: "verify_deposit".to_string(),
-                args: serde_json::json!(args).to_string().into_bytes(),
+                args: json!(args).to_string().into_bytes(),
                 gas: FIN_BTC_TRANSFER_GAS,
                 deposit: 0,
             },
