@@ -7,13 +7,13 @@ use near_crypto::{SecretKey, Signer};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
-use near_sdk::json_types::U128;
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
     ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
+use serde_with::{serde_as, DisplayFromStr};
 
 const STORAGE_DEPOSIT_GAS: u64 = 10_000_000_000_000;
 
@@ -64,10 +64,12 @@ struct StorageBalanceBounds {
     min: NearToken,
 }
 
+#[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct PostAction {
     pub receiver_id: AccountId,
-    pub amount: U128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub amount: u128,
     pub memo: Option<String>,
     pub msg: String,
     pub gas: Option<Gas>,
