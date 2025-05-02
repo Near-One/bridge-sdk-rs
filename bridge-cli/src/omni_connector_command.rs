@@ -2,6 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
+use btc_bridge_client::BtcBridgeClient;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -113,6 +114,21 @@ pub enum OmniConnectorSubCommand {
         storage_deposit_actions: Vec<String>,
         #[clap(short, long, help = "VAA from InitTransfer call")]
         vaa: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize a transfer on NEAR using fast transfer")]
+    NearFastFinTransfer {
+        #[clap(short, long, help = "Origin chain of the transfer")]
+        chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the init transfer call on origin chain"
+        )]
+        tx_hash: String,
+        #[clap(long, help = "Storage deposit amount for tokens receiver")]
+        storage_deposit_amount: Option<u128>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -243,6 +259,17 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Finalize Transfer from Bitcoin on Near")]
+    NearFinTransferBTC {
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "The block height of bitcoin tx hash")]
+        tx_block_height: usize,
+        #[clap(short, long, help = "The BTC recipient on NEAR")]
+        recipient_id: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -250,7 +277,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
-                .log_metadata(token, TransactionOptions::default(), None)
+                .log_metadata(token, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -267,7 +294,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                             transaction_options: TransactionOptions::default(),
-                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -278,7 +304,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             chain_kind: source_chain,
                             tx_hash,
                             transaction_options: TransactionOptions::default(),
-                            wait_final_outcome_timeout_sec: None,
                         })
                         .await
                         .unwrap();
@@ -310,7 +335,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, TransactionOptions::default(), None)
+                .near_storage_deposit_for_token(token, amount, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -334,7 +359,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     }),
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
@@ -355,7 +379,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     fee: fee.unwrap_or(0),
                     native_fee: native_fee.unwrap_or(0),
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -382,7 +405,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .collect(),
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
                 .await
                 .unwrap();
@@ -409,8 +431,23 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .collect(),
                     vaa,
                     transaction_options: TransactionOptions::default(),
-                    wait_final_outcome_timeout_sec: None,
                 })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearFastFinTransfer {
+            chain,
+            tx_hash,
+            storage_deposit_amount,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_fast_transfer(
+                    chain,
+                    tx_hash,
+                    storage_deposit_amount,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }
@@ -530,7 +567,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                         transaction_options: TransactionOptions::default(),
-                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
@@ -541,7 +577,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain_kind: chain,
                         tx_hash,
                         transaction_options: TransactionOptions::default(),
-                        wait_final_outcome_timeout_sec: None,
                     })
                     .await
                     .unwrap();
@@ -571,6 +606,24 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::NearFinTransferBTC {
+            btc_tx_hash,
+            tx_block_height,
+            recipient_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_fin_transfer_btc(
+                    btc_tx_hash,
+                    tx_block_height,
+                    0,
+                    recipient_id,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await
+                .unwrap();
+        }
     }
 }
 
@@ -581,7 +634,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.near_rpc)
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
-        .token_locker_id(combined_config.near_token_locker_id)
+        .omni_bridge_id(combined_config.near_token_locker_id)
+        .btc_connector(combined_config.btc_connector)
         .build()
         .unwrap();
 
@@ -589,7 +643,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.eth_rpc)
         .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
-        .bridge_token_factory_address(combined_config.eth_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
         .build()
         .unwrap();
 
@@ -597,7 +651,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.base_rpc)
         .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
-        .bridge_token_factory_address(combined_config.base_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.base_bridge_token_factory_address)
         .build()
         .unwrap();
 
@@ -605,7 +659,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .endpoint(combined_config.arb_rpc)
         .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
-        .bridge_token_factory_address(combined_config.arb_bridge_token_factory_address)
+        .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
         .build()
         .unwrap();
 
@@ -635,6 +689,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let btc_bridge_client = BtcBridgeClient::new(combined_config.btc_endpoint.unwrap());
+
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))
         .eth_bridge_client(Some(eth_bridge_client))
@@ -642,6 +698,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .arb_bridge_client(Some(arb_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
+        .btc_bridge_client(Some(btc_bridge_client))
         .build()
         .unwrap()
 }

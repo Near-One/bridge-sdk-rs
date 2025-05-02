@@ -22,6 +22,8 @@ pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q
 pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth";
 
 pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
+pub const BTC_ENDPOINT_MAINNET: &str = "https://bitcoin-rpc.publicnode.com";
+pub const BTC_CONNECTOR_MAINNET: &str = "btc-connector.bridge.near";
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.near.org/";
@@ -47,6 +49,8 @@ pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8C
 pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
 
 pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
+pub const BTC_ENDPOINT_TESTNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
+pub const BTC_CONNECTOR_TESTNET: &str = "brg-dev.testnet";
 
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
@@ -72,3 +76,5 @@ pub const SOLANA_BRIDGE_ADDRESS_DEVNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEp
 pub const SOLANA_WORMHOLE_ADDRESS_DEVNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
 
 pub const WORMHOLE_API_DEVNET: &str = "https://api.testnet.wormholescan.io";
+pub const BTC_ENDPOINT_DEVNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
+pub const BTC_CONNECTOR_DEVNET: &str = "brg-dev.testnet";

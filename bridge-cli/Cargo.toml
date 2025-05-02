@@ -22,3 +22,4 @@ near-bridge-client = { path = "../bridge-sdk/bridge-clients/near-bridge-client" 
 evm-bridge-client = { path = "../bridge-sdk/bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../bridge-sdk/bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../bridge-sdk/bridge-clients/wormhole-bridge-client" }
+btc-bridge-client = { path = "../bridge-sdk/bridge-clients/btc-bridge-client" }

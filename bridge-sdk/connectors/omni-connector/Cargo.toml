@@ -27,7 +27,7 @@ near-bridge-client = { path = "../../bridge-clients/near-bridge-client" }
 evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
-
+btc-bridge-client = { path = "../../bridge-clients/btc-bridge-client" }
 
 [lib]
 path = "src/omni_connector.rs"

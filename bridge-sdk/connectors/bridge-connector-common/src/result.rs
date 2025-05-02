@@ -35,6 +35,8 @@ pub enum BridgeSdkError {
     SolanaOtherError(String),
     #[error("Wormhole client error: {0}")]
     WormholeClientError(String),
+    #[error("BTC Client Error: {0}")]
+    BtcClientError(String),
     #[error("Invalid argument provided: {0}")]
     InvalidArgument(String),
     #[error("Unexpected error occured: {0}")]
@@ -88,5 +90,11 @@ impl From<NearLightClientOnEthError> for BridgeSdkError {
 impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for BridgeSdkError {
     fn from(error: ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>) -> Self {
         Self::EthRpcError(EthRpcError::SignerContractError(error))
+    }
+}
+
+impl From<ProviderError> for BridgeSdkError {
+    fn from(error: ProviderError) -> Self {
+        Self::EthRpcError(EthRpcError::ProviderError(error))
     }
 }
