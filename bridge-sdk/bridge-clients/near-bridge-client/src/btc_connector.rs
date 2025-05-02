@@ -7,6 +7,7 @@ use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
+use bitcoin::OutPoint;
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
@@ -128,6 +129,13 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
+    }
+
+    pub fn utxos_to_out_points(&self, utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {
+        utxos
+            .into_iter()
+            .map(|(txid, utxo)| OutPoint::new(txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(), utxo.vout.try_into().unwrap()))
+            .collect()
     }
 
     pub fn choose_utxos(&self, amount: u128, utxos: HashMap<String, UTXO>) -> (Vec<(String, UTXO)>, u128) {
