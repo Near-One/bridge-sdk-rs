@@ -130,6 +130,24 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
+    pub fn choose_utxos(&self, amount: u128, utxos: HashMap<String, UTXO>) -> (Vec<(String, UTXO)>, u128) {
+        let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
+        utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
+
+        let mut selected = Vec::new();
+        let mut utxos_balance = 0;
+
+        for utxo in utxo_list {
+            if utxos_balance >= amount {
+                break;
+            }
+            utxos_balance += utxo.1.balance as u128;
+            selected.push(utxo);
+        }
+
+        (selected, utxos_balance)
+    }
+
     pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
