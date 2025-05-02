@@ -307,7 +307,7 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
     #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
-    InitNeatToBitcoinTransfer {
+    InitNearToBitcoinTransfer {
         #[clap(
             short,
             long,
@@ -686,12 +686,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::InitNeatToBitcoinTransfer {
+        OmniConnectorSubCommand::InitNearToBitcoinTransfer {
             target_btc_address,
             amount,
             config_cli,
         } => {
-            //TODO
+            omni_connector(network, config_cli)
+                .init_near_to_bitcoin_transfer(
+                    target_btc_address,
+                    amount,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await
+                .unwrap();
         }
     }
 }

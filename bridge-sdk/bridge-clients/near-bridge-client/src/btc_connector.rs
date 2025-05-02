@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -8,6 +9,36 @@ use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+
+pub mod u64_dec_format {
+    use serde::de;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        serializer.serialize_str(&num.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
+        where
+            D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(de::Error::custom)
+    }
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct UTXO {
+    pub path: String,
+    pub tx_bytes: Vec<u8>,
+    pub vout: usize,
+    #[serde(with = "u64_dec_format")]
+    pub balance: u64,
+}
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -97,6 +128,24 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
+    }
+
+    pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_utxos_paged".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+            .await?;
+
+        let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
+        Ok(utxos)
     }
 
     pub fn get_deposit_msg_by_recipient_id(

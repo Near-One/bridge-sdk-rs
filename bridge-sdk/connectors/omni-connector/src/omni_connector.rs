@@ -386,6 +386,21 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn init_near_to_bitcoin_transfer(
+        &self,
+        target_btc_address: String,
+        amount: u128,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let utxos = near_bridge_client.get_utxos().await?;
+
+        println!("{:?}", utxos);
+
+        Ok(CryptoHash::default())
+    }
+
     pub async fn near_fin_transfer_with_vaa(
         &self,
         chain_kind: ChainKind,
