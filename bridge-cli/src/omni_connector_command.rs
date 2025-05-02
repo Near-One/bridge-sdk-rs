@@ -306,6 +306,24 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
+    InitNeatToBitcoinTransfer {
+        #[clap(
+            short,
+            long,
+            help = "The Bitcoin address to which the BTC will eventually be released"
+        )]
+        target_btc_address: String,
+        #[clap(
+            short,
+            long,
+            help = "The amount to be transferred, in satoshis",
+            default_value = "0"
+        )]
+        amount: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -667,6 +685,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
 
             tracing::info!("BTC Address: {btc_address}");
+        }
+        OmniConnectorSubCommand::InitNeatToBitcoinTransfer {
+            target_btc_address,
+            amount,
+            config_cli,
+        } => {
+            //TODO
         }
     }
 }
