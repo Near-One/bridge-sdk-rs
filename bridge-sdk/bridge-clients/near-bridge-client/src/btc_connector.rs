@@ -83,6 +83,20 @@ pub enum TokenReceiverMessage {
     },
 }
 
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct WithdrawBridgeFee {
+    #[serde_as(as = "DisplayFromStr")]
+    fee_min: u128,
+    fee_rate: u64,
+    protocol_fee_rate: u64,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PartialConfig {
+    withdraw_bridge_fee: WithdrawBridgeFee,
+}
+
 impl NearBridgeClient {
     /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
@@ -231,6 +245,24 @@ impl NearBridgeClient {
 
         let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
         Ok(utxos)
+    }
+
+    pub async fn get_withdraw_fee(&self) -> Result<u128> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_config".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+            .await?;
+
+        let config = serde_json::from_slice::<PartialConfig>(&response)?;
+        Ok(config.withdraw_bridge_fee.fee_min)
     }
 
     pub fn get_deposit_msg_by_recipient_id(

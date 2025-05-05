@@ -400,6 +400,9 @@ impl OmniConnector {
         let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64);
         println!("{:?}", tx_outs);
 
+        let fee = near_bridge_client.get_withdraw_fee().await?;
+        println!("Fee: {:?}", fee);
+
         near_bridge_client.init_btc_transfer(amount, TokenReceiverMessage::Withdraw{
             target_btc_address,
             input: out_points,
