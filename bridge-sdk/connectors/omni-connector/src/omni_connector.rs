@@ -394,16 +394,21 @@ impl OmniConnector {
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
+        let btc_bridge_client = self.btc_bridge_client()?;
         let utxos = near_bridge_client.get_utxos().await?;
         let (filtred_utxo, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos);
         let out_points = near_bridge_client.utxos_to_out_points(filtred_utxo.clone());
-        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64);
+
+        let gas_fee = btc_bridge_client.get_gas_fee()? as u128;
+        let change_address = near_bridge_client.get_change_address().await?;
+        println!("Change_address: {:?}", change_address);
+        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64, change_address, (utxos_balance - amount - gas_fee) as u64);
         println!("{:?}", tx_outs);
 
-        let fee = near_bridge_client.get_withdraw_fee().await?;
+        let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
         println!("Fee: {:?}", fee);
 
-        near_bridge_client.init_btc_transfer(amount, TokenReceiverMessage::Withdraw{
+        near_bridge_client.init_btc_transfer(amount + fee, TokenReceiverMessage::Withdraw{
             target_btc_address,
             input: out_points,
             output: tx_outs,

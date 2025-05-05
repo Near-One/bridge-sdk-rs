@@ -86,4 +86,8 @@ impl BtcBridgeClient {
             merkle_proof: merkle_proof_str,
         })
     }
+
+    pub fn get_gas_fee(&self) -> Result<u64> {
+        return Ok(100);
+    }
 }

@@ -95,6 +95,7 @@ struct WithdrawBridgeFee {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PartialConfig {
     withdraw_bridge_fee: WithdrawBridgeFee,
+    change_address: String,
 }
 
 impl NearBridgeClient {
@@ -196,12 +197,18 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub fn get_tx_outs(&self, target_btc_address: String, amount: u64) -> Vec<TxOut> {
+    pub fn get_tx_outs(&self, target_btc_address: String, amount: u64, change_address: String, change_amount: u64) -> Vec<TxOut> {
         let address = Address::from_str(&target_btc_address)
             .expect("Invalid Bitcoin address");
         let address = address.assume_checked();
         let script_pubkey = address.script_pubkey();
-        vec![TxOut{ value: Amount::from_sat(amount), script_pubkey}]
+
+        let address_2 = Address::from_str(&change_address)
+            .expect("Invalid Bitcoin Change address");
+        let address_2 = address_2.assume_checked();
+        let script_pubkey_2 = address_2.script_pubkey();
+        vec![TxOut{ value: Amount::from_sat(amount), script_pubkey},
+             TxOut{ value: Amount::from_sat(change_amount), script_pubkey: script_pubkey_2},]
     }
 
     pub fn utxos_to_out_points(&self, utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {
@@ -263,6 +270,24 @@ impl NearBridgeClient {
 
         let config = serde_json::from_slice::<PartialConfig>(&response)?;
         Ok(config.withdraw_bridge_fee.fee_min)
+    }
+
+    pub async fn get_change_address(&self) -> Result<String> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_config".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+            .await?;
+
+        let config = serde_json::from_slice::<PartialConfig>(&response)?;
+        Ok(config.change_address)
     }
 
     pub fn get_deposit_msg_by_recipient_id(
