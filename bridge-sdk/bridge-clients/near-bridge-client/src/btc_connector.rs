@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -7,7 +8,7 @@ use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
-use bitcoin::OutPoint;
+use bitcoin::{Address, Amount, OutPoint, ScriptBuf, TxOut};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
@@ -129,6 +130,14 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
+    }
+
+    pub fn get_tx_outs(&self, target_btc_address: String, amount: u64) -> Vec<TxOut> {
+        let address = Address::from_str(&target_btc_address)
+            .expect("Invalid Bitcoin address");
+        let address = address.assume_checked();
+        let script_pubkey = address.script_pubkey();
+        vec![TxOut{ value: Amount::from_sat(amount), script_pubkey}]
     }
 
     pub fn utxos_to_out_points(&self, utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {

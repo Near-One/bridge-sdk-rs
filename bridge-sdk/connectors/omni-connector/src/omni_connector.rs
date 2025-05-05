@@ -397,7 +397,8 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos().await?;
         let (filtred_utxo, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos);
         let out_points = near_bridge_client.utxos_to_out_points(filtred_utxo.clone());
-        println!("{:?}, {:?}, {:?}", filtred_utxo, utxos_balance, out_points);
+        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address, amount as u64);
+        println!("{:?}", tx_outs);
 
         Ok(CryptoHash::default())
     }
