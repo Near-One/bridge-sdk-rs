@@ -713,6 +713,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
         .btc_connector(combined_config.btc_connector)
+        .btc(combined_config.btc)
         .build()
         .unwrap();
 

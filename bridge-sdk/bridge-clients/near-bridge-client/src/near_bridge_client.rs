@@ -87,6 +87,8 @@ pub struct NearBridgeClient {
     omni_bridge_id: Option<String>,
     #[doc = r"BTC Connector account id on Near"]
     btc_connector: Option<String>,
+    #[doc = r"Bitcoin account id on Near"]
+    btc: Option<String>,
 }
 
 impl NearBridgeClient {
@@ -874,6 +876,18 @@ impl NearBridgeClient {
             .parse::<AccountId>()
             .map_err(|_| {
                 BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
+            })
+    }
+
+    pub fn btc(&self) -> Result<AccountId> {
+        self.btc
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Bitcoin account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string())
             })
     }
 }
