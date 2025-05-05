@@ -15,7 +15,7 @@ use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
 use evm_bridge_client::EvmBridgeClient;
-use near_bridge_client::btc_connector::FinBtcTransferArgs;
+use near_bridge_client::btc_connector::{FinBtcTransferArgs, TokenReceiverMessage};
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
@@ -397,10 +397,14 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos().await?;
         let (filtred_utxo, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos);
         let out_points = near_bridge_client.utxos_to_out_points(filtred_utxo.clone());
-        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address, amount as u64);
+        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64);
         println!("{:?}", tx_outs);
 
-        Ok(CryptoHash::default())
+        near_bridge_client.init_btc_transfer(amount, TokenReceiverMessage::Withdraw{
+            target_btc_address,
+            input: out_points,
+            output: tx_outs,
+        }, transaction_options, wait_final_outcome_timeout_sec).await
     }
 
     pub async fn near_fin_transfer_with_vaa(

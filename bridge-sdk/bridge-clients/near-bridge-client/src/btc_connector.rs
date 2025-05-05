@@ -11,6 +11,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use bitcoin::{Address, Amount, OutPoint, ScriptBuf, TxOut};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 pub mod u64_dec_format {
     use serde::de;
@@ -72,6 +73,16 @@ pub struct FinBtcTransferArgs {
     pub merkle_proof: Vec<String>,
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum TokenReceiverMessage {
+    DepositProtocolFee,
+    Withdraw {
+        target_btc_address: String,
+        input: Vec<OutPoint>,
+        output: Vec<TxOut>,
+    },
+}
+
 impl NearBridgeClient {
     /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
@@ -102,6 +113,45 @@ impl NearBridgeClient {
         tracing::info!(
             tx_hash = tx_hash.to_string(),
             "Sent BTC finalize transfer transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
+    #[tracing::instrument(skip_all, name = "NEAR INIT BTC TRANSFER")]
+    pub async fn init_btc_transfer(
+        &self,
+        amount: u128,
+        msg: TokenReceiverMessage,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc = self.btc()?;
+        let btc_connector = self.btc_connector()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc,
+                method_name: "ft_transfer_call".to_string(),
+                args: serde_json::json!({
+                    "receiver_id": btc_connector,
+                    "amount": amount.to_string(),
+                    "msg": json!(msg).to_string(),
+                }).to_string().into_bytes(),
+                gas: INIT_BTC_TRANSFER_GAS,
+                deposit: 1,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+            .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Init BTC transfer"
         );
         Ok(tx_hash)
     }
