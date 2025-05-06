@@ -87,7 +87,11 @@ impl BtcBridgeClient {
         })
     }
 
-    pub fn get_gas_fee(&self) -> Result<u64> {
-        return Ok(100);
+    pub fn get_gas_fee(&self, num_input: u64, num_output: u64) -> Result<u64> {
+        let fee_rate = self.bitcoin_client.estimate_fee_rate(2).unwrap().unwrap();
+        let tx_size = 12 + num_input * 68 + num_output * 31;
+        let fee = fee_rate * tx_size / 1024 + 50;
+
+        return Ok(fee.to_sat());
     }
 }

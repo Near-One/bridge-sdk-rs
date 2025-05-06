@@ -399,7 +399,7 @@ impl OmniConnector {
         let (filtred_utxo, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos);
         let out_points = near_bridge_client.utxos_to_out_points(filtred_utxo.clone());
 
-        let gas_fee = btc_bridge_client.get_gas_fee()? as u128;
+        let gas_fee = btc_bridge_client.get_gas_fee(out_points.len() as u64, 2)? as u128;
         let change_address = near_bridge_client.get_change_address().await?;
         println!("Change_address: {:?}", change_address);
         let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64, change_address, (utxos_balance - amount - gas_fee) as u64);
