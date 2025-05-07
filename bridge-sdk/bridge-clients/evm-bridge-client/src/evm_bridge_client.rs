@@ -128,31 +128,39 @@ impl EvmBridgeClient {
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
 
-        let bridge_token = &self.bridge_token(token)?;
+        if token != H160::zero() {
+            let bridge_token = &self.bridge_token(token)?;
 
-        let signer = self.signer()?;
-        let omni_bridge_address = self.omni_bridge_address()?;
-        let allowance = bridge_token
-            .allowance(signer.address(), omni_bridge_address)
-            .call()
-            .await?;
-
-        let amount256: ethers::types::U256 = amount.into();
-        if allowance < amount256 {
-            let mut approval_call =
-                bridge_token.approve(omni_bridge_address, amount256 - allowance);
-            self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
+            let signer = self.signer()?;
+            let omni_bridge_address = self.omni_bridge_address()?;
+            let allowance = bridge_token
+                .allowance(signer.address(), omni_bridge_address)
+                .call()
                 .await?;
-            approval_call
-                .send()
-                .await?
-                .await
-                .map_err(ContractError::from)?;
 
-            tracing::debug!("Approved tokens for spending");
+            let amount256: ethers::types::U256 = amount.into();
+            if allowance < amount256 {
+                let mut approval_call =
+                    bridge_token.approve(omni_bridge_address, amount256 - allowance);
+                self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
+                    .await?;
+                approval_call
+                    .send()
+                    .await?
+                    .await
+                    .map_err(ContractError::from)?;
+
+                tracing::debug!("Approved tokens for spending");
+            }
         }
 
-        let mut withdraw_call = omni_bridge.init_transfer(
+        let value = if token == H160::zero() {
+            U256::from(fee.native_fee.0) + U256::from(amount)
+        } else {
+            U256::from(fee.native_fee.0)
+        };
+
+        let transfer_call = omni_bridge.init_transfer(
             token,
             amount,
             fee.fee.into(),
@@ -160,10 +168,12 @@ impl EvmBridgeClient {
             receiver.to_string(),
             message,
         );
+        let mut transfer_call = transfer_call.value(value);
+
         // Nonce is incremented since previous was used for approval
-        self.prepare_tx_for_sending(&mut withdraw_call, tx_nonce.map(|nonce| nonce + 1))
+        self.prepare_tx_for_sending(&mut transfer_call, tx_nonce.map(|nonce| nonce + 1))
             .await?;
-        let tx = withdraw_call.send().await?;
+        let tx = transfer_call.send().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", tx.tx_hash()),

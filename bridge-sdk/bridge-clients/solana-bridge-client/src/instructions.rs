@@ -37,6 +37,22 @@ impl BorshSerialize for SetAdmin {
     }
 }
 
+pub struct UpdateMetadata {
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub uri: Option<String>,
+}
+
+impl BorshSerialize for UpdateMetadata {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&get_instruction_identifier("global:update_metadata"))?;
+        self.name.serialize(writer)?;
+        self.symbol.serialize(writer)?;
+        self.uri.serialize(writer)?;
+        Ok(())
+    }
+}
+
 pub struct Pause {}
 
 impl BorshSerialize for Pause {

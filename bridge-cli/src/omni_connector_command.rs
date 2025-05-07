@@ -56,7 +56,7 @@ pub enum OmniConnectorSubCommand {
     #[clap(about = "Sign a transfer on NEAR")]
     NearSignTransfer {
         #[clap(long, help = "Origin chain ID of transfer to sign")]
-        origin_chain_id: u8,
+        origin_chain: ChainKind,
         #[clap(long, help = "Origin nonce of transfer to sign")]
         origin_nonce: u64,
         #[clap(long, help = "Fee recipient account ID")]
@@ -234,6 +234,18 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    SolanaUpdateMetadata {
+        #[clap(short, long, help = "Token to update the metadata for")]
+        token: String,
+        #[clap(short, long, help = "URI to update the metadata to")]
+        uri: Option<String>,
+        #[clap(short, long, help = "Name to update the metadata to")]
+        name: Option<String>,
+        #[clap(short, long, help = "Symbol to update the metadata to")]
+        symbol: Option<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Bind a token on a chain that supports Wormhole")]
     BindToken {
         #[clap(short, long, help = "Chain to bind the token from")]
@@ -376,7 +388,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::NearSignTransfer {
-            origin_chain_id,
+            origin_chain,
             origin_nonce,
             fee_recipient,
             fee,
@@ -386,7 +398,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             omni_connector(network, config_cli)
                 .near_sign_transfer(
                     TransferId {
-                        origin_chain: ChainKind::try_from(origin_chain_id).unwrap(),
+                        origin_chain,
                         origin_nonce,
                     },
                     fee_recipient,
@@ -630,6 +642,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::SolanaUpdateMetadata {
+            token,
+            uri,
+            config_cli,
+            name,
+            symbol,
+        } => {
+            omni_connector(network, config_cli)
+                .solana_update_metadata(token.parse().unwrap(), name, symbol, uri)
+                .await
+                .unwrap();
+        }
         OmniConnectorSubCommand::NearFinTransferBTC {
             btc_tx_hash,
             tx_block_height,
@@ -649,6 +673,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient_id,
                     amount,
                     fee,
+
                     TransactionOptions::default(),
                     None,
                 )

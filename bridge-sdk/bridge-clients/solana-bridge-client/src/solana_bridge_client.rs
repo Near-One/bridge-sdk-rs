@@ -1,5 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
+use instructions::UpdateMetadata;
 use sha2::{Digest, Sha256};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -140,6 +141,45 @@ impl SolanaBridgeClient {
             &instruction_data,
             vec![
                 AccountMeta::new(config, false),
+                AccountMeta::new(keypair.pubkey(), true),
+            ],
+        );
+
+        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+            .await
+    }
+
+    pub async fn update_metadata(
+        &self,
+        token: Pubkey,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let program_id = self.program_id()?;
+        let keypair = self.keypair()?;
+
+        let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
+        let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
+
+        let metadata_program_id: Pubkey = mpl_token_metadata::ID.to_bytes().into();
+        let (metadata, _) = Pubkey::find_program_address(
+            &[b"metadata", metadata_program_id.as_ref(), token.as_ref()],
+            &metadata_program_id,
+        );
+
+        let instruction_data = UpdateMetadata { name, symbol, uri };
+
+        let instruction = Instruction::new_with_borsh(
+            *program_id,
+            &instruction_data,
+            vec![
+                AccountMeta::new_readonly(config, false),
+                AccountMeta::new_readonly(authority, false),
+                AccountMeta::new_readonly(token, false),
+                AccountMeta::new(metadata, false),
+                AccountMeta::new_readonly(spl_token::ID, false),
+                AccountMeta::new_readonly(metadata_program_id, false),
                 AccountMeta::new(keypair.pubkey(), true),
             ],
         );
