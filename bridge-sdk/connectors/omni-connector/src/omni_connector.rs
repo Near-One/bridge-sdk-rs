@@ -415,6 +415,16 @@ impl OmniConnector {
         }, transaction_options, wait_final_outcome_timeout_sec).await
     }
 
+    pub async fn btc_fin_transfer(
+        &self,
+        near_tx_hash: String
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let get_btc_tx_data = near_bridge_client.get_btc_tx_data(near_tx_hash).await?;
+
+        Ok("".to_string())
+    }
+
     pub async fn near_fin_transfer_with_vaa(
         &self,
         chain_kind: ChainKind,

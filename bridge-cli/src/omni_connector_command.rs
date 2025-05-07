@@ -279,6 +279,13 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Finalize Transfer from Near on Bitcoin")]
+    BtcFinTransfer {
+        #[clap(short, long, help = "Near tx hash with signature")]
+        near_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(
         about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network"
     )]
@@ -669,6 +676,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     fee,
                     TransactionOptions::default(),
                     None,
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcFinTransfer {
+            near_tx_hash,
+            config_cli
+        } => {
+            omni_connector(network, config_cli)
+                .btc_fin_transfer(
+                    near_tx_hash
                 )
                 .await
                 .unwrap();

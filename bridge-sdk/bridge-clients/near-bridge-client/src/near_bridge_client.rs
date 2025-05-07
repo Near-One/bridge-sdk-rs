@@ -806,15 +806,11 @@ impl NearBridgeClient {
         let transfer_log = sign_tx
             .receipts_outcome
             .iter()
-            .find(|receipt| {
-                !receipt.outcome.logs.is_empty() && receipt.outcome.logs[0].contains(event_name)
-            })
-            .ok_or(BridgeSdkError::UnknownError(
+            .find_map(|receipt| {
+                receipt.outcome.logs.iter().find(|log| log.contains(event_name)).cloned()
+            }).ok_or(BridgeSdkError::UnknownError(
                 "Failed to find correct receipt".to_string(),
-            ))?
-            .outcome
-            .logs[0]
-            .clone();
+            ))?;
 
         Ok(transfer_log)
     }

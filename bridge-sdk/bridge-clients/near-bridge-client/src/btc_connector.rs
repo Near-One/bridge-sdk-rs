@@ -6,7 +6,7 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
-use serde_json::json;
+use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
 use bitcoin::{Address, Amount, OutPoint, ScriptBuf, TxOut};
 
@@ -324,5 +324,21 @@ impl NearBridgeClient {
                 extra_msg: None,
             })
         }
+    }
+
+    pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).unwrap();
+        let log = self.extract_transfer_log(tx_hash, Some("cosmosfirst.testnet".parse().unwrap()), "signed_btc_transaction").await.unwrap();
+
+        let json_str = log.strip_prefix("EVENT_JSON:").unwrap();
+        let v: Value = serde_json::from_str(json_str)?;
+        let bytes = v["data"][0]["tx_bytes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|val| (val.as_u64().unwrap() as u8))
+            .collect::<Vec<u8>>();
+
+        Ok(bytes)
     }
 }
