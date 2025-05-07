@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 bitcoincore-rpc.workspace = true
-btc-relayer.workspace = true
+merkle-tools.workspace = true
 bitcoin.workspace = true
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 serde.workspace = true
