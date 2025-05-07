@@ -420,7 +420,11 @@ impl OmniConnector {
         near_tx_hash: String
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
-        let get_btc_tx_data = near_bridge_client.get_btc_tx_data(near_tx_hash).await?;
+        let btc_tx_data = near_bridge_client.get_btc_tx_data(near_tx_hash).await?;
+
+
+        let btc_bridge_client = self.btc_bridge_client()?;
+        let tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
 
         Ok("".to_string())
     }

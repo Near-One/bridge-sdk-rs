@@ -1,4 +1,5 @@
-use bitcoin::consensus::serialize;
+use bitcoin::consensus::{deserialize, serialize};
+use bitcoin::Transaction;
 use bitcoincore_rpc::bitcoin;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
@@ -94,5 +95,11 @@ impl BtcBridgeClient {
         let fee = (fee_rate * tx_size / 1024).to_sat() + 50;
 
         return Ok(fee);
+    }
+
+    pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String>  {
+        let tx: Transaction = deserialize(&tx_bytes).expect("Failed to deserialize transaction");
+        self.bitcoin_client.send_raw_tx(&tx);
+        Ok("".to_string())
     }
 }
