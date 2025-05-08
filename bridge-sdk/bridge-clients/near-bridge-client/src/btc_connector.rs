@@ -213,14 +213,7 @@ impl NearBridgeClient {
              TxOut{ value: Amount::from_sat(change_amount), script_pubkey: script_pubkey_2},]
     }
 
-    pub fn utxos_to_out_points(&self, utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {
-        utxos
-            .into_iter()
-            .map(|(txid, utxo)| OutPoint::new(txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(), utxo.vout.try_into().unwrap()))
-            .collect()
-    }
-
-    pub fn choose_utxos(&self, amount: u128, utxos: HashMap<String, UTXO>) -> (Vec<(String, UTXO)>, u128) {
+    pub fn choose_utxos(&self, amount: u128, utxos: HashMap<String, UTXO>) -> (Vec<OutPoint>, u128) {
         let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
         utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -235,7 +228,12 @@ impl NearBridgeClient {
             selected.push(utxo);
         }
 
-        (selected, utxos_balance)
+        let out_points = selected
+            .into_iter()
+            .map(|(txid, utxo)| OutPoint::new(txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(), utxo.vout.try_into().unwrap()))
+            .collect::<Vec<OutPoint>>();
+
+        (out_points, utxos_balance)
     }
 
     pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
