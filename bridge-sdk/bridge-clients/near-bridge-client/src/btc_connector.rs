@@ -79,7 +79,7 @@ impl NearBridgeClient {
         amount: u128,
         fee: u128,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount, fee)?;
+        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
@@ -99,7 +99,7 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub fn get_deposit_msg_by_recipient_id(
+    pub fn get_deposit_msg_for_omni_bridge(
         &self,
         recipient_id: &str,
         amount: u128,

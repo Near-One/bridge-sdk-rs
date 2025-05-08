@@ -31,8 +31,6 @@ const INIT_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
-const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
-
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
 
@@ -657,39 +655,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
-    #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
-    pub async fn fin_btc_transfer(
-        &self,
-        args: FinBtcTransferArgs,
-        transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
-    ) -> Result<CryptoHash> {
-        let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
-        let tx_hash = near_rpc_client::change_and_wait(
-            endpoint,
-            ChangeRequest {
-                signer: self.signer()?,
-                nonce: transaction_options.nonce,
-                receiver_id: btc_connector,
-                method_name: "verify_deposit".to_string(),
-                args: json!(args).to_string().into_bytes(),
-                gas: FIN_BTC_TRANSFER_GAS,
-                deposit: 0,
-            },
-            transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
-        )
-        .await?;
-
-        tracing::info!(
-            tx_hash = tx_hash.to_string(),
-            "Sent BTC finalize transfer transaction"
-        );
-        Ok(tx_hash)
-    }
-
     /// Claims fee on NEAR chain
     #[tracing::instrument(skip_all, name = "CLAIM FEE")]
     pub async fn claim_fee(
@@ -797,7 +762,7 @@ impl NearBridgeClient {
         .await?;
 
         let required_balance = serde_json::from_slice::<NearToken>(&response)?;
-        Ok(required_balance.as_yoctonear())            
+        Ok(required_balance.as_yoctonear())
     }
 
     pub async fn get_required_balance_for_deploy_token(&self) -> Result<u128> {

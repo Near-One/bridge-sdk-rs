@@ -359,7 +359,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
         let deposit_msg =
-            near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount, fee)?;
+            near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?;
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
