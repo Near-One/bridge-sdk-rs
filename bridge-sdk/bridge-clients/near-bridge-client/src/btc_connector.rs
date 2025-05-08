@@ -8,6 +8,7 @@ use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -59,7 +60,7 @@ impl NearBridgeClient {
                 method_name: "verify_deposit".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: FIN_BTC_TRANSFER_GAS,
-                deposit: 0,
+                deposit: FIN_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
