@@ -398,7 +398,15 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos().await?;
         let (out_points, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos)?;
 
-        let gas_fee = u128::from(btc_bridge_client.get_gas_fee(out_points.len() as u64, 2)?);
+        let gas_fee = u128::from(
+            btc_bridge_client.get_gas_fee(
+                out_points
+                    .len()
+                    .try_into()
+                    .expect("Error on convert usize into u64"),
+                2,
+            )?,
+        );
         let change_address = near_bridge_client.get_change_address().await?;
         let tx_outs = near_bridge_client.get_tx_outs(
             &target_btc_address,
