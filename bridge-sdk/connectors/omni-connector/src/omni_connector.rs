@@ -424,7 +424,7 @@ impl OmniConnector {
 
 
         let btc_bridge_client = self.btc_bridge_client()?;
-        let tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
+        let _tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
 
         Ok("".to_string())
     }

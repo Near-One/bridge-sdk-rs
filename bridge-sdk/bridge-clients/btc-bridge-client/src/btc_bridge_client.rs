@@ -82,7 +82,7 @@ impl BtcBridgeClient {
 
     pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String>  {
         let tx: Transaction = deserialize(&tx_bytes).expect("Failed to deserialize transaction");
-        let res = self.bitcoin_client.send_raw_transaction(&tx);
+        let _res = self.bitcoin_client.send_raw_transaction(&tx);
         Ok("".to_string())
     }
 

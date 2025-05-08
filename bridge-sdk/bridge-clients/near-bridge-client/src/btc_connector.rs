@@ -8,7 +8,7 @@ use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
-use bitcoin::{Address, Amount, OutPoint, ScriptBuf, TxOut};
+use bitcoin::{Address, Amount, OutPoint, TxOut};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
