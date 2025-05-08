@@ -27,18 +27,18 @@ impl BtcBridgeClient {
         let mut builder = jsonrpc::minreq_http::Builder::new()
             .url(&btc_endpoint)
             .unwrap();
-        builder = builder.basic_auth(
-            String::new(),
-            Some(String::new()),
-        );
+        builder = builder.basic_auth(String::new(), Some(String::new()));
 
         BtcBridgeClient {
-            bitcoin_client: bitcoincore_rpc::Client::from_jsonrpc(builder.build().into())
+            bitcoin_client: bitcoincore_rpc::Client::from_jsonrpc(builder.build().into()),
         }
     }
 
     pub fn extract_btc_proof(&self, btc_outpoint: &BtcOutpoint) -> Result<TxProof> {
-        let block_hash = self.bitcoin_client.get_block_hash(btc_outpoint.block_height.try_into().unwrap()).unwrap();
+        let block_hash = self
+            .bitcoin_client
+            .get_block_hash(btc_outpoint.block_height.try_into().unwrap())
+            .unwrap();
         let block = self.bitcoin_client.get_block(&block_hash).unwrap();
         let tx_block_blockhash = block.header.block_hash();
 
@@ -72,7 +72,12 @@ impl BtcBridgeClient {
     }
 
     pub fn get_gas_fee(&self, num_input: u64, num_output: u64) -> Result<u64> {
-        let fee_rate = self.bitcoin_client.estimate_smart_fee(2, None).unwrap().fee_rate.unwrap();
+        let fee_rate = self
+            .bitcoin_client
+            .estimate_smart_fee(2, None)
+            .unwrap()
+            .fee_rate
+            .unwrap();
 
         let tx_size = 12 + num_input * 68 + num_output * 31;
         let fee = (fee_rate * tx_size / 1024).to_sat() + 50;
@@ -80,7 +85,7 @@ impl BtcBridgeClient {
         return Ok(fee);
     }
 
-    pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String>  {
+    pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String> {
         let tx: Transaction = deserialize(&tx_bytes).expect("Failed to deserialize transaction");
         let _res = self.bitcoin_client.send_raw_transaction(&tx);
         Ok("".to_string())

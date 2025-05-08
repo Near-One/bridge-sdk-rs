@@ -402,9 +402,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_deploy_token()
-            .await?;
+        let deposit = self.get_required_balance_for_deploy_token().await?;
 
         let prover_args = omni_types::prover_args::WormholeVerifyProofArgs {
             proof_kind: omni_types::prover_result::ProofKind::LogMetadata,
@@ -451,9 +449,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_deploy_token()
-            .await?;
+        let deposit = self.get_required_balance_for_deploy_token().await?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -490,9 +486,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_bind_token()
-            .await?;
+        let deposit = self.get_required_balance_for_bind_token().await?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -570,9 +564,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self
-            .get_required_balance_for_init_transfer()
-            .await?;
+        let required_balance = self.get_required_balance_for_init_transfer().await?;
 
         let nonce = if self
             .deposit_storage_if_required(required_balance, transaction_options.clone())
@@ -625,9 +617,7 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
-        let mut required_deposit = self
-            .get_required_balance_for_fin_transfer()
-            .await?;
+        let mut required_deposit = self.get_required_balance_for_fin_transfer().await?;
 
         for storage_deposit_action in args.storage_deposit_actions.clone() {
             if let Some(amount) = storage_deposit_action.storage_deposit_amount {
@@ -770,23 +760,28 @@ impl NearBridgeClient {
     }
 
     pub async fn get_required_balance_for_deploy_token(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_deploy_token").await
+        self.get_required_balance("required_balance_for_deploy_token")
+            .await
     }
 
     pub async fn get_required_balance_for_bind_token(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_bind_token").await
+        self.get_required_balance("required_balance_for_bind_token")
+            .await
     }
 
     pub async fn get_required_balance_for_init_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_init_transfer").await
+        self.get_required_balance("required_balance_for_init_transfer")
+            .await
     }
 
     pub async fn get_required_balance_for_fin_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_fin_transfer").await
+        self.get_required_balance("required_balance_for_fin_transfer")
+            .await
     }
 
     pub async fn get_required_balance_for_fast_fin_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_fast_transfer").await
+        self.get_required_balance("required_balance_for_fast_transfer")
+            .await
     }
 
     pub async fn deposit_storage_if_required(
@@ -845,8 +840,14 @@ impl NearBridgeClient {
             .receipts_outcome
             .iter()
             .find_map(|receipt| {
-                receipt.outcome.logs.iter().find(|log| log.contains(event_name)).cloned()
-            }).ok_or(BridgeSdkError::UnknownError(
+                receipt
+                    .outcome
+                    .logs
+                    .iter()
+                    .find(|log| log.contains(event_name))
+                    .cloned()
+            })
+            .ok_or(BridgeSdkError::UnknownError(
                 "Failed to find correct receipt".to_string(),
             ))?;
 

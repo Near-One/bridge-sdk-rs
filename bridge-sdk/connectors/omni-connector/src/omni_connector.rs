@@ -400,21 +400,30 @@ impl OmniConnector {
 
         let gas_fee = btc_bridge_client.get_gas_fee(out_points.len() as u64, 2)? as u128;
         let change_address = near_bridge_client.get_change_address().await?;
-        let tx_outs = near_bridge_client.get_tx_outs(target_btc_address.clone(), amount as u64, change_address, (utxos_balance - amount - gas_fee) as u64);
+        let tx_outs = near_bridge_client.get_tx_outs(
+            target_btc_address.clone(),
+            amount as u64,
+            change_address,
+            (utxos_balance - amount - gas_fee) as u64,
+        );
 
         let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
 
-        near_bridge_client.init_btc_transfer(amount + fee, TokenReceiverMessage::Withdraw{
-            target_btc_address,
-            input: out_points,
-            output: tx_outs,
-        }, transaction_options, wait_final_outcome_timeout_sec).await
+        near_bridge_client
+            .init_btc_transfer(
+                amount + fee,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await
     }
 
-    pub async fn btc_fin_transfer(
-        &self,
-        near_tx_hash: String,
-    ) -> Result<String> {
+    pub async fn btc_fin_transfer(&self, near_tx_hash: String) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_tx_data = near_bridge_client.get_btc_tx_data(near_tx_hash).await?;
 

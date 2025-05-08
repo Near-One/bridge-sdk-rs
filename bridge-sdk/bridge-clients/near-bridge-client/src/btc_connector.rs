@@ -1,14 +1,14 @@
-use std::collections::HashMap;
-use std::str::FromStr;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
+use bitcoin::{Address, Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
-use bitcoin::{Address, Amount, OutPoint, TxOut};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -20,15 +20,15 @@ pub mod u64_dec_format {
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         serializer.serialize_str(&num.to_string())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         String::deserialize(deserializer)?
             .parse()
@@ -157,19 +157,18 @@ impl NearBridgeClient {
                     "receiver_id": btc_connector,
                     "amount": amount.to_string(),
                     "msg": json!(msg).to_string(),
-                }).to_string().into_bytes(),
+                })
+                .to_string()
+                .into_bytes(),
                 gas: INIT_BTC_TRANSFER_GAS,
                 deposit: 1,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
         )
-            .await?;
+        .await?;
 
-        tracing::info!(
-            tx_hash = tx_hash.to_string(),
-            "Init BTC transfer"
-        );
+        tracing::info!(tx_hash = tx_hash.to_string(), "Init BTC transfer");
         Ok(tx_hash)
     }
 
@@ -199,21 +198,49 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub fn get_tx_outs(&self, target_btc_address: String, amount: u64, change_address: String, change_amount: u64) -> Vec<TxOut> {
-        let address = Address::from_str(&target_btc_address)
-            .expect("Invalid Bitcoin address");
+    pub fn get_tx_outs(
+        &self,
+        target_btc_address: String,
+        amount: u64,
+        change_address: String,
+        change_amount: u64,
+    ) -> Vec<TxOut> {
+        let address = Address::from_str(&target_btc_address).expect("Invalid Bitcoin address");
         let address = address.assume_checked();
         let script_pubkey = address.script_pubkey();
 
-        let address_2 = Address::from_str(&change_address)
-            .expect("Invalid Bitcoin Change address");
+        let address_2 = Address::from_str(&change_address).expect("Invalid Bitcoin Change address");
         let address_2 = address_2.assume_checked();
         let script_pubkey_2 = address_2.script_pubkey();
-        vec![TxOut{ value: Amount::from_sat(amount), script_pubkey},
-             TxOut{ value: Amount::from_sat(change_amount), script_pubkey: script_pubkey_2},]
+        vec![
+            TxOut {
+                value: Amount::from_sat(amount),
+                script_pubkey,
+            },
+            TxOut {
+                value: Amount::from_sat(change_amount),
+                script_pubkey: script_pubkey_2,
+            },
+        ]
     }
 
-    pub fn choose_utxos(&self, amount: u128, utxos: HashMap<String, UTXO>) -> (Vec<OutPoint>, u128) {
+    fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {
+        utxos
+            .into_iter()
+            .map(|(txid, utxo)| {
+                OutPoint::new(
+                    txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(),
+                    utxo.vout.try_into().unwrap(),
+                )
+            })
+            .collect::<Vec<OutPoint>>()
+    }
+
+    pub fn choose_utxos(
+        &self,
+        amount: u128,
+        utxos: HashMap<String, UTXO>,
+    ) -> (Vec<OutPoint>, u128) {
         let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
         utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -228,11 +255,7 @@ impl NearBridgeClient {
             selected.push(utxo);
         }
 
-        let out_points = selected
-            .into_iter()
-            .map(|(txid, utxo)| OutPoint::new(txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(), utxo.vout.try_into().unwrap()))
-            .collect::<Vec<OutPoint>>();
-
+        let out_points = Self::utxo_to_out_points(selected);
         (out_points, utxos_balance)
     }
 
@@ -248,7 +271,7 @@ impl NearBridgeClient {
                 args: serde_json::json!({}),
             },
         )
-            .await?;
+        .await?;
 
         let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
         Ok(utxos)
@@ -276,7 +299,7 @@ impl NearBridgeClient {
                 args: serde_json::json!({}),
             },
         )
-            .await?;
+        .await?;
 
         Ok(serde_json::from_slice::<PartialConfig>(&response)?)
     }
@@ -319,7 +342,14 @@ impl NearBridgeClient {
 
     pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).unwrap();
-        let log = self.extract_transfer_log(tx_hash, Some(self.satoshi_relayer()?), "signed_btc_transaction").await.unwrap();
+        let log = self
+            .extract_transfer_log(
+                tx_hash,
+                Some(self.satoshi_relayer()?),
+                "signed_btc_transaction",
+            )
+            .await
+            .unwrap();
 
         let json_str = log.strip_prefix("EVENT_JSON:").unwrap();
         let v: Value = serde_json::from_str(json_str)?;
@@ -352,9 +382,7 @@ impl NearBridgeClient {
                 "Bitcoin account id is not set".to_string(),
             ))?
             .parse::<AccountId>()
-            .map_err(|_| {
-                BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string())
-            })
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
     }
 
     pub fn satoshi_relayer(&self) -> Result<AccountId> {

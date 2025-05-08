@@ -698,7 +698,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient_id,
                     amount,
                     fee,
-
                     TransactionOptions::default(),
                     None,
                 )
@@ -707,12 +706,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::BtcFinTransfer {
             near_tx_hash,
-            config_cli
+            config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(
-                    near_tx_hash,
-                )
+                .btc_fin_transfer(near_tx_hash)
                 .await
                 .unwrap();
 
