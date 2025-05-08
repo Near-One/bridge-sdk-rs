@@ -26,7 +26,7 @@ impl BtcBridgeClient {
     pub fn new(btc_endpoint: String) -> Self {
         let mut builder = jsonrpc::minreq_http::Builder::new()
             .url(&btc_endpoint)
-            .unwrap();
+            .expect("Incorrect BTC endpoint");
         builder = builder.basic_auth(String::new(), Some(String::new()));
 
         BtcBridgeClient {
@@ -37,9 +37,18 @@ impl BtcBridgeClient {
     pub fn extract_btc_proof(&self, btc_outpoint: &BtcOutpoint) -> Result<TxProof> {
         let block_hash = self
             .bitcoin_client
-            .get_block_hash(btc_outpoint.block_height.try_into().unwrap())
-            .unwrap();
-        let block = self.bitcoin_client.get_block(&block_hash).unwrap();
+            .get_block_hash(
+                btc_outpoint
+                    .block_height
+                    .try_into()
+                    .expect("Error on convert usize into u64"),
+            )
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on get block hash: {}", err))
+            })?;
+        let block = self.bitcoin_client.get_block(&block_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on get block: {}", err))
+        })?;
         let tx_block_blockhash = block.header.block_hash();
 
         let transactions = block
@@ -66,7 +75,9 @@ impl BtcBridgeClient {
         Ok(TxProof {
             tx_bytes: tx_data,
             tx_block_blockhash: tx_block_blockhash.to_string(),
-            tx_index: tx_index.try_into().unwrap(),
+            tx_index: tx_index
+                .try_into()
+                .expect("Error on convert usize into u64"),
             merkle_proof: merkle_proof_str,
         })
     }
@@ -75,9 +86,13 @@ impl BtcBridgeClient {
         let fee_rate = self
             .bitcoin_client
             .estimate_smart_fee(2, None)
-            .unwrap()
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on estimate smart fee: {}", err))
+            })?
             .fee_rate
-            .unwrap();
+            .ok_or(BridgeSdkError::BtcClientError(
+                "Error on estimate fee_rate".to_string(),
+            ))?;
 
         let tx_size = 12 + num_input * 68 + num_output * 31;
         let fee = (fee_rate * tx_size / 1024).to_sat() + 50;
