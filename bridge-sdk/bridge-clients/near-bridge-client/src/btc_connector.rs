@@ -205,21 +205,23 @@ impl NearBridgeClient {
         change_address: String,
         change_amount: u64,
     ) -> Vec<TxOut> {
-        let address = Address::from_str(&target_btc_address).expect("Invalid Bitcoin address");
-        let address = address.assume_checked();
-        let script_pubkey = address.script_pubkey();
+        let btc_recipient_address =
+            Address::from_str(&target_btc_address).expect("Invalid Bitcoin address");
+        let btc_recipient_address = btc_recipient_address.assume_checked();
+        let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
-        let address_2 = Address::from_str(&change_address).expect("Invalid Bitcoin Change address");
-        let address_2 = address_2.assume_checked();
-        let script_pubkey_2 = address_2.script_pubkey();
+        let change_address =
+            Address::from_str(&change_address).expect("Invalid Bitcoin Change address");
+        let change_address = change_address.assume_checked();
+        let change_script_pubkey = change_address.script_pubkey();
         vec![
             TxOut {
                 value: Amount::from_sat(amount),
-                script_pubkey,
+                script_pubkey: btc_recipient_script_pubkey,
             },
             TxOut {
                 value: Amount::from_sat(change_amount),
-                script_pubkey: script_pubkey_2,
+                script_pubkey: change_script_pubkey,
             },
         ]
     }
