@@ -224,23 +224,38 @@ impl NearBridgeClient {
         ]
     }
 
-    fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Vec<OutPoint> {
+    fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
         utxos
             .into_iter()
             .map(|(txid, utxo)| {
-                OutPoint::new(
-                    txid.split('@').collect::<Vec<_>>()[0].parse().unwrap(),
-                    utxo.vout.try_into().unwrap(),
-                )
+                let txid_str = txid.split('@').next().ok_or_else(|| {
+                    BridgeSdkError::BtcClientError(format!("Invalid txid format: {}", txid))
+                })?;
+
+                let parsed_txid = txid_str.parse().map_err(|e| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Failed to parse txid '{}' into bitcoin::Txid: {}",
+                        txid_str, e
+                    ))
+                })?;
+
+                let vout = u32::try_from(utxo.vout).map_err(|e| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Invalid vout value (expected u32): {} ({})",
+                        utxo.vout, e
+                    ))
+                })?;
+
+                Ok(OutPoint::new(parsed_txid, vout))
             })
-            .collect::<Vec<OutPoint>>()
+            .collect()
     }
 
     pub fn choose_utxos(
         &self,
         amount: u128,
         utxos: HashMap<String, UTXO>,
-    ) -> (Vec<OutPoint>, u128) {
+    ) -> Result<(Vec<OutPoint>, u128)> {
         let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
         utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -255,8 +270,8 @@ impl NearBridgeClient {
             selected.push(utxo);
         }
 
-        let out_points = Self::utxo_to_out_points(selected);
-        (out_points, utxos_balance)
+        let out_points = Self::utxo_to_out_points(selected)?;
+        Ok((out_points, utxos_balance))
     }
 
     pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
@@ -341,24 +356,37 @@ impl NearBridgeClient {
     }
 
     pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
-        let tx_hash = CryptoHash::from_str(&near_tx_hash).unwrap();
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {}", err))
+        })?;
         let log = self
             .extract_transfer_log(
                 tx_hash,
                 Some(self.satoshi_relayer()?),
                 "signed_btc_transaction",
             )
-            .await
-            .unwrap();
+            .await?;
 
-        let json_str = log.strip_prefix("EVENT_JSON:").unwrap();
+        let json_str = log
+            .strip_prefix("EVENT_JSON:")
+            .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
         let v: Value = serde_json::from_str(json_str)?;
         let bytes = v["data"][0]["tx_bytes"]
             .as_array()
-            .unwrap()
+            .ok_or(BridgeSdkError::BtcClientError(
+                "Expected 'tx_bytes' to be an array in logs".to_string(),
+            ))?
             .iter()
-            .map(|val| (val.as_u64().unwrap() as u8))
-            .collect::<Vec<u8>>();
+            .map(|val| {
+                val.as_u64()
+                    .ok_or_else(|| {
+                        BridgeSdkError::BtcClientError(format!(
+                            "Expected u64 value in 'tx_bytes', got: {val}"
+                        ))
+                    })
+                    .map(|num| num as u8)
+            })
+            .collect::<Result<Vec<u8>>>()?;
 
         Ok(bytes)
     }
