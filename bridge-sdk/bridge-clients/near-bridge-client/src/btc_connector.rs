@@ -201,18 +201,18 @@ impl NearBridgeClient {
 
     pub fn get_tx_outs(
         &self,
-        target_btc_address: String,
+        target_btc_address: &str,
         amount: u64,
-        change_address: String,
+        change_address: &str,
         change_amount: u64,
     ) -> Vec<TxOut> {
         let btc_recipient_address =
-            Address::from_str(&target_btc_address).expect("Invalid Bitcoin address");
+            Address::from_str(target_btc_address).expect("Invalid Bitcoin address");
         let btc_recipient_address = btc_recipient_address.assume_checked();
         let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
         let change_address =
-            Address::from_str(&change_address).expect("Invalid Bitcoin Change address");
+            Address::from_str(change_address).expect("Invalid Bitcoin Change address");
         let change_address = change_address.assume_checked();
         let change_script_pubkey = change_address.script_pubkey();
         vec![
@@ -232,13 +232,12 @@ impl NearBridgeClient {
             .into_iter()
             .map(|(txid, utxo)| {
                 let txid_str = txid.split('@').next().ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(format!("Invalid txid format: {}", txid))
+                    BridgeSdkError::BtcClientError(format!("Invalid txid format: {txid}"))
                 })?;
 
                 let parsed_txid = txid_str.parse().map_err(|e| {
                     BridgeSdkError::BtcClientError(format!(
-                        "Failed to parse txid '{}' into bitcoin::Txid: {}",
-                        txid_str, e
+                        "Failed to parse txid '{txid_str}' into bitcoin::Txid: {e}"
                     ))
                 })?;
 
@@ -269,7 +268,7 @@ impl NearBridgeClient {
             if utxos_balance >= amount {
                 break;
             }
-            utxos_balance += utxo.1.balance as u128;
+            utxos_balance += u128::from(utxo.1.balance);
             selected.push(utxo);
         }
 
@@ -360,7 +359,7 @@ impl NearBridgeClient {
 
     pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {}", err))
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
         })?;
         let log = self
             .extract_transfer_log(
@@ -376,18 +375,24 @@ impl NearBridgeClient {
         let v: Value = serde_json::from_str(json_str)?;
         let bytes = v["data"][0]["tx_bytes"]
             .as_array()
-            .ok_or(BridgeSdkError::BtcClientError(
-                "Expected 'tx_bytes' to be an array in logs".to_string(),
-            ))?
+            .ok_or_else(|| {
+                BridgeSdkError::BtcClientError(
+                    "Expected 'tx_bytes' to be an array in logs".to_string(),
+                )
+            })?
             .iter()
             .map(|val| {
-                val.as_u64()
-                    .ok_or_else(|| {
-                        BridgeSdkError::BtcClientError(format!(
-                            "Expected u64 value in 'tx_bytes', got: {val}"
-                        ))
-                    })
-                    .map(|num| num as u8)
+                let num = val.as_u64().ok_or_else(|| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Expected u64 value in 'tx_bytes', got: {val}"
+                    ))
+                })?;
+
+                u8::try_from(num).map_err(|e| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
+                    ))
+                })
             })
             .collect::<Result<Vec<u8>>>()?;
 

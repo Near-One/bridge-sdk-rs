@@ -23,9 +23,9 @@ pub struct BtcBridgeClient {
 }
 
 impl BtcBridgeClient {
-    pub fn new(btc_endpoint: String) -> Self {
+    pub fn new(btc_endpoint: &str) -> Self {
         let mut builder = jsonrpc::minreq_http::Builder::new()
-            .url(&btc_endpoint)
+            .url(btc_endpoint)
             .expect("Incorrect BTC endpoint");
         builder = builder.basic_auth(String::new(), Some(String::new()));
 
@@ -44,11 +44,12 @@ impl BtcBridgeClient {
                     .expect("Error on convert usize into u64"),
             )
             .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on get block hash: {}", err))
+                BridgeSdkError::BtcClientError(format!("Error on get block hash: {err}"))
             })?;
-        let block = self.bitcoin_client.get_block(&block_hash).map_err(|err| {
-            BridgeSdkError::BtcClientError(format!("Error on get block: {}", err))
-        })?;
+        let block = self
+            .bitcoin_client
+            .get_block(&block_hash)
+            .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on get block: {err}")))?;
         let tx_block_blockhash = block.header.block_hash();
 
         let transactions = block
@@ -87,7 +88,7 @@ impl BtcBridgeClient {
             .bitcoin_client
             .estimate_smart_fee(2, None)
             .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on estimate smart fee: {}", err))
+                BridgeSdkError::BtcClientError(format!("Error on estimate smart fee: {err}"))
             })?
             .fee_rate
             .ok_or(BridgeSdkError::BtcClientError(
@@ -97,16 +98,16 @@ impl BtcBridgeClient {
         let tx_size = 12 + num_input * 68 + num_output * 31;
         let fee = (fee_rate * tx_size / 1024).to_sat() + 50;
 
-        return Ok(fee);
+        Ok(fee)
     }
 
-    pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String> {
-        let tx: Transaction = deserialize(&tx_bytes).expect("Failed to deserialize transaction");
+    pub fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
+        let tx: Transaction = deserialize(tx_bytes).expect("Failed to deserialize transaction");
         let tx_hash = self
             .bitcoin_client
             .send_raw_transaction(&tx)
             .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on sending BTC transaction: {}", err))
+                BridgeSdkError::BtcClientError(format!("Error on sending BTC transaction: {err}"))
             })?;
         Ok(tx_hash.to_string())
     }

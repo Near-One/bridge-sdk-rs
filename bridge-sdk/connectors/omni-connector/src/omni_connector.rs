@@ -398,13 +398,21 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos().await?;
         let (out_points, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos)?;
 
-        let gas_fee = btc_bridge_client.get_gas_fee(out_points.len() as u64, 2)? as u128;
+        let gas_fee = u128::from(btc_bridge_client.get_gas_fee(out_points.len() as u64, 2)?);
         let change_address = near_bridge_client.get_change_address().await?;
         let tx_outs = near_bridge_client.get_tx_outs(
-            target_btc_address.clone(),
-            amount as u64,
-            change_address,
-            (utxos_balance - amount - gas_fee) as u64,
+            &target_btc_address,
+            amount.try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+            })?,
+            &change_address,
+            (utxos_balance - amount - gas_fee)
+                .try_into()
+                .map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Error on change amount conversion: {err}"
+                    ))
+                })?,
         );
 
         let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
@@ -428,7 +436,7 @@ impl OmniConnector {
         let btc_tx_data = near_bridge_client.get_btc_tx_data(near_tx_hash).await?;
 
         let btc_bridge_client = self.btc_bridge_client()?;
-        let tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
+        let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
         Ok(tx_hash)
     }
 

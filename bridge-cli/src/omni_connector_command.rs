@@ -810,7 +810,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
-    let btc_bridge_client = BtcBridgeClient::new(combined_config.btc_endpoint.unwrap());
+    let btc_bridge_client = BtcBridgeClient::new(&combined_config.btc_endpoint.unwrap());
 
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))
