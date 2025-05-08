@@ -410,7 +410,7 @@ impl OmniConnector {
         let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
 
         near_bridge_client
-            .init_btc_transfer(
+            .init_btc_transfer_near_to_btc(
                 amount + fee,
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,

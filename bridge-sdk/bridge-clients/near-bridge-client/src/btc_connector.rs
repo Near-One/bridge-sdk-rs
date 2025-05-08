@@ -14,6 +14,7 @@ const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 
 pub mod u64_dec_format {
     use serde::de;
@@ -134,9 +135,9 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
+    /// Init a BTC transfer from Near to BTC.
     #[tracing::instrument(skip_all, name = "NEAR INIT BTC TRANSFER")]
-    pub async fn init_btc_transfer(
+    pub async fn init_btc_transfer_near_to_btc(
         &self,
         amount: u128,
         msg: TokenReceiverMessage,
@@ -161,7 +162,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: INIT_BTC_TRANSFER_GAS,
-                deposit: 1,
+                deposit: INIT_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
