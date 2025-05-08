@@ -709,12 +709,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             config_cli
         } => {
-            omni_connector(network, config_cli)
+            let tx_hash = omni_connector(network, config_cli)
                 .btc_fin_transfer(
                     near_tx_hash
                 )
                 .await
                 .unwrap();
+
+            tracing::info!("BTC Tx Hash: {tx_hash}");
         }
         OmniConnectorSubCommand::GetBitcoinAddress {
             recipient_id,

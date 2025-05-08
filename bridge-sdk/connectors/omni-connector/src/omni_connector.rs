@@ -424,9 +424,8 @@ impl OmniConnector {
 
 
         let btc_bridge_client = self.btc_bridge_client()?;
-        let _tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
-
-        Ok("".to_string())
+        let tx_hash = btc_bridge_client.send_tx(btc_tx_data)?;
+        Ok(tx_hash)
     }
 
     pub async fn near_fin_transfer_with_vaa(
