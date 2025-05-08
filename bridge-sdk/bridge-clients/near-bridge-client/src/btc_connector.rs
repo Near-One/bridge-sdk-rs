@@ -13,6 +13,8 @@ use bitcoin::{Address, Amount, OutPoint, ScriptBuf, TxOut};
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
+const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+
 pub mod u64_dec_format {
     use serde::de;
     use serde::{Deserialize, Deserializer, Serializer};
@@ -118,7 +120,7 @@ impl NearBridgeClient {
                 method_name: "verify_deposit".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: FIN_BTC_TRANSFER_GAS,
-                deposit: 0,
+                deposit: FIN_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
             wait_final_outcome_timeout_sec,
@@ -177,7 +179,7 @@ impl NearBridgeClient {
         amount: u128,
         fee: u128,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_by_recipient_id(recipient_id, amount, fee)?;
+        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
@@ -290,7 +292,7 @@ impl NearBridgeClient {
         Ok(config.change_address)
     }
 
-    pub fn get_deposit_msg_by_recipient_id(
+    pub fn get_deposit_msg_for_omni_bridge(
         &self,
         recipient_id: &str,
         amount: u128,

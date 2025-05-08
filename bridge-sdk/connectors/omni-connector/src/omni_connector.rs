@@ -359,7 +359,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
         let deposit_msg =
-            near_bridge_client.get_deposit_msg_by_recipient_id(&recipient_id, amount, fee)?;
+            near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?;
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
@@ -704,6 +704,27 @@ impl OmniConnector {
         let signature = solana_bridge_client.pause().await?;
 
         tracing::info!(signature = signature.to_string(), "Sent pause transaction");
+
+        Ok(signature)
+    }
+
+    pub async fn solana_update_metadata(
+        &self,
+        token: Pubkey,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
+    ) -> Result<Signature> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let signature = solana_bridge_client
+            .update_metadata(token, name, symbol, uri)
+            .await?;
+
+        tracing::info!(
+            signature = signature.to_string(),
+            "Sent update metadata transaction"
+        );
 
         Ok(signature)
     }
