@@ -330,7 +330,7 @@ impl NearBridgeClient {
 
     pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).unwrap();
-        let log = self.extract_transfer_log(tx_hash, Some("cosmosfirst.testnet".parse().unwrap()), "signed_btc_transaction").await.unwrap();
+        let log = self.extract_transfer_log(tx_hash, Some(self.satoshi_relayer()?), "signed_btc_transaction").await.unwrap();
 
         let json_str = log.strip_prefix("EVENT_JSON:").unwrap();
         let v: Value = serde_json::from_str(json_str)?;
@@ -342,5 +342,41 @@ impl NearBridgeClient {
             .collect::<Vec<u8>>();
 
         Ok(bytes)
+    }
+
+    pub fn btc_connector(&self) -> Result<AccountId> {
+        self.btc_connector
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC Connector account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
+            })
+    }
+
+    pub fn btc(&self) -> Result<AccountId> {
+        self.btc
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Bitcoin account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string())
+            })
+    }
+
+    pub fn satoshi_relayer(&self) -> Result<AccountId> {
+        self.satoshi_relayer
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Satoshi Relayer account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid Satoshi Relayer account id".to_string())
+            })
     }
 }

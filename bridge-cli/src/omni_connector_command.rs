@@ -711,7 +711,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let tx_hash = omni_connector(network, config_cli)
                 .btc_fin_transfer(
-                    near_tx_hash
+                    near_tx_hash,
                 )
                 .await
                 .unwrap();
@@ -759,6 +759,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .omni_bridge_id(combined_config.near_token_locker_id)
         .btc_connector(combined_config.btc_connector)
         .btc(combined_config.btc)
+        .satoshi_relayer(combined_config.satoshi_relayer)
         .build()
         .unwrap();
 
