@@ -87,8 +87,13 @@ impl BtcBridgeClient {
 
     pub fn send_tx(&self, tx_bytes: Vec<u8>) -> Result<String> {
         let tx: Transaction = deserialize(&tx_bytes).expect("Failed to deserialize transaction");
-        let _res = self.bitcoin_client.send_raw_transaction(&tx);
-        Ok("".to_string())
+        let tx_hash = self
+            .bitcoin_client
+            .send_raw_transaction(&tx)
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on sending BTC transaction: {}", err))
+            })?;
+        Ok(tx_hash.to_string())
     }
 
     #[must_use]
