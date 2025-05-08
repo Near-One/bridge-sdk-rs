@@ -257,24 +257,16 @@ impl NearBridgeClient {
     }
 
     pub async fn get_withdraw_fee(&self) -> Result<u128> {
-        let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: btc_connector,
-                method_name: "get_config".to_string(),
-                args: serde_json::json!({}),
-            },
-        )
-            .await?;
-
-        let config = serde_json::from_slice::<PartialConfig>(&response)?;
+        let config = self.get_config().await?;
         Ok(config.withdraw_bridge_fee.fee_min)
     }
 
     pub async fn get_change_address(&self) -> Result<String> {
+        let config = self.get_config().await?;
+        Ok(config.change_address)
+    }
+
+    async fn get_config(&self) -> Result<PartialConfig> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
@@ -288,8 +280,7 @@ impl NearBridgeClient {
         )
             .await?;
 
-        let config = serde_json::from_slice::<PartialConfig>(&response)?;
-        Ok(config.change_address)
+        Ok(serde_json::from_slice::<PartialConfig>(&response)?)
     }
 
     pub fn get_deposit_msg_for_omni_bridge(
