@@ -8,8 +8,8 @@ use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
-    OmniConnectorBuilder,
+    BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
+    OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
@@ -695,9 +695,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         block_height: tx_block_height,
                         vout,
                     },
-                    recipient_id,
-                    amount,
-                    fee,
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        amount,
+                        fee,
+                    },
                     TransactionOptions::default(),
                     None,
                 )

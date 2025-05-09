@@ -15,7 +15,7 @@ use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
 use evm_bridge_client::EvmBridgeClient;
-use near_bridge_client::btc_connector::{FinBtcTransferArgs, TokenReceiverMessage};
+use near_bridge_client::btc_connector::{DepositMsg, FinBtcTransferArgs, TokenReceiverMessage};
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
@@ -172,6 +172,17 @@ pub enum FinTransferArgs {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         solana_token: Pubkey,
+    },
+}
+
+pub enum BtcDepositArgs {
+    OmniDepositArgs {
+        recipient_id: String,
+        amount: u128,
+        fee: u128,
+    },
+    DepositMsg {
+        msg: DepositMsg,
     },
 }
 
@@ -349,17 +360,22 @@ impl OmniConnector {
     pub async fn near_fin_transfer_btc(
         &self,
         btc_outpoint: BtcOutpoint,
-        recipient_id: String,
-        amount: u128,
-        fee: u128,
+        deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
-        let deposit_msg =
-            near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?;
+        let deposit_msg = match deposit_args {
+            BtcDepositArgs::DepositMsg { msg } => msg,
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                amount,
+                fee,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?,
+        };
+
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
@@ -1185,9 +1201,11 @@ impl OmniConnector {
                         block_height: tx_block_height,
                         vout,
                     },
-                    recipient_id,
-                    amount,
-                    fee,
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        amount,
+                        fee,
+                    },
                     transaction_options,
                     wait_final_outcome_timeout_sec,
                 )
