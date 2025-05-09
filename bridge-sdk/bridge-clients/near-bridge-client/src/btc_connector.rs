@@ -357,16 +357,18 @@ impl NearBridgeClient {
         }
     }
 
-    pub async fn get_btc_tx_data(&self, near_tx_hash: String) -> Result<Vec<u8>> {
+    pub async fn get_btc_tx_data(
+        &self,
+        near_tx_hash: String,
+        relayer: Option<AccountId>,
+    ) -> Result<Vec<u8>> {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
             BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
         })?;
+
+        let relayer_id = relayer.unwrap_or(self.satoshi_relayer()?);
         let log = self
-            .extract_transfer_log(
-                tx_hash,
-                Some(self.satoshi_relayer()?),
-                "signed_btc_transaction",
-            )
+            .extract_transfer_log(tx_hash, Some(relayer_id), "signed_btc_transaction")
             .await?;
 
         let json_str = log

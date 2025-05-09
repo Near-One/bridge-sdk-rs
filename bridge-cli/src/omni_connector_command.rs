@@ -711,7 +711,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(near_tx_hash)
+                .btc_fin_transfer(near_tx_hash, None)
                 .await
                 .unwrap();
 
