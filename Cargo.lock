@@ -8250,6 +8250,7 @@ dependencies = [
 name = "solana-bridge-client"
 version = "0.2.3"
 dependencies = [
+ "bitvec",
  "borsh 1.5.7",
  "derive_builder",
  "mpl-token-metadata",

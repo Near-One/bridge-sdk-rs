@@ -1,3 +1,4 @@
+use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
@@ -26,7 +27,9 @@ use crate::{
 pub mod error;
 mod instructions;
 
+const DISCRIMINATOR_LEN: usize = 8;
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
+const BIT_BYTES: usize = (USED_NONCES_PER_ACCOUNT as usize + 7) / 8;
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct MetadataPayload {
@@ -413,6 +416,42 @@ impl SolanaBridgeClient {
 
         self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
             .await
+    }
+
+    pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool, SolanaBridgeClientError> {
+        let program_id = self.program_id()?;
+        let (used_nonces, _) = Pubkey::find_program_address(
+            &[
+                b"used_nonces",
+                (nonce / USED_NONCES_PER_ACCOUNT).to_le_bytes().as_ref(),
+            ],
+            program_id,
+        );
+
+        let account = self.client()?.get_account(&used_nonces).await?;
+        let data = &account.data;
+
+        if data.len() < DISCRIMINATOR_LEN + BIT_BYTES {
+            return Err(SolanaBridgeClientError::InvalidAccountData(format!(
+                "Account data too small: {} bytes (need at least {})",
+                data.len(),
+                DISCRIMINATOR_LEN + BIT_BYTES
+            )));
+        }
+
+        let raw_bits = &data[DISCRIMINATOR_LEN..DISCRIMINATOR_LEN + BIT_BYTES];
+        let mut buf = [0u8; BIT_BYTES];
+        buf.copy_from_slice(raw_bits);
+
+        let bits = BitArray::<[u8; BIT_BYTES]>::new(buf);
+
+        println!("Used nonces: {:?}", bits);
+
+        let slot = (nonce % USED_NONCES_PER_ACCOUNT) as usize;
+        let used = bits[slot];
+
+        println!("nonce {} used before? {}", nonce, used);
+        Ok(used)
     }
 
     pub async fn init_transfer_sol(

@@ -8,8 +8,8 @@ use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
-    OmniConnectorBuilder,
+    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, IsTransferFinalisedArgs,
+    OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
@@ -44,6 +44,19 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+
+    #[clap(about = "Deploy a token")]
+    IsTransferFinalised {
+        #[clap(short, long, help = "Origin chain of the transfer")]
+        origin_chain: ChainKind,
+        #[clap(short, long, help = "Destination chain of the transfer")]
+        destination_chain: ChainKind,
+        #[clap(short, long, help = "Nonce of the transfer")]
+        nonce: u64,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
     #[clap(about = "Deposit storage for a token on NEAR")]
     NearStorageDeposit {
         #[clap(short, long, help = "Token to deposit storage for")]
@@ -324,6 +337,40 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .deploy_token(DeployTokenArgs::SolanaDeployTokenWithTxHash {
                         near_tx_hash: tx_hash.parse().unwrap(),
                         sender_id: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+        },
+        OmniConnectorSubCommand::IsTransferFinalised {
+            origin_chain,
+            destination_chain,
+            nonce,
+            config_cli,
+        } => match destination_chain {
+            ChainKind::Near => {
+                omni_connector(network, config_cli)
+                    .is_transfer_finalised(IsTransferFinalisedArgs::Near {
+                        transfer_id: TransferId {
+                            origin_chain,
+                            origin_nonce: nonce,
+                        },
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+                omni_connector(network, config_cli)
+                    .is_transfer_finalised(IsTransferFinalisedArgs::Evm {
+                        destination_nonce: nonce,
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Sol => {
+                omni_connector(network, config_cli)
+                    .is_transfer_finalised(IsTransferFinalisedArgs::Solana {
+                        destination_nonce: nonce,
                     })
                     .await
                     .unwrap();
