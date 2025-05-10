@@ -173,9 +173,16 @@ pub enum FinTransferArgs {
 }
 
 pub enum IsTransferFinalisedArgs {
-    Near { transfer_id: omni_types::TransferId },
-    Evm { destination_nonce: u64 },
-    Solana { destination_nonce: u64 },
+    Near {
+        transfer_id: omni_types::TransferId,
+    },
+    Evm {
+        chain_kind: ChainKind,
+        destination_nonce: u64,
+    },
+    Solana {
+        destination_nonce: u64,
+    },
 }
 
 impl OmniConnector {
@@ -197,19 +204,6 @@ impl OmniConnector {
     ) -> Result<bool> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.is_transfer_finalised(transfer_id).await
-    }
-
-    pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
-        let solana_bridge_client = self.solana_bridge_client()?;
-
-        solana_bridge_client
-            .is_transfer_finalised(nonce)
-            .await
-            .map_err(|e| {
-                BridgeSdkError::SolanaOtherError(format!(
-                    "Failed to check transfer finalisation status: {e}"
-                ))
-            })
     }
 
     pub async fn near_get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
@@ -556,6 +550,15 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn evm_is_transfer_finalised(
+        &self,
+        chain_kind: ChainKind,
+        nonce: u64,
+    ) -> Result<bool> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        evm_bridge_client.is_transfer_finalised(nonce).await
+    }
+
     pub async fn evm_log_metadata(
         &self,
         address: EvmAddress,
@@ -646,6 +649,19 @@ impl OmniConnector {
         evm_bridge_client
             .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
             .await
+    }
+
+    pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        solana_bridge_client
+            .is_transfer_finalised(nonce)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::SolanaOtherError(format!(
+                    "Failed to check transfer finalisation status: {e}"
+                ))
+            })
     }
 
     pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
@@ -1170,8 +1186,12 @@ impl OmniConnector {
             IsTransferFinalisedArgs::Near { transfer_id } => {
                 self.near_is_transfer_finalised(transfer_id).await
             }
-            IsTransferFinalisedArgs::Evm { destination_nonce } => {
-                todo!()
+            IsTransferFinalisedArgs::Evm {
+                chain_kind,
+                destination_nonce,
+            } => {
+                self.evm_is_transfer_finalised(chain_kind, destination_nonce)
+                    .await
             }
             IsTransferFinalisedArgs::Solana { destination_nonce } => {
                 self.solana_is_transfer_finalised(destination_nonce).await

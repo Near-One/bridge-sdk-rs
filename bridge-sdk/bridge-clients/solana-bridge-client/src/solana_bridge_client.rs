@@ -445,12 +445,9 @@ impl SolanaBridgeClient {
 
         let bits = BitArray::<[u8; BIT_BYTES]>::new(buf);
 
-        println!("Used nonces: {:?}", bits);
-
         let slot = (nonce % USED_NONCES_PER_ACCOUNT) as usize;
         let used = bits[slot];
 
-        println!("nonce {} used before? {}", nonce, used);
         Ok(used)
     }
 

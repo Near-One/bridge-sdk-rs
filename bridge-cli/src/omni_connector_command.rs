@@ -347,9 +347,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             destination_chain,
             nonce,
             config_cli,
-        } => match destination_chain {
-            ChainKind::Near => {
-                omni_connector(network, config_cli)
+        } => {
+            let is_finalised = match destination_chain {
+                ChainKind::Near => omni_connector(network, config_cli)
                     .is_transfer_finalised(IsTransferFinalisedArgs::Near {
                         transfer_id: TransferId {
                             origin_chain,
@@ -357,25 +357,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         },
                     })
                     .await
-                    .unwrap();
-            }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
-                omni_connector(network, config_cli)
-                    .is_transfer_finalised(IsTransferFinalisedArgs::Evm {
-                        destination_nonce: nonce,
-                    })
-                    .await
-                    .unwrap();
-            }
-            ChainKind::Sol => {
-                omni_connector(network, config_cli)
+                    .unwrap(),
+                ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+                    omni_connector(network, config_cli)
+                        .is_transfer_finalised(IsTransferFinalisedArgs::Evm {
+                            chain_kind: destination_chain,
+                            destination_nonce: nonce,
+                        })
+                        .await
+                        .unwrap()
+                }
+                ChainKind::Sol => omni_connector(network, config_cli)
                     .is_transfer_finalised(IsTransferFinalisedArgs::Solana {
                         destination_nonce: nonce,
                     })
                     .await
-                    .unwrap();
-            }
-        },
+                    .unwrap(),
+            };
+
+            tracing::info!("Is transfer finalised: {}", is_finalised);
+        }
         OmniConnectorSubCommand::NearStorageDeposit {
             token,
             amount,
