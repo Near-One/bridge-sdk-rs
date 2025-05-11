@@ -8,8 +8,8 @@ use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, IsTransferFinalisedArgs,
-    OmniConnector, OmniConnectorBuilder,
+    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
+    OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
@@ -47,11 +47,15 @@ pub enum OmniConnectorSubCommand {
 
     #[clap(about = "Deploy a token")]
     IsTransferFinalised {
-        #[clap(short, long, help = "Origin chain of the transfer")]
-        origin_chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Origin chain of the transfer is needed to check if transfer was finalized on NEAR"
+        )]
+        origin_chain: Option<ChainKind>,
         #[clap(short, long, help = "Destination chain of the transfer")]
         destination_chain: ChainKind,
-        #[clap(short, long, help = "Nonce of the transfer")]
+        #[clap(short, long, help = "Destination nonce of the transfer")]
         nonce: u64,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -348,34 +352,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             nonce,
             config_cli,
         } => {
-            let is_finalised = match destination_chain {
-                ChainKind::Near => omni_connector(network, config_cli)
-                    .is_transfer_finalised(IsTransferFinalisedArgs::Near {
-                        transfer_id: TransferId {
-                            origin_chain,
-                            origin_nonce: nonce,
-                        },
-                    })
-                    .await
-                    .unwrap(),
-                ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
-                    omni_connector(network, config_cli)
-                        .is_transfer_finalised(IsTransferFinalisedArgs::Evm {
-                            chain_kind: destination_chain,
-                            destination_nonce: nonce,
-                        })
-                        .await
-                        .unwrap()
-                }
-                ChainKind::Sol => omni_connector(network, config_cli)
-                    .is_transfer_finalised(IsTransferFinalisedArgs::Solana {
-                        destination_nonce: nonce,
-                    })
-                    .await
-                    .unwrap(),
-            };
+            let is_transfer_finalised = omni_connector(network, config_cli)
+                .is_transfer_finalised(origin_chain, destination_chain, nonce)
+                .await
+                .unwrap();
 
-            tracing::info!("Is transfer finalised: {}", is_finalised);
+            tracing::info!("Is transfer finalised: {}", is_transfer_finalised);
         }
         OmniConnectorSubCommand::NearStorageDeposit {
             token,

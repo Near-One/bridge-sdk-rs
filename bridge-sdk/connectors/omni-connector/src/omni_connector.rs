@@ -172,19 +172,6 @@ pub enum FinTransferArgs {
     },
 }
 
-pub enum IsTransferFinalisedArgs {
-    Near {
-        transfer_id: omni_types::TransferId,
-    },
-    Evm {
-        chain_kind: ChainKind,
-        destination_nonce: u64,
-    },
-    Solana {
-        destination_nonce: u64,
-    },
-}
-
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
@@ -1181,21 +1168,32 @@ impl OmniConnector {
         }
     }
 
-    pub async fn is_transfer_finalised(&self, args: IsTransferFinalisedArgs) -> Result<bool> {
-        match args {
-            IsTransferFinalisedArgs::Near { transfer_id } => {
-                self.near_is_transfer_finalised(transfer_id).await
+    pub async fn is_transfer_finalised(
+        &self,
+        origin_chain: Option<ChainKind>,
+        destination_chain: ChainKind,
+        nonce: u64,
+    ) -> Result<bool> {
+        match destination_chain {
+            ChainKind::Near => {
+                let Some(origin_chain) = origin_chain else {
+                    return Err(BridgeSdkError::ConfigError(
+                        "Origin chain is required to check if transfer was finalised on NEAR"
+                            .to_string(),
+                    ));
+                };
+
+                self.near_is_transfer_finalised(omni_types::TransferId {
+                    origin_chain,
+                    origin_nonce: nonce,
+                })
+                .await
             }
-            IsTransferFinalisedArgs::Evm {
-                chain_kind,
-                destination_nonce,
-            } => {
-                self.evm_is_transfer_finalised(chain_kind, destination_nonce)
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+                self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
-            IsTransferFinalisedArgs::Solana { destination_nonce } => {
-                self.solana_is_transfer_finalised(destination_nonce).await
-            }
+            ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
         }
     }
 
