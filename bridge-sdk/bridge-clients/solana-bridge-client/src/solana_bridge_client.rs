@@ -29,7 +29,7 @@ mod instructions;
 
 const DISCRIMINATOR_LEN: usize = 8;
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
-#[allow(clippy::cast_possible_truncation, clippy::manual_div_ceil)]
+#[allow(clippy::as-conversions, clippy::manual_div_ceil)]
 const BIT_BYTES: usize = (USED_NONCES_PER_ACCOUNT as usize + 7) / 8;
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
@@ -446,10 +446,21 @@ impl SolanaBridgeClient {
 
         let bits = BitArray::<[u8; BIT_BYTES]>::new(buf);
 
-        let slot = (nonce % USED_NONCES_PER_ACCOUNT) as usize;
-        let used = bits[slot];
+        let slot = usize::try_from(nonce % USED_NONCES_PER_ACCOUNT).map_err(|_| {
+            SolanaBridgeClientError::InvalidArgument(format!(
+                "Nonce out of range: {nonce} (max: {})",
+                USED_NONCES_PER_ACCOUNT - 1
+            ))
+        })?;
 
-        Ok(used)
+        let bit = bits.get(slot);
+        match bit {
+            Some(bit) => Ok(*bit),
+            None => Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Slot index out of range: {slot} (bits len: {})",
+                bits.len()
+            ))),
+        }
     }
 
     pub async fn init_transfer_sol(
