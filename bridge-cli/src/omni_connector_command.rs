@@ -45,7 +45,7 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
-    #[clap(about = "Deploy a token")]
+    #[clap(about = "Check if transfer is finalised")]
     IsTransferFinalised {
         #[clap(
             short,
