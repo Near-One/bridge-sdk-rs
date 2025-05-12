@@ -29,7 +29,11 @@ mod instructions;
 
 const DISCRIMINATOR_LEN: usize = 8;
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
-#[allow(clippy::as_conversions, clippy::manual_div_ceil)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::as_conversions,
+    clippy::manual_div_ceil
+)]
 const BIT_BYTES: usize = (USED_NONCES_PER_ACCOUNT as usize + 7) / 8;
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
