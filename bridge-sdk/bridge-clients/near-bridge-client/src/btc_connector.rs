@@ -1,3 +1,4 @@
+use std::cmp::max;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -9,6 +10,7 @@ use serde_with::{serde_as, DisplayFromStr};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+pub const MAX_RATIO: u32 = 10000;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -38,6 +40,32 @@ pub struct FinBtcTransferArgs {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BridgeFee {
+    #[serde_as(as = "DisplayFromStr")]
+    pub fee_min: u128,
+    pub fee_rate: u32,
+    pub protocol_fee_rate: u32,
+}
+
+impl BridgeFee {
+    pub fn get_fee(&self, amount: u128) -> u128 {
+        std::cmp::max(
+            amount * u128::from(self.fee_rate) / u128::from(MAX_RATIO),
+            self.fee_min,
+        )
+    }
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PartialConfig {
+    deposit_bridge_fee: BridgeFee,
+    #[serde_as(as = "DisplayFromStr")]
+    min_deposit_amount: u128,
 }
 
 impl NearBridgeClient {
@@ -98,6 +126,28 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
+    }
+
+    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
+        let config = self.get_config().await?;
+        Ok(max(config.deposit_bridge_fee.get_fee(amount) + amount, config.min_deposit_amount))
+    }
+
+    async fn get_config(&self) -> Result<PartialConfig> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_config".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+            .await?;
+
+        Ok(serde_json::from_slice::<PartialConfig>(&response)?)
     }
 
     pub fn get_deposit_msg_for_omni_bridge(
