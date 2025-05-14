@@ -83,7 +83,7 @@ impl BtcBridgeClient {
         })
     }
 
-    pub fn get_gas_fee(&self, num_input: u64, num_output: u64) -> Result<u64> {
+    pub fn get_fee_rate(&self) -> Result<u64> {
         let fee_rate = self
             .bitcoin_client
             .estimate_smart_fee(2, None)
@@ -95,10 +95,7 @@ impl BtcBridgeClient {
                 "Error on estimate fee_rate".to_string(),
             ))?;
 
-        let tx_size = 12 + num_input * 68 + num_output * 31;
-        let fee = (fee_rate * tx_size / 1024).to_sat() + 50;
-
-        Ok(fee)
+        Ok(fee_rate.to_sat())
     }
 
     pub fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {

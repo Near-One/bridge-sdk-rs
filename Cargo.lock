@@ -1052,6 +1052,7 @@ dependencies = [
  "bitcoincore-rpc",
  "bridge-connector-common",
  "merkle-tools",
+ "minreq",
  "near-crypto",
  "near-primitives",
  "near-rpc-client",
@@ -1071,6 +1072,17 @@ dependencies = [
  "schemars",
  "serde",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "btc-utils"
+version = "0.2.0"
+dependencies = [
+ "bitcoin",
+ "bridge-connector-common",
+ "serde",
+ "serde_json",
+ "serde_with",
 ]
 
 [[package]]
@@ -4057,8 +4069,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0d2aaba477837b46ec1289588180fabfccf0c3b1d1a0c6b1866240cd6cd5ce9"
 dependencies = [
  "log",
+ "rustls 0.21.12",
+ "rustls-webpki 0.101.7",
  "serde",
  "serde_json",
+ "webpki-roots 0.25.4",
 ]
 
 [[package]]
@@ -4119,6 +4134,7 @@ dependencies = [
  "bitcoin",
  "borsh 1.5.7",
  "bridge-connector-common",
+ "btc-utils",
  "derive_builder",
  "near-contract-standards",
  "near-crypto",
@@ -4711,6 +4727,7 @@ dependencies = [
  "borsh 1.5.7",
  "bridge-connector-common",
  "btc-bridge-client",
+ "btc-utils",
  "crypto-utils",
  "derive_builder",
  "eth-proof",

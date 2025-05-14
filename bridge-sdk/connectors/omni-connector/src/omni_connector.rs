@@ -412,19 +412,12 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
         let utxos = near_bridge_client.get_utxos().await?;
-        let (out_points, utxos_balance) = near_bridge_client.choose_utxos(amount, utxos)?;
 
-        let gas_fee = u128::from(
-            btc_bridge_client.get_gas_fee(
-                out_points
-                    .len()
-                    .try_into()
-                    .expect("Error on convert usize into u64"),
-                2,
-            )?,
-        );
+        let fee_rate = btc_bridge_client.get_fee_rate()?;
+        let (out_points, utxos_balance, gas_fee) = btc_utils::choose_utxos(amount, utxos, fee_rate)?;
+
         let change_address = near_bridge_client.get_change_address().await?;
-        let tx_outs = near_bridge_client.get_tx_outs(
+        let tx_outs = btc_utils::get_tx_outs(
             &target_btc_address,
             amount.try_into().map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))

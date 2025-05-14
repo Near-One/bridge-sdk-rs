@@ -1,6 +1,7 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
-use bitcoin::{Address, Amount, OutPoint, TxOut};
+use bitcoin::{OutPoint, TxOut};
+use btc_utils::UTXO;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
@@ -15,36 +16,6 @@ const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
-
-pub mod u64_dec_format {
-    use serde::de;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&num.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
-pub struct UTXO {
-    pub path: String,
-    pub tx_bytes: Vec<u8>,
-    pub vout: usize,
-    #[serde(with = "u64_dec_format")]
-    pub balance: u64,
-}
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -197,83 +168,6 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
-    }
-
-    pub fn get_tx_outs(
-        &self,
-        target_btc_address: &str,
-        amount: u64,
-        change_address: &str,
-        change_amount: u64,
-    ) -> Vec<TxOut> {
-        let btc_recipient_address =
-            Address::from_str(target_btc_address).expect("Invalid Bitcoin address");
-        let btc_recipient_address = btc_recipient_address.assume_checked();
-        let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
-
-        let change_address =
-            Address::from_str(change_address).expect("Invalid Bitcoin Change address");
-        let change_address = change_address.assume_checked();
-        let change_script_pubkey = change_address.script_pubkey();
-        vec![
-            TxOut {
-                value: Amount::from_sat(amount),
-                script_pubkey: btc_recipient_script_pubkey,
-            },
-            TxOut {
-                value: Amount::from_sat(change_amount),
-                script_pubkey: change_script_pubkey,
-            },
-        ]
-    }
-
-    fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
-        utxos
-            .into_iter()
-            .map(|(txid, utxo)| {
-                let txid_str = txid.split('@').next().ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(format!("Invalid txid format: {txid}"))
-                })?;
-
-                let parsed_txid = txid_str.parse().map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!(
-                        "Failed to parse txid '{txid_str}' into bitcoin::Txid: {e}"
-                    ))
-                })?;
-
-                let vout = u32::try_from(utxo.vout).map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!(
-                        "Invalid vout value (expected u32): {} ({})",
-                        utxo.vout, e
-                    ))
-                })?;
-
-                Ok(OutPoint::new(parsed_txid, vout))
-            })
-            .collect()
-    }
-
-    pub fn choose_utxos(
-        &self,
-        amount: u128,
-        utxos: HashMap<String, UTXO>,
-    ) -> Result<(Vec<OutPoint>, u128)> {
-        let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
-        utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
-
-        let mut selected = Vec::new();
-        let mut utxos_balance = 0;
-
-        for utxo in utxo_list {
-            if utxos_balance >= amount {
-                break;
-            }
-            utxos_balance += u128::from(utxo.1.balance);
-            selected.push(utxo);
-        }
-
-        let out_points = Self::utxo_to_out_points(selected)?;
-        Ok((out_points, utxos_balance))
     }
 
     pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
