@@ -727,7 +727,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
             tracing::info!("BTC Address: {btc_address}");
-            tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}")
+            tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
     }
 }
