@@ -62,6 +62,10 @@ struct CliConfig {
     btc_endpoint: Option<String>,
     #[arg(long)]
     btc_connector: Option<String>,
+    #[arg(long)]
+    btc: Option<String>,
+    #[arg(long)]
+    satoshi_relayer: Option<String>,
 
     #[arg(long)]
     config: Option<String>,
@@ -107,6 +111,8 @@ impl CliConfig {
 
             btc_endpoint: self.btc_endpoint.or(other.btc_endpoint),
             btc_connector: self.btc_connector.or(other.btc_connector),
+            btc: self.btc.or(other.btc),
+            satoshi_relayer: self.satoshi_relayer.or(other.satoshi_relayer),
 
             config: self.config.or(other.config),
         }
@@ -150,6 +156,9 @@ fn env_config() -> CliConfig {
 
         btc_endpoint: env::var("BTC_ENDPOINT").ok(),
         btc_connector: env::var("BTC_CONNECTOR").ok(),
+        btc: env::var("BTC").ok(),
+        satoshi_relayer: env::var("SATOSHI_RELAYER").ok(),
+
         config: None,
     }
 }
@@ -192,6 +201,9 @@ fn default_config(network: Network) -> CliConfig {
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_MAINNET.to_owned()),
             btc_connector: Some(defaults::BTC_CONNECTOR_MAINNET.to_owned()),
+            btc: Some(defaults::BTC_MAINNET.to_owned()),
+            satoshi_relayer: Some(defaults::SATOSHI_RELAYER_MAINNET.to_owned()),
+
             config: None,
         },
         Network::Testnet => CliConfig {
@@ -229,6 +241,9 @@ fn default_config(network: Network) -> CliConfig {
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_TESTNET.to_owned()),
             btc_connector: Some(defaults::BTC_CONNECTOR_TESTNET.to_owned()),
+            btc: Some(defaults::BTC_TESTNET.to_owned()),
+            satoshi_relayer: Some(defaults::SATOSHI_RELAYER_TESTNET.to_owned()),
+
             config: None,
         },
         Network::Devnet => CliConfig {
@@ -266,6 +281,8 @@ fn default_config(network: Network) -> CliConfig {
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_DEVNET.to_owned()),
             btc_connector: Some(defaults::BTC_CONNECTOR_DEVNET.to_owned()),
+            btc: Some(defaults::BTC_DEVNET.to_owned()),
+            satoshi_relayer: Some(defaults::SATOSHI_RELAYER_DEVNET.to_owned()),
 
             config: None,
         },

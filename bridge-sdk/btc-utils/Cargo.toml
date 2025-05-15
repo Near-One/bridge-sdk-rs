@@ -1,0 +1,11 @@
+[package]
+name = "btc-utils"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+bitcoin.workspace = true
+bridge-connector-common = { path = "../connectors/bridge-connector-common" }
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true

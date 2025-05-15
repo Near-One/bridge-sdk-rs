@@ -4,7 +4,6 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::{SecretKey, Signer};
-use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
@@ -13,7 +12,6 @@ use omni_types::{
     ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
-use serde_with::{serde_as, DisplayFromStr};
 
 pub mod btc_connector;
 
@@ -61,36 +59,6 @@ struct StorageBalanceBounds {
     min: NearToken,
 }
 
-#[serde_as]
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct PostAction {
-    pub receiver_id: AccountId,
-    #[serde_as(as = "DisplayFromStr")]
-    pub amount: u128,
-    pub memo: Option<String>,
-    pub msg: String,
-    pub gas: Option<Gas>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct DepositMsg {
-    pub recipient_id: AccountId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_actions: Option<Vec<PostAction>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extra_msg: Option<String>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct FinBtcTransferArgs {
-    pub deposit_msg: DepositMsg,
-    pub tx_bytes: Vec<u8>,
-    pub vout: usize,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
-}
-
 #[derive(serde::Serialize)]
 pub struct FastFinTransferArgs {
     pub token_id: AccountId,
@@ -116,6 +84,10 @@ pub struct NearBridgeClient {
     omni_bridge_id: Option<String>,
     #[doc = r"BTC Connector account id on Near"]
     btc_connector: Option<String>,
+    #[doc = r"Bitcoin account id on Near"]
+    btc: Option<String>,
+    #[doc = r"Satoshi Relayer Account Id which sign transaction in Bitcoin Bridge"]
+    satoshi_relayer: Option<String>,
 }
 
 impl NearBridgeClient {
@@ -398,9 +370,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_deploy_token()
-            .await?;
+        let deposit = self.get_required_balance_for_deploy_token().await?;
 
         let prover_args = omni_types::prover_args::WormholeVerifyProofArgs {
             proof_kind: omni_types::prover_result::ProofKind::LogMetadata,
@@ -447,9 +417,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_deploy_token()
-            .await?;
+        let deposit = self.get_required_balance_for_deploy_token().await?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -486,9 +454,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self
-            .get_required_balance_for_bind_token()
-            .await?;
+        let deposit = self.get_required_balance_for_bind_token().await?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -566,9 +532,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self
-            .get_required_balance_for_init_transfer()
-            .await?;
+        let required_balance = self.get_required_balance_for_init_transfer().await?;
 
         let nonce = if self
             .deposit_storage_if_required(required_balance, transaction_options.clone())
@@ -621,9 +585,7 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
 
-        let mut required_deposit = self
-            .get_required_balance_for_fin_transfer()
-            .await?;
+        let mut required_deposit = self.get_required_balance_for_fin_transfer().await?;
 
         for storage_deposit_action in args.storage_deposit_actions.clone() {
             if let Some(amount) = storage_deposit_action.storage_deposit_amount {
@@ -766,23 +728,28 @@ impl NearBridgeClient {
     }
 
     pub async fn get_required_balance_for_deploy_token(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_deploy_token").await
+        self.get_required_balance("required_balance_for_deploy_token")
+            .await
     }
 
     pub async fn get_required_balance_for_bind_token(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_bind_token").await
+        self.get_required_balance("required_balance_for_bind_token")
+            .await
     }
 
     pub async fn get_required_balance_for_init_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_init_transfer").await
+        self.get_required_balance("required_balance_for_init_transfer")
+            .await
     }
 
     pub async fn get_required_balance_for_fin_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_fin_transfer").await
+        self.get_required_balance("required_balance_for_fin_transfer")
+            .await
     }
 
     pub async fn get_required_balance_for_fast_fin_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_fast_transfer").await
+        self.get_required_balance("required_balance_for_fast_transfer")
+            .await
     }
 
     pub async fn deposit_storage_if_required(
@@ -840,15 +807,17 @@ impl NearBridgeClient {
         let transfer_log = sign_tx
             .receipts_outcome
             .iter()
-            .find(|receipt| {
-                !receipt.outcome.logs.is_empty() && receipt.outcome.logs[0].contains(event_name)
+            .find_map(|receipt| {
+                receipt
+                    .outcome
+                    .logs
+                    .iter()
+                    .find(|log| log.contains(event_name))
+                    .cloned()
             })
             .ok_or(BridgeSdkError::UnknownError(
                 "Failed to find correct receipt".to_string(),
-            ))?
-            .outcome
-            .logs[0]
-            .clone();
+            ))?;
 
         Ok(transfer_log)
     }
@@ -899,17 +868,5 @@ impl NearBridgeClient {
             ))?
             .parse::<AccountId>()
             .map_err(|_| BridgeSdkError::ConfigError("Invalid omni bridge account id".to_string()))
-    }
-
-    pub fn btc_connector(&self) -> Result<AccountId> {
-        self.btc_connector
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "BTC Connector account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
-            .map_err(|_| {
-                BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
-            })
     }
 }
