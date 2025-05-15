@@ -4,7 +4,6 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::{SecretKey, Signer};
-use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
@@ -13,7 +12,6 @@ use omni_types::{
     ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
-use serde_with::{serde_as, DisplayFromStr};
 
 pub mod btc_connector;
 
@@ -59,36 +57,6 @@ impl Default for TransactionOptions {
 #[derive(serde::Deserialize)]
 struct StorageBalanceBounds {
     min: NearToken,
-}
-
-#[serde_as]
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct PostAction {
-    pub receiver_id: AccountId,
-    #[serde_as(as = "DisplayFromStr")]
-    pub amount: u128,
-    pub memo: Option<String>,
-    pub msg: String,
-    pub gas: Option<Gas>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct DepositMsg {
-    pub recipient_id: AccountId,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub post_actions: Option<Vec<PostAction>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extra_msg: Option<String>,
-}
-
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct FinBtcTransferArgs {
-    pub deposit_msg: DepositMsg,
-    pub tx_bytes: Vec<u8>,
-    pub vout: usize,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
 }
 
 #[derive(serde::Serialize)]

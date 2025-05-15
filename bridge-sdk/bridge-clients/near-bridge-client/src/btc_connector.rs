@@ -1,8 +1,8 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
-use btc_utils::UTXO;
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use btc_utils::UTXO;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};

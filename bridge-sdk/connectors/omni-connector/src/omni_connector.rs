@@ -414,7 +414,8 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos().await?;
 
         let fee_rate = btc_bridge_client.get_fee_rate()?;
-        let (out_points, utxos_balance, gas_fee) = btc_utils::choose_utxos(amount, utxos, fee_rate)?;
+        let (out_points, utxos_balance, gas_fee) =
+            btc_utils::choose_utxos(amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address().await?;
         let tx_outs = btc_utils::get_tx_outs(
