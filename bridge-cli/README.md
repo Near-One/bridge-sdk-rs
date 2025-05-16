@@ -25,7 +25,7 @@ Visit [releases page](https://github.com/Near-One/bridge-sdk-rs/releases/latest)
 
 ```bash
 # Clone the repository
-git clone https://github.com/near/bridge-sdk-rs.git
+git clone https://github.com/near-one/bridge-sdk-rs.git
 cd bridge-sdk-rs
 
 # Build the CLI
