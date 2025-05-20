@@ -742,11 +742,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_btc_verify_withdraw(
-                    btc_tx_hash,
-                    TransactionOptions::default(),
-                    None,
-                )
+                .near_btc_verify_withdraw(btc_tx_hash, TransactionOptions::default(), None)
                 .await
                 .unwrap();
         }

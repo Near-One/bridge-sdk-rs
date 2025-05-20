@@ -381,7 +381,7 @@ impl OmniConnector {
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
-            vout: vout,
+            vout,
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,

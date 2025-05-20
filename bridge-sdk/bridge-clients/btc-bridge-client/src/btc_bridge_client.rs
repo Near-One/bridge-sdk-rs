@@ -42,11 +42,9 @@ impl BtcBridgeClient {
                 BridgeSdkError::BtcClientError(format!("Error on get raw tx info: {err}"))
             })?;
 
-        Ok(tx_raw
+        tx_raw
             .blockhash
-            .ok_or(BridgeSdkError::BtcClientError(format!(
-                "Tx not finalized yet"
-            )))?)
+            .ok_or(BridgeSdkError::BtcClientError("Tx not finalized yet".to_string()))
     }
 
     pub fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
