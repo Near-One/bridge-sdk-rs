@@ -1,8 +1,9 @@
 use bitcoin::consensus::{deserialize, serialize};
-use bitcoin::Transaction;
+use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::{bitcoin, jsonrpc, RpcApi};
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use std::str::FromStr;
 
 pub struct BtcOutpoint {
     pub tx_hash: String,
@@ -31,6 +32,26 @@ impl BtcBridgeClient {
         BtcBridgeClient {
             bitcoin_client: bitcoincore_rpc::Client::from_jsonrpc(builder.build().into()),
         }
+    }
+
+    pub fn get_block_hash_by_tx_hash(&self, tx_hash: String) -> Result<BlockHash> {
+        let tx_raw = self
+            .bitcoin_client
+            .get_raw_transaction_info(
+                &bitcoin::Txid::from_str(&*tx_hash).map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!("Incorrect tx_hash: {err}"))
+                })?,
+                None,
+            )
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on get raw tx info: {err}"))
+            })?;
+
+        Ok(tx_raw
+            .blockhash
+            .ok_or(BridgeSdkError::BtcClientError(format!(
+                "Tx not finalized yet"
+            )))?)
     }
 
     pub fn extract_btc_proof(&self, btc_outpoint: &BtcOutpoint) -> Result<TxProof> {

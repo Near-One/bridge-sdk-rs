@@ -401,6 +401,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
+        println!("{:?}", btc_bridge.get_block_hash_by_tx_hash(btc_outpoint.tx_hash.clone())?);
         let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: btc_outpoint.tx_hash,
