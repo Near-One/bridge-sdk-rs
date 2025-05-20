@@ -8,8 +8,8 @@ use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
-    OmniConnectorBuilder,
+    BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
+    OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
@@ -317,6 +317,13 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Finalize Transfer from Near on Bitcoin")]
+    BtcFinTransfer {
+        #[clap(short, long, help = "Near tx hash with signature")]
+        near_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(
         about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network"
     )]
@@ -341,6 +348,24 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
+    InitNearToBitcoinTransfer {
+        #[clap(
+            short,
+            long,
+            help = "The Bitcoin address to which the BTC will eventually be released"
+        )]
+        target_btc_address: String,
+        #[clap(
+            short,
+            long,
+            help = "The amount to be transferred, in satoshis",
+            default_value = "0"
+        )]
+        amount: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -709,15 +734,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         block_height: tx_block_height,
                     },
                     vout,
-                    recipient_id,
-                    amount,
-                    fee,
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        amount,
+                        fee,
+                    },
                     TransactionOptions::default(),
                     None,
                 )
                 .await
                 .unwrap();
-        },
+        }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             btc_tx_hash,
             tx_block_height,
@@ -735,6 +762,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::BtcFinTransfer {
+            near_tx_hash,
+            config_cli,
+        } => {
+            let tx_hash = omni_connector(network, config_cli)
+                .btc_fin_transfer(near_tx_hash, None)
+                .await
+                .unwrap();
+
+            tracing::info!("BTC Tx Hash: {tx_hash}");
+        }
         OmniConnectorSubCommand::GetBitcoinAddress {
             recipient_id,
             amount,
@@ -748,6 +786,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
+        OmniConnectorSubCommand::InitNearToBitcoinTransfer {
+            target_btc_address,
+            amount,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .init_near_to_bitcoin_transfer(
+                    target_btc_address,
+                    amount,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await
+                .unwrap();
+        }
     }
 }
 
@@ -760,6 +813,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
         .btc_connector(combined_config.btc_connector)
+        .btc(combined_config.btc)
+        .satoshi_relayer(combined_config.satoshi_relayer)
         .build()
         .unwrap();
 
@@ -813,7 +868,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
-    let btc_bridge_client = BtcBridgeClient::new(combined_config.btc_endpoint.unwrap());
+    let btc_bridge_client = BtcBridgeClient::new(&combined_config.btc_endpoint.unwrap());
 
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))

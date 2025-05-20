@@ -1,17 +1,23 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
+use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use btc_utils::UTXO;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
-use serde_json::json;
+use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
+const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
+const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -49,6 +55,31 @@ pub struct BtcVerifyWithdrawArgs {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub enum TokenReceiverMessage {
+    DepositProtocolFee,
+    Withdraw {
+        target_btc_address: String,
+        input: Vec<OutPoint>,
+        output: Vec<TxOut>,
+    },
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct WithdrawBridgeFee {
+    #[serde_as(as = "DisplayFromStr")]
+    fee_min: u128,
+    fee_rate: u64,
+    protocol_fee_rate: u64,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PartialConfig {
+    withdraw_bridge_fee: WithdrawBridgeFee,
+    change_address: String,
 }
 
 impl NearBridgeClient {
@@ -120,6 +151,44 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Init a BTC transfer from Near to BTC.
+    #[tracing::instrument(skip_all, name = "NEAR INIT BTC TRANSFER")]
+    pub async fn init_btc_transfer_near_to_btc(
+        &self,
+        amount: u128,
+        msg: TokenReceiverMessage,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc = self.btc()?;
+        let btc_connector = self.btc_connector()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc,
+                method_name: "ft_transfer_call".to_string(),
+                args: serde_json::json!({
+                    "receiver_id": btc_connector,
+                    "amount": amount.to_string(),
+                    "msg": json!(msg).to_string(),
+                })
+                .to_string()
+                .into_bytes(),
+                gas: INIT_BTC_TRANSFER_GAS,
+                deposit: INIT_BTC_TRANSFER_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(tx_hash = tx_hash.to_string(), "Init BTC transfer");
+        Ok(tx_hash)
+    }
+
     pub async fn get_btc_address(
         &self,
         recipient_id: &str,
@@ -144,6 +213,51 @@ impl NearBridgeClient {
 
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
+    }
+
+    pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_utxos_paged".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
+        Ok(utxos)
+    }
+
+    pub async fn get_withdraw_fee(&self) -> Result<u128> {
+        let config = self.get_config().await?;
+        Ok(config.withdraw_bridge_fee.fee_min)
+    }
+
+    pub async fn get_change_address(&self) -> Result<String> {
+        let config = self.get_config().await?;
+        Ok(config.change_address)
+    }
+
+    async fn get_config(&self) -> Result<PartialConfig> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_config".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<PartialConfig>(&response)?)
     }
 
     pub fn get_deposit_msg_for_omni_bridge(
@@ -180,5 +294,83 @@ impl NearBridgeClient {
                 extra_msg: None,
             })
         }
+    }
+
+    pub async fn get_btc_tx_data(
+        &self,
+        near_tx_hash: String,
+        relayer: Option<AccountId>,
+    ) -> Result<Vec<u8>> {
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+        })?;
+
+        let relayer_id = relayer.unwrap_or(self.satoshi_relayer()?);
+        let log = self
+            .extract_transfer_log(tx_hash, Some(relayer_id), "signed_btc_transaction")
+            .await?;
+
+        let json_str = log
+            .strip_prefix("EVENT_JSON:")
+            .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+        let v: Value = serde_json::from_str(json_str)?;
+        let bytes = v["data"][0]["tx_bytes"]
+            .as_array()
+            .ok_or_else(|| {
+                BridgeSdkError::BtcClientError(
+                    "Expected 'tx_bytes' to be an array in logs".to_string(),
+                )
+            })?
+            .iter()
+            .map(|val| {
+                let num = val.as_u64().ok_or_else(|| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Expected u64 value in 'tx_bytes', got: {val}"
+                    ))
+                })?;
+
+                u8::try_from(num).map_err(|e| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<u8>>>()?;
+
+        Ok(bytes)
+    }
+
+    pub fn btc_connector(&self) -> Result<AccountId> {
+        self.btc_connector
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC Connector account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
+            })
+    }
+
+    pub fn btc(&self) -> Result<AccountId> {
+        self.btc
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Bitcoin account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
+    }
+
+    pub fn satoshi_relayer(&self) -> Result<AccountId> {
+        self.satoshi_relayer
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Satoshi Relayer account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid Satoshi Relayer account id".to_string())
+            })
     }
 }

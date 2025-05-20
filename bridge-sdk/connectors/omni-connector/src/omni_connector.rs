@@ -15,7 +15,9 @@ use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
 use evm_bridge_client::EvmBridgeClient;
-use near_bridge_client::btc_connector::{BtcVerifyWithdrawArgs, FinBtcTransferArgs};
+use near_bridge_client::btc_connector::{
+    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
+};
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
@@ -172,6 +174,17 @@ pub enum FinTransferArgs {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         solana_token: Pubkey,
+    },
+}
+
+pub enum BtcDepositArgs {
+    OmniDepositArgs {
+        recipient_id: String,
+        amount: u128,
+        fee: u128,
+    },
+    DepositMsg {
+        msg: DepositMsg,
     },
 }
 
@@ -350,17 +363,22 @@ impl OmniConnector {
         &self,
         btc_outpoint: BtcOutpoint,
         vout: usize,
-        recipient_id: String,
-        amount: u128,
-        fee: u128,
+        deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
-        let deposit_msg =
-            near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?;
+        let deposit_msg = match deposit_args {
+            BtcDepositArgs::DepositMsg { msg } => msg,
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                amount,
+                fee,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?,
+        };
+
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
@@ -406,6 +424,68 @@ impl OmniConnector {
         near_bridge_client
             .get_btc_address(recipient_id, amount, fee)
             .await
+    }
+
+    pub async fn init_near_to_bitcoin_transfer(
+        &self,
+        target_btc_address: String,
+        amount: u128,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let btc_bridge_client = self.btc_bridge_client()?;
+        let utxos = near_bridge_client.get_utxos().await?;
+
+        let fee_rate = btc_bridge_client.get_fee_rate()?;
+        let (out_points, utxos_balance, gas_fee) =
+            btc_utils::choose_utxos(amount, utxos, fee_rate)?;
+
+        let change_address = near_bridge_client.get_change_address().await?;
+        let tx_outs = btc_utils::get_tx_outs(
+            &target_btc_address,
+            amount.try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+            })?,
+            &change_address,
+            (utxos_balance - amount - gas_fee)
+                .try_into()
+                .map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Error on change amount conversion: {err}"
+                    ))
+                })?,
+        );
+
+        let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
+
+        near_bridge_client
+            .init_btc_transfer_near_to_btc(
+                amount + fee,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await
+    }
+
+    pub async fn btc_fin_transfer(
+        &self,
+        near_tx_hash: String,
+        relayer: Option<AccountId>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let btc_tx_data = near_bridge_client
+            .get_btc_tx_data(near_tx_hash, relayer)
+            .await?;
+
+        let btc_bridge_client = self.btc_bridge_client()?;
+        let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
+        Ok(tx_hash)
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1167,9 +1247,11 @@ impl OmniConnector {
                         block_height: tx_block_height,
                     },
                     vout,
-                    recipient_id,
-                    amount,
-                    fee,
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        amount,
+                        fee,
+                    },
                     transaction_options,
                     wait_final_outcome_timeout_sec,
                 )

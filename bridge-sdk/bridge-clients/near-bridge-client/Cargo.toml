@@ -4,6 +4,7 @@ version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+bitcoin.workspace = true
 borsh.workspace = true
 derive_builder.workspace = true
 near-crypto.workspace = true
@@ -18,6 +19,7 @@ serde_with.workspace = true
 tracing.workspace = true
 near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
+btc-utils = { path = "../../btc-utils" }
 
 [lib]
 path = "src/near_bridge_client.rs"
