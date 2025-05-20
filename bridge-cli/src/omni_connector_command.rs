@@ -703,7 +703,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient_id,
                     amount,
                     fee,
-
                     TransactionOptions::default(),
                     None,
                 )

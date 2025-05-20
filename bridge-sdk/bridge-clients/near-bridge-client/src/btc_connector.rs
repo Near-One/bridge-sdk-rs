@@ -8,7 +8,10 @@ use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
 
 const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
+
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -38,6 +41,14 @@ pub struct FinBtcTransferArgs {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcVerifyWithdrawArgs {
+    tx_id: String,
+    tx_block_blockhash: String,
+    tx_index: u64,
+    merkle_proof: Vec<String>,
 }
 
 impl NearBridgeClient {
@@ -70,6 +81,41 @@ impl NearBridgeClient {
         tracing::info!(
             tx_hash = tx_hash.to_string(),
             "Sent BTC finalize transfer transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    // Submit the proof to the btc_connector on NEAR that the withdraw transfer
+    // to Bitcoin was successfully completed. It is needed in order to store the new change UTXO
+    // and to ensure the relayer receives the fee.
+    #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY WITHDRAW")]
+    pub async fn btc_verify_withdraw(
+        &self,
+        args: BtcVerifyWithdrawArgs,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "verify_withdraw".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_VERIFY_WITHDRAW_GAS,
+                deposit: BTC_VERIFY_WITHDRAW_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Verify Withdraw transaction"
         );
         Ok(tx_hash)
     }
