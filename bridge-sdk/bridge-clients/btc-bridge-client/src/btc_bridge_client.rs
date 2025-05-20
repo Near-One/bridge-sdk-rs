@@ -7,7 +7,6 @@ use btc_relayer_lib::config::{BitcoinConfig, Config, NearConfig};
 pub struct BtcOutpoint {
     pub tx_hash: String,
     pub block_height: usize,
-    pub vout: usize,
 }
 
 #[derive(Debug)]

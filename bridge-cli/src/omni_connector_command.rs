@@ -308,6 +308,15 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Verify BTC Withdraw in btc_connector")]
+    BtcVerifyWithdraw {
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "The block height of bitcoin tx hash")]
+        tx_block_height: usize,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(
         about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network"
     )]
@@ -698,11 +707,28 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     BtcOutpoint {
                         tx_hash: btc_tx_hash,
                         block_height: tx_block_height,
-                        vout,
                     },
+                    vout,
                     recipient_id,
                     amount,
                     fee,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await
+                .unwrap();
+        },
+        OmniConnectorSubCommand::BtcVerifyWithdraw {
+            btc_tx_hash,
+            tx_block_height,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_btc_verify_withdraw(
+                    BtcOutpoint {
+                        tx_hash: btc_tx_hash,
+                        block_height: tx_block_height,
+                    },
                     TransactionOptions::default(),
                     None,
                 )

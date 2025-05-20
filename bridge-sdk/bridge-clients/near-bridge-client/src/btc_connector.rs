@@ -45,10 +45,10 @@ pub struct FinBtcTransferArgs {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
-    tx_id: String,
-    tx_block_blockhash: String,
-    tx_index: u64,
-    merkle_proof: Vec<String>,
+    pub tx_id: String,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
 }
 
 impl NearBridgeClient {

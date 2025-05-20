@@ -15,7 +15,7 @@ use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
 use evm_bridge_client::EvmBridgeClient;
-use near_bridge_client::btc_connector::FinBtcTransferArgs;
+use near_bridge_client::btc_connector::{BtcVerifyWithdrawArgs, FinBtcTransferArgs};
 use near_bridge_client::{NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
@@ -349,6 +349,7 @@ impl OmniConnector {
     pub async fn near_fin_transfer_btc(
         &self,
         btc_outpoint: BtcOutpoint,
+        vout: usize,
         recipient_id: String,
         amount: u128,
         fee: u128,
@@ -363,7 +364,7 @@ impl OmniConnector {
         let args = FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
-            vout: btc_outpoint.vout,
+            vout: vout,
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
@@ -371,6 +372,27 @@ impl OmniConnector {
 
         near_bridge_client
             .fin_btc_transfer(args, transaction_options, wait_final_outcome_timeout_sec)
+            .await
+    }
+
+    pub async fn near_btc_verify_withdraw(
+        &self,
+        btc_outpoint: BtcOutpoint,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let btc_bridge = self.btc_bridge_client()?;
+        let near_bridge_client = self.near_bridge_client()?;
+        let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
+        let args = BtcVerifyWithdrawArgs {
+            tx_id: btc_outpoint.tx_hash,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
+
+        near_bridge_client
+            .btc_verify_withdraw(args, transaction_options, wait_final_outcome_timeout_sec)
             .await
     }
 
@@ -1143,8 +1165,8 @@ impl OmniConnector {
                     BtcOutpoint {
                         tx_hash: btc_tx_hash,
                         block_height: tx_block_height,
-                        vout,
                     },
+                    vout,
                     recipient_id,
                     amount,
                     fee,
