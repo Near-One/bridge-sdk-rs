@@ -5,11 +5,6 @@ use bitcoincore_rpc::{bitcoin, jsonrpc, RpcApi};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use std::str::FromStr;
 
-pub struct BtcOutpoint {
-    pub tx_hash: String,
-    pub block_height: usize,
-}
-
 #[derive(Debug)]
 pub struct TxProof {
     pub tx_bytes: Vec<u8>,
@@ -34,11 +29,11 @@ impl BtcBridgeClient {
         }
     }
 
-    pub fn get_block_hash_by_tx_hash(&self, tx_hash: String) -> Result<BlockHash> {
+    pub fn get_block_hash_by_tx_hash(&self, tx_hash: &str) -> Result<BlockHash> {
         let tx_raw = self
             .bitcoin_client
             .get_raw_transaction_info(
-                &bitcoin::Txid::from_str(&*tx_hash).map_err(|err| {
+                &bitcoin::Txid::from_str(tx_hash).map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Incorrect tx_hash: {err}"))
                 })?,
                 None,
@@ -54,18 +49,8 @@ impl BtcBridgeClient {
             )))?)
     }
 
-    pub fn extract_btc_proof(&self, btc_outpoint: &BtcOutpoint) -> Result<TxProof> {
-        let block_hash = self
-            .bitcoin_client
-            .get_block_hash(
-                btc_outpoint
-                    .block_height
-                    .try_into()
-                    .expect("Error on convert usize into u64"),
-            )
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on get block hash: {err}"))
-            })?;
+    pub fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
+        let block_hash = self.get_block_hash_by_tx_hash(tx_hash)?;
         let block = self
             .bitcoin_client
             .get_block(&block_hash)
@@ -80,7 +65,7 @@ impl BtcBridgeClient {
 
         let tx_index = transactions
             .iter()
-            .position(|hash| *hash == btc_outpoint.tx_hash)
+            .position(|hash| *hash == tx_hash)
             .ok_or(BridgeSdkError::InvalidArgument(
                 "btc tx not found in block".to_string(),
             ))?;

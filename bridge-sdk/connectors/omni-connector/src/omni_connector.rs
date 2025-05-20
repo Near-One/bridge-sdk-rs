@@ -13,7 +13,7 @@ use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
-use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
+use btc_bridge_client::BtcBridgeClient;
 use evm_bridge_client::EvmBridgeClient;
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -148,7 +148,6 @@ pub enum FinTransferArgs {
     },
     NearFinTransferBTC {
         btc_tx_hash: String,
-        tx_block_height: usize,
         vout: usize,
         recipient_id: String,
         amount: u128,
@@ -361,7 +360,7 @@ impl OmniConnector {
 
     pub async fn near_fin_transfer_btc(
         &self,
-        btc_outpoint: BtcOutpoint,
+        tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
@@ -369,7 +368,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
+        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
@@ -395,16 +394,15 @@ impl OmniConnector {
 
     pub async fn near_btc_verify_withdraw(
         &self,
-        btc_outpoint: BtcOutpoint,
+        tx_hash: String,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        println!("{:?}", btc_bridge.get_block_hash_by_tx_hash(btc_outpoint.tx_hash.clone())?);
-        let proof_data = btc_bridge.extract_btc_proof(&btc_outpoint)?;
+        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
         let args = BtcVerifyWithdrawArgs {
-            tx_id: btc_outpoint.tx_hash,
+            tx_id: tx_hash,
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
@@ -1234,7 +1232,6 @@ impl OmniConnector {
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::NearFinTransferBTC {
                 btc_tx_hash,
-                tx_block_height,
                 vout,
                 recipient_id,
                 amount,
@@ -1243,10 +1240,7 @@ impl OmniConnector {
                 wait_final_outcome_timeout_sec,
             } => self
                 .near_fin_transfer_btc(
-                    BtcOutpoint {
-                        tx_hash: btc_tx_hash,
-                        block_height: tx_block_height,
-                    },
+                    btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
                         recipient_id,

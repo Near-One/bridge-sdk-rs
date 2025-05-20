@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
-use btc_bridge_client::{BtcBridgeClient, BtcOutpoint};
+use btc_bridge_client::BtcBridgeClient;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -280,8 +280,6 @@ pub enum OmniConnectorSubCommand {
     NearFinTransferBTC {
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
-        #[clap(short, long, help = "The block height of bitcoin tx hash")]
-        tx_block_height: usize,
         #[clap(
             short,
             long,
@@ -312,8 +310,6 @@ pub enum OmniConnectorSubCommand {
     BtcVerifyWithdraw {
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
-        #[clap(short, long, help = "The block height of bitcoin tx hash")]
-        tx_block_height: usize,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -720,7 +716,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::NearFinTransferBTC {
             btc_tx_hash,
-            tx_block_height,
             vout,
             recipient_id,
             amount,
@@ -729,10 +724,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_fin_transfer_btc(
-                    BtcOutpoint {
-                        tx_hash: btc_tx_hash,
-                        block_height: tx_block_height,
-                    },
+                    btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
                         recipient_id,
@@ -747,15 +739,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             btc_tx_hash,
-            tx_block_height,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_withdraw(
-                    BtcOutpoint {
-                        tx_hash: btc_tx_hash,
-                        block_height: tx_block_height,
-                    },
+                    btc_tx_hash,
                     TransactionOptions::default(),
                     None,
                 )
