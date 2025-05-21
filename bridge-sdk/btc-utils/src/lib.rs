@@ -9,7 +9,7 @@ use std::str::FromStr;
 pub struct UTXO {
     pub path: String,
     pub tx_bytes: Vec<u8>,
-    pub vout: usize,
+    pub vout: u32,
     #[serde_as(as = "DisplayFromStr")]
     pub balance: u64,
 }
@@ -28,14 +28,7 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
                 ))
             })?;
 
-            let vout = u32::try_from(utxo.vout).map_err(|e| {
-                BridgeSdkError::BtcClientError(format!(
-                    "Invalid vout value (expected u32): {} ({})",
-                    utxo.vout, e
-                ))
-            })?;
-
-            Ok(OutPoint::new(parsed_txid, vout))
+            Ok(OutPoint::new(parsed_txid, utxo.vout))
         })
         .collect()
 }
