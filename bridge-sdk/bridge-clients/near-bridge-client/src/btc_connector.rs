@@ -1,3 +1,4 @@
+use std::cmp::max;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
@@ -16,6 +17,9 @@ const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
+
+pub const MAX_RATIO: u32 = 10000;
+
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -59,6 +63,24 @@ pub enum TokenReceiverMessage {
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BridgeFee {
+    #[serde_as(as = "DisplayFromStr")]
+    pub fee_min: u128,
+    pub fee_rate: u32,
+    pub protocol_fee_rate: u32,
+}
+
+impl BridgeFee {
+    pub fn get_fee(&self, amount: u128) -> u128 {
+        std::cmp::max(
+            amount * u128::from(self.fee_rate) / u128::from(MAX_RATIO),
+            self.fee_min,
+        )
+    }
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct WithdrawBridgeFee {
     #[serde_as(as = "DisplayFromStr")]
     fee_min: u128,
@@ -66,10 +88,14 @@ struct WithdrawBridgeFee {
     protocol_fee_rate: u64,
 }
 
+#[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PartialConfig {
     withdraw_bridge_fee: WithdrawBridgeFee,
     change_address: String,
+    deposit_bridge_fee: BridgeFee,
+    #[serde_as(as = "DisplayFromStr")]
+    min_deposit_amount: u128,
 }
 
 impl NearBridgeClient {
@@ -196,6 +222,11 @@ impl NearBridgeClient {
     pub async fn get_change_address(&self) -> Result<String> {
         let config = self.get_config().await?;
         Ok(config.change_address)
+    }
+
+    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
+        let config = self.get_config().await?;
+        Ok(max(config.deposit_bridge_fee.get_fee(amount) + amount, config.min_deposit_amount))
     }
 
     async fn get_config(&self) -> Result<PartialConfig> {

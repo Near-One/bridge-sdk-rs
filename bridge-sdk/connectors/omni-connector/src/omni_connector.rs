@@ -464,6 +464,13 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
+    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_amount_to_transfer(amount)
+            .await
+    }
+
     pub async fn near_fin_transfer_with_vaa(
         &self,
         chain_kind: ChainKind,
@@ -628,6 +635,15 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn evm_is_transfer_finalised(
+        &self,
+        chain_kind: ChainKind,
+        nonce: u64,
+    ) -> Result<bool> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        evm_bridge_client.is_transfer_finalised(nonce).await
+    }
+
     pub async fn evm_log_metadata(
         &self,
         address: EvmAddress,
@@ -718,6 +734,19 @@ impl OmniConnector {
         evm_bridge_client
             .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
             .await
+    }
+
+    pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        solana_bridge_client
+            .is_transfer_finalised(nonce)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::SolanaOtherError(format!(
+                    "Failed to check transfer finalisation status: {e}"
+                ))
+            })
     }
 
     pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
@@ -1242,6 +1271,35 @@ impl OmniConnector {
                 .solana_finalize_transfer_with_tx_hash(near_tx_hash, sender_id, solana_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
+        }
+    }
+
+    pub async fn is_transfer_finalised(
+        &self,
+        origin_chain: Option<ChainKind>,
+        destination_chain: ChainKind,
+        nonce: u64,
+    ) -> Result<bool> {
+        match destination_chain {
+            ChainKind::Near => {
+                let Some(origin_chain) = origin_chain else {
+                    return Err(BridgeSdkError::ConfigError(
+                        "Origin chain is required to check if transfer was finalised on NEAR"
+                            .to_string(),
+                    ));
+                };
+
+                self.near_is_transfer_finalised(omni_types::TransferId {
+                    origin_chain,
+                    origin_nonce: nonce,
+                })
+                .await
+            }
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+                self.evm_is_transfer_finalised(destination_chain, nonce)
+                    .await
+            }
+            ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
         }
     }
 

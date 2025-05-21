@@ -19,6 +19,7 @@ abigen!(
       function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external
       function nearToEthToken(string nearTokenId) external view returns (address)
       function logMetadata(address tokenAddress) external
+      function completedTransfers(uint64) external view returns (bool)
       event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message)
     ]"#
 );
@@ -50,7 +51,20 @@ impl EvmBridgeClient {
         Self::default()
     }
 
-    // Logs an ERC-20 token metadata
+    /// Checks if the transfer is already finalised on EVM
+    pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        let omni_bridge = self.omni_bridge()?;
+
+        let is_finalised = omni_bridge
+            .completed_transfers(nonce)
+            .call()
+            .await
+            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
+
+        Ok(is_finalised)
+    }
+
+    /// Logs an ERC-20 token metadata
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_metadata(
         &self,

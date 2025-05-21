@@ -44,6 +44,23 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+
+    #[clap(about = "Check if transfer is finalised")]
+    IsTransferFinalised {
+        #[clap(
+            short,
+            long,
+            help = "Origin chain of the transfer is needed to check if transfer was finalized on NEAR"
+        )]
+        origin_chain: Option<ChainKind>,
+        #[clap(short, long, help = "Destination chain of the transfer")]
+        destination_chain: ChainKind,
+        #[clap(short, long, help = "Destination nonce of the transfer")]
+        nonce: u64,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
     #[clap(about = "Deposit storage for a token on NEAR")]
     NearStorageDeposit {
         #[clap(short, long, help = "Token to deposit storage for")]
@@ -402,6 +419,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .unwrap();
             }
         },
+        OmniConnectorSubCommand::IsTransferFinalised {
+            origin_chain,
+            destination_chain,
+            nonce,
+            config_cli,
+        } => {
+            let is_transfer_finalised = omni_connector(network, config_cli)
+                .is_transfer_finalised(origin_chain, destination_chain, nonce)
+                .await
+                .unwrap();
+
+            tracing::info!("Is transfer finalised: {}", is_transfer_finalised);
+        }
         OmniConnectorSubCommand::NearStorageDeposit {
             token,
             amount,
@@ -723,12 +753,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             config_cli,
         } => {
-            let btc_address = omni_connector(network, config_cli)
+            let omni_connector = omni_connector(network, config_cli);
+            let btc_address = omni_connector
                 .get_btc_address(&recipient_id, amount, fee)
                 .await
                 .unwrap();
 
+            let transfer_amount = omni_connector
+                .get_amount_to_transfer(amount)
+                .await
+                .unwrap();
             tracing::info!("BTC Address: {btc_address}");
+            tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
         OmniConnectorSubCommand::InitNearToBitcoinTransfer {
             target_btc_address,
