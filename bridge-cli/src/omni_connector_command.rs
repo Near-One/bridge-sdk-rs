@@ -763,12 +763,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             config_cli,
         } => {
-            let btc_address = omni_connector(network, config_cli)
+            let omni_connector = omni_connector(network, config_cli);
+            let btc_address = omni_connector
                 .get_btc_address(&recipient_id, amount, fee)
                 .await
                 .unwrap();
 
+            let transfer_amount = omni_connector
+                .get_amount_to_transfer(amount)
+                .await
+                .unwrap();
             tracing::info!("BTC Address: {btc_address}");
+            tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
         OmniConnectorSubCommand::InitNearToBitcoinTransfer {
             target_btc_address,

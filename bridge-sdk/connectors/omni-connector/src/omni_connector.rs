@@ -487,6 +487,13 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
+    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_amount_to_transfer(amount)
+            .await
+    }
+
     pub async fn near_fin_transfer_with_vaa(
         &self,
         chain_kind: ChainKind,

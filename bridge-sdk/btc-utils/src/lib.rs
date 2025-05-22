@@ -1,35 +1,16 @@
 use bitcoin::{Address, Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-pub mod u64_dec_format {
-    use serde::de;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(num: &u64, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&num.to_string())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
-    }
-}
-
+#[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct UTXO {
     pub path: String,
     pub tx_bytes: Vec<u8>,
-    pub vout: usize,
-    #[serde(with = "u64_dec_format")]
+    pub vout: u32,
+    #[serde_as(as = "DisplayFromStr")]
     pub balance: u64,
 }
 
@@ -47,14 +28,7 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
                 ))
             })?;
 
-            let vout = u32::try_from(utxo.vout).map_err(|e| {
-                BridgeSdkError::BtcClientError(format!(
-                    "Invalid vout value (expected u32): {} ({})",
-                    utxo.vout, e
-                ))
-            })?;
-
-            Ok(OutPoint::new(parsed_txid, vout))
+            Ok(OutPoint::new(parsed_txid, utxo.vout))
         })
         .collect()
 }
