@@ -1,4 +1,3 @@
-use std::cmp::max;
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
@@ -9,6 +8,7 @@ use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
+use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -21,7 +21,6 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 
 pub const MAX_RATIO: u32 = 10000;
-
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -115,7 +114,6 @@ impl NearBridgeClient {
         &self,
         args: FinBtcTransferArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
@@ -131,7 +129,7 @@ impl NearBridgeClient {
                 deposit: FIN_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -150,7 +148,6 @@ impl NearBridgeClient {
         &self,
         args: BtcVerifyWithdrawArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
@@ -166,7 +163,7 @@ impl NearBridgeClient {
                 deposit: BTC_VERIFY_WITHDRAW_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -184,7 +181,6 @@ impl NearBridgeClient {
         amount: u128,
         msg: TokenReceiverMessage,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc = self.btc()?;
@@ -207,7 +203,7 @@ impl NearBridgeClient {
                 deposit: INIT_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 
@@ -271,7 +267,10 @@ impl NearBridgeClient {
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
         let config = self.get_config().await?;
-        Ok(max(config.deposit_bridge_fee.get_fee(amount) + amount, config.min_deposit_amount))
+        Ok(max(
+            config.deposit_bridge_fee.get_fee(amount) + amount,
+            config.min_deposit_amount,
+        ))
     }
 
     async fn get_config(&self) -> Result<PartialConfig> {

@@ -153,7 +153,6 @@ pub enum FinTransferArgs {
         amount: u128,
         fee: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     },
     EvmFinTransfer {
         chain_kind: ChainKind,
@@ -364,7 +363,6 @@ impl OmniConnector {
         vout: usize,
         deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
@@ -388,7 +386,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .fin_btc_transfer(args, transaction_options, wait_final_outcome_timeout_sec)
+            .fin_btc_transfer(args, transaction_options)
             .await
     }
 
@@ -396,7 +394,6 @@ impl OmniConnector {
         &self,
         tx_hash: String,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
@@ -409,7 +406,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_withdraw(args, transaction_options, wait_final_outcome_timeout_sec)
+            .btc_verify_withdraw(args, transaction_options)
             .await
     }
 
@@ -430,7 +427,6 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
@@ -467,7 +463,6 @@ impl OmniConnector {
                     output: tx_outs,
                 },
                 transaction_options,
-                wait_final_outcome_timeout_sec,
             )
             .await
     }
@@ -489,9 +484,7 @@ impl OmniConnector {
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
         let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client
-            .get_amount_to_transfer(amount)
-            .await
+        near_bridge_client.get_amount_to_transfer(amount).await
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1244,7 +1237,6 @@ impl OmniConnector {
                 amount,
                 fee,
                 transaction_options,
-                wait_final_outcome_timeout_sec,
             } => self
                 .near_fin_transfer_btc(
                     btc_tx_hash,
@@ -1255,7 +1247,6 @@ impl OmniConnector {
                         fee,
                     },
                     transaction_options,
-                    wait_final_outcome_timeout_sec,
                 )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),

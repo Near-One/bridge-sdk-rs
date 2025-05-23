@@ -732,7 +732,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         fee,
                     },
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
@@ -742,7 +741,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_btc_verify_withdraw(btc_tx_hash, TransactionOptions::default(), None)
+                .near_btc_verify_withdraw(btc_tx_hash, TransactionOptions::default())
                 .await
                 .unwrap();
         }
@@ -769,10 +768,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
 
-            let transfer_amount = omni_connector
-                .get_amount_to_transfer(amount)
-                .await
-                .unwrap();
+            let transfer_amount = omni_connector.get_amount_to_transfer(amount).await.unwrap();
             tracing::info!("BTC Address: {btc_address}");
             tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
@@ -786,7 +782,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     target_btc_address,
                     amount,
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
