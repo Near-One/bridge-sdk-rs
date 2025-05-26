@@ -286,7 +286,7 @@ pub enum OmniConnectorSubCommand {
             help = "Index of the signature in the BTC transaction",
             default_value = "0"
         )]
-        sign_index: usize,
+        sign_index: u64,
         #[command(flatten)]
         config_cli: CliConfig,
     },
