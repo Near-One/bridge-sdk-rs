@@ -433,7 +433,9 @@ impl SolanaBridgeClient {
             program_id,
         );
 
-        let account = self.client()?.get_account(&used_nonces).await?;
+        let Ok(account) = self.client()?.get_account(&used_nonces).await else {
+            return Ok(false);
+        };
         let data = &account.data;
 
         if data.len() < DISCRIMINATOR_LEN + BIT_BYTES {
