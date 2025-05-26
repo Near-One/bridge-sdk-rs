@@ -276,6 +276,20 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Sign BTC transaction on Near")]
+    NearSignBTCTransaction {
+        #[clap(short, long, help = "Pending BTC transaction ID")]
+        btc_pending_id: String,
+        #[clap(
+            short,
+            long,
+            help = "Index of the signature in the BTC transaction",
+            default_value = "0"
+        )]
+        sign_index: usize,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Finalize Transfer from Bitcoin on Near")]
     NearFinTransferBTC {
         #[clap(short, long, help = "Bitcoin tx hash")]
@@ -711,6 +725,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .solana_update_metadata(token.parse().unwrap(), name, symbol, uri)
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearSignBTCTransaction {
+            btc_pending_id,
+            sign_index,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_sign_btc_transaction(
+                    btc_pending_id,
+                    sign_index,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

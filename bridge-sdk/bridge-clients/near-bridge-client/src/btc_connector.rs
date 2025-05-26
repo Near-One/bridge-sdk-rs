@@ -12,13 +12,15 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-const FIN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
-const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
-const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const INIT_BTC_TRANSFER_GAS: u64 = 40_000_000_000_000;
+const SIGN_BTC_TRANSACTION_GAS: u64 = 30_000_000_000_000;
+const BTC_VERIFY_DEPOSIT_GAS: u64 = 30_000_000_000_000;
+const BTC_VERIFY_WITHDRAW_GAS: u64 = 30_000_000_000_000;
 
-const FIN_BTC_TRANSFER_DEPOSIT: u128 = 0;
-const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
+const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
+const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
+const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 
 pub const MAX_RATIO: u32 = 10000;
 
@@ -108,6 +110,42 @@ struct PartialConfig {
 }
 
 impl NearBridgeClient {
+    /// Signs a NEAR transfer to BTC by calling sign_btc_transaction on the BTC connector contract.
+    #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
+    pub async fn sign_btc_transaction(
+        &self,
+        btc_pending_id: String,
+        sign_index: usize,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.btc_connector()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "sign_btc_transaction".to_string(),
+                args: serde_json::json!({
+                    "btc_pending_sign_id": btc_pending_id,
+                    "sign_index": sign_index,
+                    "key_version": 0,
+                })
+                .to_string()
+                .into_bytes(),
+                gas: SIGN_BTC_TRANSACTION_GAS,
+                deposit: SIGN_BTC_TRANSACTION_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sent sign BTC transaction");
+        Ok(tx_hash)
+    }
+
     /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
@@ -125,8 +163,8 @@ impl NearBridgeClient {
                 receiver_id: btc_connector,
                 method_name: "verify_deposit".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
-                gas: FIN_BTC_TRANSFER_GAS,
-                deposit: FIN_BTC_TRANSFER_DEPOSIT,
+                gas: BTC_VERIFY_DEPOSIT_GAS,
+                deposit: BTC_VERIFY_DEPOSIT_DEPOSIT,
             },
             transaction_options.wait_until,
             transaction_options.wait_final_outcome_timeout_sec,

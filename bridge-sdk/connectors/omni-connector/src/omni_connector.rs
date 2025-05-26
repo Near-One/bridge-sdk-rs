@@ -357,6 +357,19 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_sign_btc_transaction(
+        &self,
+        btc_pending_id: String,
+        sign_index: usize,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .sign_btc_transaction(btc_pending_id, sign_index, transaction_options)
+            .await
+    }
+
     pub async fn near_fin_transfer_btc(
         &self,
         tx_hash: String,
