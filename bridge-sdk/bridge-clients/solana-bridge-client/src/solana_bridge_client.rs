@@ -433,8 +433,15 @@ impl SolanaBridgeClient {
             program_id,
         );
 
-        let Ok(account) = self.client()?.get_account(&used_nonces).await else {
-            return Ok(false);
+        let account = match self.client()?.get_account(&used_nonces).await {
+            Ok(account) => account,
+            Err(err) => {
+                if err.to_string().contains("AccountNotFound") {
+                    return Ok(false);
+                } else {
+                    return Err(err.into());
+                }
+            }
         };
         let data = &account.data;
 
