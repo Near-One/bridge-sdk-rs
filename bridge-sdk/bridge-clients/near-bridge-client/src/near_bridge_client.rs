@@ -37,6 +37,12 @@ const FAST_FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const MPC_DEPOSIT: u128 = 1;
 const FT_TRANSFER_DEPOSIT: u128 = 1;
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Decimals {
+    pub decimals: u8,
+    pub origin_decimals: u8,
+}
+
 #[derive(Clone)]
 pub struct TransactionOptions {
     pub nonce: Option<u64>,
@@ -150,6 +156,27 @@ impl NearBridgeClient {
         .await?;
 
         let token_id = serde_json::from_slice::<AccountId>(&response)?;
+
+        Ok(token_id)
+    }
+
+    pub async fn get_token_decimals(&self, token_address: OmniAddress) -> Result<Decimals> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_token_decimals".to_string(),
+                args: serde_json::json!({
+                    "address": token_address
+                }),
+            },
+        )
+        .await?;
+
+        let token_id = serde_json::from_slice::<Decimals>(&response)?;
 
         Ok(token_id)
     }
@@ -820,6 +847,17 @@ impl NearBridgeClient {
             ))?;
 
         Ok(transfer_log)
+    }
+
+    pub async fn denormalize_amount(
+        &self,
+        token_address: OmniAddress,
+        amount: u128,
+    ) -> Result<u128> {
+        let decimals = self.get_token_decimals(token_address).await?;
+        amount
+            .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
+            .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
     }
 
     pub fn endpoint(&self) -> Result<&str> {
