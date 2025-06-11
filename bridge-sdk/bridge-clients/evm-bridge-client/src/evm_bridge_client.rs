@@ -51,6 +51,24 @@ impl EvmBridgeClient {
         Self::default()
     }
 
+    /// Gets last finalized block number on EVM chain
+    pub async fn get_last_finalized_block_number(&self) -> Result<u64> {
+        let endpoint = self.endpoint()?;
+        let client = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let block_number = client
+            .get_block(BlockNumber::Finalized)
+            .await
+            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?
+            .and_then(|block| block.number)
+            .ok_or_else(|| {
+                BridgeSdkError::UnknownError("Failed to get finalized block number".to_string())
+            })?;
+
+        Ok(block_number.as_u64())
+    }
+
     /// Checks if the transfer is already finalised on EVM
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
         let omni_bridge = self.omni_bridge()?;
