@@ -52,13 +52,13 @@ impl EvmBridgeClient {
     }
 
     /// Gets last finalized block number on EVM chain
-    pub async fn get_last_finalized_block_number(&self) -> Result<u64> {
+    pub async fn get_last_block_number(&self) -> Result<u64> {
         let endpoint = self.endpoint()?;
         let client = Provider::<Http>::try_from(endpoint)
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
 
         let block_number = client
-            .get_block(BlockNumber::Finalized)
+            .get_block(BlockNumber::Latest)
             .await
             .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?
             .and_then(|block| block.number)
