@@ -736,6 +736,25 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    pub async fn ft_balance_of(&self, token_id: AccountId, account_id: AccountId) -> Result<u128> {
+        let endpoint = self.endpoint()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "ft_balance_of".to_string(),
+                args: serde_json::json!({
+                    "account_id": account_id
+                }),
+            },
+        )
+        .await?;
+
+        let balance = serde_json::from_slice::<u128>(&response)?;
+        Ok(balance)
+    }
+
     pub async fn get_required_balance(&self, method_name: &str) -> Result<u128> {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
