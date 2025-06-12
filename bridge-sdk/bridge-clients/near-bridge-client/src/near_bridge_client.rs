@@ -9,7 +9,7 @@ use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
-    ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
+    ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
 
@@ -36,6 +36,12 @@ const FAST_FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const MPC_DEPOSIT: u128 = 1;
 const FT_TRANSFER_DEPOSIT: u128 = 1;
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Decimals {
+    pub decimals: u8,
+    pub origin_decimals: u8,
+}
 
 #[derive(Clone)]
 pub struct TransactionOptions {
@@ -154,6 +160,27 @@ impl NearBridgeClient {
         Ok(token_id)
     }
 
+    pub async fn get_token_decimals(&self, token_address: OmniAddress) -> Result<Decimals> {
+        let endpoint = self.endpoint()?;
+        let token_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "get_token_decimals".to_string(),
+                args: serde_json::json!({
+                    "address": token_address
+                }),
+            },
+        )
+        .await?;
+
+        let token_id = serde_json::from_slice::<Decimals>(&response)?;
+
+        Ok(token_id)
+    }
+
     pub async fn get_native_token_id(&self, origin_chain: ChainKind) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
         let token_id = self.omni_bridge_id()?;
@@ -173,6 +200,52 @@ impl NearBridgeClient {
         let token_id = serde_json::from_slice::<AccountId>(&response)?;
 
         Ok(token_id)
+    }
+
+    pub async fn get_fast_transfer_status(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<Option<FastTransferStatus>> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "get_fast_transfer_status".to_string(),
+                args: serde_json::json!({
+                    "fast_transfer_id": fast_transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let status = serde_json::from_slice::<Option<FastTransferStatus>>(&response)?;
+        Ok(status)
+    }
+
+    pub async fn is_fast_transfer_finalised(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<bool> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "is_fast_transfer_finalised".to_string(),
+                args: serde_json::json!({
+                    "fast_transfer_id": fast_transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let is_finalised = serde_json::from_slice::<bool>(&response)?;
+        Ok(is_finalised)
     }
 
     pub async fn get_storage_balance(
@@ -709,6 +782,25 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    pub async fn ft_balance_of(&self, token_id: AccountId, account_id: AccountId) -> Result<u128> {
+        let endpoint = self.endpoint()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: token_id,
+                method_name: "ft_balance_of".to_string(),
+                args: serde_json::json!({
+                    "account_id": account_id
+                }),
+            },
+        )
+        .await?;
+
+        let balance = serde_json::from_slice::<NearToken>(&response)?;
+        Ok(balance.as_yoctonear())
+    }
+
     pub async fn get_required_balance(&self, method_name: &str) -> Result<u128> {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
@@ -820,6 +912,17 @@ impl NearBridgeClient {
             ))?;
 
         Ok(transfer_log)
+    }
+
+    pub async fn denormalize_amount(
+        &self,
+        token_address: OmniAddress,
+        amount: u128,
+    ) -> Result<u128> {
+        let decimals = self.get_token_decimals(token_address).await?;
+        amount
+            .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
+            .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
     }
 
     pub fn endpoint(&self) -> Result<&str> {
