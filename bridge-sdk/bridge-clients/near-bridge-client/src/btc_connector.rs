@@ -11,16 +11,25 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
+use omni_types::{OmniAddress, TransferId};
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+<<<<<<< Updated upstream
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
+=======
+const SIGN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+>>>>>>> Stashed changes
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
+<<<<<<< Updated upstream
 const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
+=======
+const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+>>>>>>> Stashed changes
 
 pub const MAX_RATIO: u32 = 10000;
 
@@ -249,6 +258,40 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Sign BTC transfer on Omni Bridge
+    #[tracing::instrument(skip_all, name = "OMNI BRIDGE SIGN BTC TRANSFER")]
+    pub async fn sign_btc_transfer(
+        &self,
+        transfer_id: TransferId,
+        msg: TokenReceiverMessage,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge = self.omni_bridge_id()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: omni_bridge,
+                method_name: "sign_btc_transfer".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id,
+                    "msg": json!(msg).to_string(),
+                }).to_string().into_bytes(),
+                gas: SIGN_BTC_TRANSFER_GAS,
+                deposit: SIGN_BTC_TRANSFER_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+            .await?;
+
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sign BTC transfer");
+        Ok(tx_hash)
+    }
+
     pub async fn get_btc_address(
         &self,
         recipient_id: &str,
@@ -406,6 +449,31 @@ impl NearBridgeClient {
             .collect::<Result<Vec<u8>>>()?;
 
         Ok(bytes)
+    }
+
+    pub async fn extract_recipient_and_amount_from_logs(&self, near_tx_hash: String, sender_id: Option<AccountId>) -> (String, u128, TransferId) {
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+        }).unwrap();
+
+        let log = self
+            .extract_transfer_log(tx_hash, sender_id, "InitTransferEvent")
+            .await.unwrap();
+
+        let v: Value = serde_json::from_str(&log).unwrap();
+
+        let amount_str = &v["InitTransferEvent"]["transfer_message"]["amount"];
+        let amount: u128 = amount_str.as_str().unwrap().parse().unwrap();
+
+        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"].as_str().unwrap();
+        let recipient = recipient_full.strip_prefix("btc:").unwrap_or(recipient_full);
+
+        let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
+        let origin_id: u64 = origin_id_str.as_u64().unwrap();
+
+        let sender_str = &v["InitTransferEvent"]["transfer_message"]["sender"];
+        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().unwrap()).unwrap();
+        (recipient.to_string(), amount, TransferId{ origin_chain: sender_chain.get_chain(), origin_nonce: origin_id })
     }
 
     pub fn btc_connector(&self) -> Result<AccountId> {

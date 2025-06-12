@@ -1,5 +1,7 @@
 use std::str::FromStr;
 
+use bitcoin::{OutPoint, TxOut};
+
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::prelude::*;
@@ -435,14 +437,19 @@ impl OmniConnector {
             .await
     }
 
+<<<<<<< Updated upstream
     pub async fn init_near_to_bitcoin_transfer(
         &self,
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+=======
+    async fn extract_utxo(&self, target_btc_address: String, amount: u128) -> Result<(u128, Vec<OutPoint>, Vec<TxOut>)> {
+>>>>>>> Stashed changes
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
+
         let utxos = near_bridge_client.get_utxos().await?;
 
         let fee_rate = btc_bridge_client.get_fee_rate()?;
@@ -466,7 +473,18 @@ impl OmniConnector {
         );
 
         let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
+        Ok((fee, out_points, tx_outs))
+    }
 
+    pub async fn init_near_to_bitcoin_transfer(
+        &self,
+        target_btc_address: String,
+        amount: u128,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (fee, out_points, tx_outs) = self.extract_utxo(target_btc_address.clone(), amount).await?;
         near_bridge_client
             .init_btc_transfer_near_to_btc(
                 amount + fee,
@@ -493,6 +511,30 @@ impl OmniConnector {
         let btc_bridge_client = self.btc_bridge_client()?;
         let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
         Ok(tx_hash)
+    }
+
+    pub async fn near_sign_btc_transfer(
+        &self,
+        near_tx_hash: String,
+        sender_id: Option<AccountId>,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) {
+        let near_bridge_client = self.near_bridge_client().unwrap();
+        let (recipient, amount, transfer_id) = near_bridge_client.extract_recipient_and_amount_from_logs(near_tx_hash, sender_id).await;
+        let (_fee, out_points, tx_outs) = self.extract_utxo(recipient.clone(), amount).await.unwrap();
+        near_bridge_client
+            .sign_btc_transfer(
+                transfer_id,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address: recipient,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await;
     }
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {

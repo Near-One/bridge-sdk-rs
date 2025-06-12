@@ -334,6 +334,15 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Omni-Bridge: Sign Btc Transfer")]
+    NearSignBtcTransfer {
+        #[clap(short, long, help = "Omni Bridge Transaction Hash")]
+        near_tx_hash: String,
+        #[clap(short, long, help = "Sender ID who init transfer on Near")]
+        sender_id: Option<AccountId>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(
         about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network"
     )]
@@ -813,6 +822,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 )
                 .await
                 .unwrap();
+        }
+        OmniConnectorSubCommand::NearSignBtcTransfer {
+            near_tx_hash,
+            sender_id,
+            config_cli
+        } => {
+            omni_connector(network, config_cli)
+                .near_sign_btc_transfer(
+                    near_tx_hash,
+                    sender_id,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await;
         }
     }
 }

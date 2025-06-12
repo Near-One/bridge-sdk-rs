@@ -4710,6 +4710,7 @@ dependencies = [
 name = "omni-connector"
 version = "0.2.9"
 dependencies = [
+ "bitcoin",
  "borsh 1.5.7",
  "bridge-connector-common",
  "btc-bridge-client",
