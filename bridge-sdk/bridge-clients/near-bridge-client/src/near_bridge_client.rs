@@ -751,8 +751,8 @@ impl NearBridgeClient {
         )
         .await?;
 
-        let balance = serde_json::from_slice::<u128>(&response)?;
-        Ok(balance)
+        let balance = serde_json::from_slice::<NearToken>(&response)?;
+        Ok(balance.as_yoctonear())
     }
 
     pub async fn get_required_balance(&self, method_name: &str) -> Result<u128> {
