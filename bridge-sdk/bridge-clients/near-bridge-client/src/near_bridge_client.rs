@@ -9,7 +9,7 @@ use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
-    ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
+    ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
 
@@ -200,6 +200,29 @@ impl NearBridgeClient {
         let token_id = serde_json::from_slice::<AccountId>(&response)?;
 
         Ok(token_id)
+    }
+
+    pub async fn get_fast_transfer_status(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<Option<FastTransferStatus>> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "get_fast_transfer_status".to_string(),
+                args: serde_json::json!({
+                    "fast_transfer_id": fast_transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let status = serde_json::from_slice::<Option<FastTransferStatus>>(&response)?;
+        Ok(status)
     }
 
     pub async fn get_storage_balance(

@@ -11,7 +11,9 @@ use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
-use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
+use omni_types::{
+    EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
+};
 
 use btc_bridge_client::BtcBridgeClient;
 use evm_bridge_client::EvmBridgeClient;
@@ -215,6 +217,16 @@ impl OmniConnector {
     pub async fn near_get_native_token_id(&self, origin_chain: ChainKind) -> Result<AccountId> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_native_token_id(origin_chain).await
+    }
+
+    pub async fn near_get_fast_transfer_status(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<Option<FastTransferStatus>> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_fast_transfer_status(fast_transfer_id)
+            .await
     }
 
     pub async fn near_log_metadata(
@@ -671,6 +683,11 @@ impl OmniConnector {
     ) -> Result<bool> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client.is_transfer_finalised(nonce).await
+    }
+
+    pub async fn evm_get_last_block_number(&self, chain_kind: ChainKind) -> Result<u64> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        evm_bridge_client.get_last_block_number().await
     }
 
     pub async fn evm_log_metadata(
