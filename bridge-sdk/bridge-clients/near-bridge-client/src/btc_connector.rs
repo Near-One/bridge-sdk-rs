@@ -457,16 +457,16 @@ impl NearBridgeClient {
         let v: Value = serde_json::from_str(&log)?;
 
         let amount_str = &v["InitTransferEvent"]["transfer_message"]["amount"];
-        let amount: u128 = amount_str.as_str()?.parse()?;
+        let amount: u128 = amount_str.as_str().ok_or(BridgeSdkError::BtcClientError("amount not found in InitTransferEvent".to_string()))?.parse().map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing amount {err}")))?;
 
-        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"].as_str()?;
+        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"].as_str().ok_or(BridgeSdkError::BtcClientError("recipient not found in InitTransferEvent".to_string()))?;
         let recipient = recipient_full.strip_prefix("btc:").unwrap_or(recipient_full);
 
         let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
-        let origin_id: u64 = origin_id_str.as_u64()?;
+        let origin_id: u64 = origin_id_str.as_u64().ok_or(BridgeSdkError::BtcClientError("Error on parsing origin_id".to_string()))?;
 
         let sender_str = &v["InitTransferEvent"]["transfer_message"]["sender"];
-        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str()?)?;
+        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().ok_or(BridgeSdkError::BtcClientError("Error on parsing sender".to_string()))?).map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing sender {err}")))?;
         Ok((recipient.to_string(), amount, TransferId{ origin_chain: sender_chain.get_chain(), origin_nonce: origin_id }))
     }
 

@@ -826,7 +826,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::NearSignBtcTransfer {
             near_tx_hash,
             sender_id,
-            config_cli
+            config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_sign_btc_transfer(
@@ -835,7 +835,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     TransactionOptions::default(),
                     None,
                 )
-                .await.unwrap();
+                .await
+                .unwrap();
         }
     }
 }
