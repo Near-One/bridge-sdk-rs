@@ -225,6 +225,29 @@ impl NearBridgeClient {
         Ok(status)
     }
 
+    pub async fn is_fast_transfer_finalised(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<bool> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "is_fast_transfer_finalised".to_string(),
+                args: serde_json::json!({
+                    "fast_transfer_id": fast_transfer_id
+                }),
+            },
+        )
+        .await?;
+
+        let is_finalised = serde_json::from_slice::<bool>(&response)?;
+        Ok(is_finalised)
+    }
+
     pub async fn get_storage_balance(
         &self,
         contract_id: AccountId,

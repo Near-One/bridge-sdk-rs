@@ -229,6 +229,16 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_is_fast_transfer_finalised(
+        &self,
+        fast_transfer_id: FastTransferId,
+    ) -> Result<bool> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .is_fast_transfer_finalised(fast_transfer_id)
+            .await
+    }
+
     pub async fn near_log_metadata(
         &self,
         token_id: String,
