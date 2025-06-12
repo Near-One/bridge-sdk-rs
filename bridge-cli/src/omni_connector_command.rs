@@ -835,7 +835,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     TransactionOptions::default(),
                     None,
                 )
-                .await;
+                .await.unwrap();
         }
     }
 }

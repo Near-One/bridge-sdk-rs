@@ -45,7 +45,7 @@ pub fn choose_utxos(
     fee_rate: u64,
 ) -> Result<(Vec<OutPoint>, u128, u128)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
-    utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
+    utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
     let mut selected = Vec::new();
     let mut utxos_balance = 0;
@@ -68,9 +68,6 @@ pub fn choose_utxos(
         utxos_balance += u128::from(utxo.1.balance);
         selected.push(utxo);
     }
-
-    println!("{:?}", selected);
-    println!("{:?}, {:?}", utxos_balance, utxos_balance - gas_fee - amount);
 
     let out_points = utxo_to_out_points(selected)?;
     Ok((out_points, utxos_balance, gas_fee))

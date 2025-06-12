@@ -437,16 +437,7 @@ impl OmniConnector {
             .await
     }
 
-<<<<<<< Updated upstream
-    pub async fn init_near_to_bitcoin_transfer(
-        &self,
-        target_btc_address: String,
-        amount: u128,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-=======
     async fn extract_utxo(&self, target_btc_address: String, amount: u128) -> Result<(u128, Vec<OutPoint>, Vec<TxOut>)> {
->>>>>>> Stashed changes
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
 
@@ -481,7 +472,6 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let (fee, out_points, tx_outs) = self.extract_utxo(target_btc_address.clone(), amount).await?;
@@ -519,10 +509,10 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
-    ) {
-        let near_bridge_client = self.near_bridge_client().unwrap();
-        let (recipient, amount, transfer_id) = near_bridge_client.extract_recipient_and_amount_from_logs(near_tx_hash, sender_id).await;
-        let (_fee, out_points, tx_outs) = self.extract_utxo(recipient.clone(), amount).await.unwrap();
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (recipient, amount, transfer_id) = near_bridge_client.extract_recipient_and_amount_from_logs(near_tx_hash, sender_id).await?;
+        let (_fee, out_points, tx_outs) = self.extract_utxo(recipient.clone(), amount).await?;
         near_bridge_client
             .sign_btc_transfer(
                 transfer_id,
@@ -534,7 +524,7 @@ impl OmniConnector {
                 transaction_options,
                 wait_final_outcome_timeout_sec,
             )
-            .await;
+            .await
     }
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {

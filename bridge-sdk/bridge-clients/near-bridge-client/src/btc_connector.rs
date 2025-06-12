@@ -14,22 +14,16 @@ use std::str::FromStr;
 use omni_types::{OmniAddress, TransferId};
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
-<<<<<<< Updated upstream
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
-=======
 const SIGN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
->>>>>>> Stashed changes
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
-<<<<<<< Updated upstream
 const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
-=======
 const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
->>>>>>> Stashed changes
 
 pub const MAX_RATIO: u32 = 10000;
 
@@ -451,29 +445,29 @@ impl NearBridgeClient {
         Ok(bytes)
     }
 
-    pub async fn extract_recipient_and_amount_from_logs(&self, near_tx_hash: String, sender_id: Option<AccountId>) -> (String, u128, TransferId) {
+    pub async fn extract_recipient_and_amount_from_logs(&self, near_tx_hash: String, sender_id: Option<AccountId>) -> Result<(String, u128, TransferId)> {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
             BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-        }).unwrap();
+        })?;
 
         let log = self
             .extract_transfer_log(tx_hash, sender_id, "InitTransferEvent")
-            .await.unwrap();
+            .await?;
 
-        let v: Value = serde_json::from_str(&log).unwrap();
+        let v: Value = serde_json::from_str(&log)?;
 
         let amount_str = &v["InitTransferEvent"]["transfer_message"]["amount"];
-        let amount: u128 = amount_str.as_str().unwrap().parse().unwrap();
+        let amount: u128 = amount_str.as_str()?.parse()?;
 
-        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"].as_str().unwrap();
+        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"].as_str()?;
         let recipient = recipient_full.strip_prefix("btc:").unwrap_or(recipient_full);
 
         let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
-        let origin_id: u64 = origin_id_str.as_u64().unwrap();
+        let origin_id: u64 = origin_id_str.as_u64()?;
 
         let sender_str = &v["InitTransferEvent"]["transfer_message"]["sender"];
-        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().unwrap()).unwrap();
-        (recipient.to_string(), amount, TransferId{ origin_chain: sender_chain.get_chain(), origin_nonce: origin_id })
+        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str()?)?;
+        Ok((recipient.to_string(), amount, TransferId{ origin_chain: sender_chain.get_chain(), origin_nonce: origin_id }))
     }
 
     pub fn btc_connector(&self) -> Result<AccountId> {
