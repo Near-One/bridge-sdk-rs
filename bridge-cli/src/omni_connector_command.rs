@@ -331,6 +331,8 @@ pub enum OmniConnectorSubCommand {
     BtcFinTransfer {
         #[clap(short, long, help = "Near tx hash with signature")]
         near_tx_hash: String,
+        #[clap(short, long, help = "Btc relayer account ID, who sign the BTC tx")]
+        btc_relayer: Option<AccountId>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -784,10 +786,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::BtcFinTransfer {
             near_tx_hash,
+            btc_relayer,
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(near_tx_hash, None)
+                .btc_fin_transfer(near_tx_hash, btc_relayer)
                 .await
                 .unwrap();
 
