@@ -131,13 +131,16 @@ impl NearBridgeClient {
                 let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
                 })?;
-
                 let relayer_id = relayer.unwrap_or(self.satoshi_relayer()?);
                 let log = self
                     .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
                     .await?;
+                
+                let json_str = log
+                    .strip_prefix("EVENT_JSON:")
+                    .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
 
-                let v: Value = serde_json::from_str(&log)?;
+                let v: Value = serde_json::from_str(&json_str)?;
                 v["data"][0]["btc_pending_id"].as_str().ok_or(BtcClientError("btc_pending id not found in log".to_string()))?.to_string()
             }
         };

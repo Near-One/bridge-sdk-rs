@@ -278,11 +278,11 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Sign BTC transaction on Near")]
     NearSignBTCTransaction {
-        #[clap(short, long, help = "Pending BTC transaction ID")]
+        #[clap(long, help = "Pending BTC transaction ID")]
         btc_pending_id: Option<String>,
-        #[clap(short, long, help = "Near tx with signed tx")]
+        #[clap(long, help = "Near tx with signed tx")]
         near_tx_hash: Option<String>,
-        #[clap(short, long, help = "Btc relayer account ID, who sign the BTC tx")]
+        #[clap(long, help = "Btc relayer account ID, who sign the BTC tx")]
         btc_relayer: Option<AccountId>,
         #[clap(
             short,
