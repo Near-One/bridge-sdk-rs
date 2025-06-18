@@ -521,6 +521,11 @@ impl OmniConnector {
 
         let transfer_id = near_bridge_client.extract_transaction_id(tx_hash, None).await?;
 
+        let claim_fee_args = ClaimFeeArgs {
+            chain_kind: ChainKind::Btc,
+            prover_args: vec![],
+        };
+
         println!("Transaction Id: {:?}", transfer_id);
         Ok(())
     }
@@ -1108,7 +1113,8 @@ impl OmniConnector {
                 self.solana_log_metadata(token)
                     .await
                     .map(|hash| hash.to_string())
-            }
+            },
+            OmniAddress::Btc(_) => Err(BridgeSdkError::UnknownError("Log metadata not supported for Bitcoin".to_string()))
         }
     }
 
@@ -1378,6 +1384,7 @@ impl OmniConnector {
                     .await
             }
             ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Btc => todo!()
         }
     }
 

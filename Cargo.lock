@@ -4739,13 +4739,14 @@ dependencies = [
 
 [[package]]
 name = "omni-types"
-version = "2.0.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=957b9339ecf40e62f048d481b9bf2e88bf55d344#957b9339ecf40e62f048d481b9bf2e88bf55d344"
+version = "3.1.0"
+source = "git+https://github.com/near-one/omni-bridge?rev=4967b849fe68b9200e1f05324df89a73b0573d4d#4967b849fe68b9200e1f05324df89a73b0573d4d"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
  "alloy-sol-macro",
  "alloy-sol-types",
+ "bitcoin",
  "borsh 1.5.7",
  "ethereum-types 0.15.1",
  "hex",
@@ -4755,6 +4756,7 @@ dependencies = [
  "rlp 0.6.1",
  "schemars",
  "serde",
+ "serde_with",
  "sha3",
  "strum_macros 0.26.4",
 ]

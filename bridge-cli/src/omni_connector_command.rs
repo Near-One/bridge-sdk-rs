@@ -398,7 +398,7 @@ pub enum OmniConnectorSubCommand {
         near_tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
-    }
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -456,6 +456,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     })
                     .await
                     .unwrap();
+            }
+            ChainKind::Btc => {
+                panic!("Deploy tokens on Btc not supported")
             }
         },
         OmniConnectorSubCommand::IsTransferFinalised {
@@ -853,13 +856,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::ClaimFeeBTC {
             btc_tx_hash,
             near_tx_hash,
-            config_cli
+            config_cli,
         } => {
             omni_connector(network, config_cli)
-                .claim_fee_btc(btc_tx_hash,
-                               near_tx_hash,
-                               TransactionOptions::default(),
-                               None,)
+                .claim_fee_btc(
+                    btc_tx_hash,
+                    near_tx_hash,
+                    TransactionOptions::default(),
+                    None,
+                )
                 .await
                 .unwrap();
         }
