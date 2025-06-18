@@ -135,7 +135,6 @@ impl NearBridgeClient {
                 let log = self
                     .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
                     .await?;
-                
                 let json_str = log
                     .strip_prefix("EVENT_JSON:")
                     .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;

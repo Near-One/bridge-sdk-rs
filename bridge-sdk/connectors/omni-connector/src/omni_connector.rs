@@ -522,14 +522,14 @@ impl OmniConnector {
         })?;
 
         let transfer_id = near_bridge_client.extract_transaction_id(tx_hash, None).await?;
-        let btc_tx_hash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(btc_tx_hash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?);
-        let tx_block_blockhash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(proof_data.tx_block_blockhash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?);
+        let btc_tx_hash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(btc_tx_hash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?.into_iter().rev().collect::<Vec<_>>().try_into().unwrap());
+        let tx_block_blockhash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(proof_data.tx_block_blockhash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?.into_iter().rev().collect::<Vec<_>>().try_into().unwrap());
         let btc_proof = BtcProof {
             tx_id: btc_tx_hash,
             tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof.iter()
-                .map(|s| omni_types::prover_args::H256(<[u8; 32]>::from_hex(s).unwrap()))
+                .map(|s| omni_types::prover_args::H256(<[u8; 32]>::from_hex(s).unwrap().into_iter().rev().collect::<Vec<_>>().try_into().unwrap()))
                 .collect::<Vec<_>>()
             ,
             confirmations: 2,
