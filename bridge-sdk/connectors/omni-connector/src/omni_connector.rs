@@ -1,14 +1,17 @@
 use std::str::FromStr;
 
+use bitcoin::{OutPoint, TxOut};
+
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::prelude::*;
+use hex::FromHex;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
-use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
+use omni_types::prover_args::{BtcProof, BtcVerifyProofArgs, EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
@@ -359,14 +362,16 @@ impl OmniConnector {
 
     pub async fn near_sign_btc_transaction(
         &self,
-        btc_pending_id: String,
+        btc_pending_id: Option<String>,
+        near_tx_hash: Option<String>,
+        relayer: Option<AccountId>,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
         near_bridge_client
-            .sign_btc_transaction(btc_pending_id, sign_index, transaction_options)
+            .sign_btc_transaction(btc_pending_id, near_tx_hash, relayer, sign_index, transaction_options)
             .await
     }
 
@@ -435,14 +440,10 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn init_near_to_bitcoin_transfer(
-        &self,
-        target_btc_address: String,
-        amount: u128,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
+    async fn extract_utxo(&self, target_btc_address: String, amount: u128) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
+
         let utxos = near_bridge_client.get_utxos().await?;
 
         let fee_rate = btc_bridge_client.get_fee_rate()?;
@@ -452,11 +453,11 @@ impl OmniConnector {
         let change_address = near_bridge_client.get_change_address().await?;
         let tx_outs = btc_utils::get_tx_outs(
             &target_btc_address,
-            amount.try_into().map_err(|err| {
+            (amount - gas_fee).try_into().map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
             })?,
             &change_address,
-            (utxos_balance - amount - gas_fee)
+            (utxos_balance - amount)
                 .try_into()
                 .map_err(|err| {
                     BridgeSdkError::BtcClientError(format!(
@@ -465,8 +466,19 @@ impl OmniConnector {
                 })?,
         );
 
-        let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
 
+        Ok((out_points, tx_outs))
+    }
+
+    pub async fn init_near_to_bitcoin_transfer(
+        &self,
+        target_btc_address: String,
+        amount: u128,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (out_points, tx_outs) = self.extract_utxo(target_btc_address.clone(), amount).await?;
+        let fee = near_bridge_client.get_withdraw_fee().await?;
         near_bridge_client
             .init_btc_transfer_near_to_btc(
                 amount + fee,
@@ -493,6 +505,74 @@ impl OmniConnector {
         let btc_bridge_client = self.btc_bridge_client()?;
         let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
         Ok(tx_hash)
+    }
+
+    pub async fn claim_fee_btc(
+        &self,
+        btc_tx_hash: String,
+        near_tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let btc_bridge = self.btc_bridge_client()?;
+        let near_bridge_client = self.near_bridge_client()?;
+        let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash)?;
+
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+        })?;
+
+        let transfer_id = near_bridge_client.extract_transaction_id(tx_hash, None).await?;
+        let btc_tx_hash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(btc_tx_hash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?.into_iter().rev().collect::<Vec<_>>().try_into().unwrap());
+        let tx_block_blockhash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(proof_data.tx_block_blockhash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?.into_iter().rev().collect::<Vec<_>>().try_into().unwrap());
+        let btc_proof = BtcProof {
+            tx_id: btc_tx_hash,
+            tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof.iter()
+                .map(|s| omni_types::prover_args::H256(<[u8; 32]>::from_hex(s).unwrap().into_iter().rev().collect::<Vec<_>>().try_into().unwrap()))
+                .collect::<Vec<_>>()
+            ,
+            confirmations: 2,
+        };
+
+        let btc_verify_proof_args = BtcVerifyProofArgs {
+            proof: btc_proof,
+            transfer_id,
+        };
+
+        let claim_fee_args = ClaimFeeArgs {
+            chain_kind: ChainKind::Btc,
+            prover_args: borsh::to_vec(&btc_verify_proof_args).map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on serialization btc proof args: {err}"))
+            })?,
+        };
+
+        near_bridge_client.claim_fee(claim_fee_args, transaction_options).await
+    }
+
+    pub async fn near_sign_btc_transfer(
+        &self,
+        near_tx_hash: String,
+        sender_id: Option<AccountId>,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (recipient, amount, transfer_id) = near_bridge_client.extract_recipient_and_amount_from_logs(near_tx_hash, sender_id).await?;
+        let fee = near_bridge_client.get_withdraw_fee().await?;
+        let (out_points, tx_outs) = self.extract_utxo(recipient.clone(), amount - fee).await?;
+        near_bridge_client
+            .sign_btc_transfer(
+                transfer_id,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address: recipient,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await
     }
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
@@ -1053,7 +1133,8 @@ impl OmniConnector {
                 self.solana_log_metadata(token)
                     .await
                     .map(|hash| hash.to_string())
-            }
+            },
+            OmniAddress::Btc(_) => Err(BridgeSdkError::UnknownError("Log metadata not supported for Bitcoin".to_string()))
         }
     }
 
@@ -1323,6 +1404,7 @@ impl OmniConnector {
                     .await
             }
             ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Btc => todo!()
         }
     }
 

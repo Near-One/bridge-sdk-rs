@@ -49,25 +49,23 @@ pub fn choose_utxos(
 
     let mut selected = Vec::new();
     let mut utxos_balance = 0;
-    let mut gas_fee: u128 = 0;
 
     for utxo in utxo_list {
-        gas_fee = get_gas_fee(
-            selected
-                .len()
-                .try_into()
-                .expect("Error on convert usize into u64"),
-            2,
-            fee_rate,
-        )
-        .into();
-
-        if utxos_balance >= gas_fee + amount {
+        if utxos_balance >= amount {
             break;
         }
         utxos_balance += u128::from(utxo.1.balance);
         selected.push(utxo);
     }
+
+    let gas_fee: u128 = get_gas_fee(
+        selected
+            .len()
+            .try_into()
+            .expect("Error on convert usize into u64"),
+        2,
+        fee_rate,
+    ).into();
 
     let out_points = utxo_to_out_points(selected)?;
     Ok((out_points, utxos_balance, gas_fee))

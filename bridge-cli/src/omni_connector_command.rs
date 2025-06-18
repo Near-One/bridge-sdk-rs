@@ -278,8 +278,12 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Sign BTC transaction on Near")]
     NearSignBTCTransaction {
-        #[clap(short, long, help = "Pending BTC transaction ID")]
-        btc_pending_id: String,
+        #[clap(long, help = "Pending BTC transaction ID")]
+        btc_pending_id: Option<String>,
+        #[clap(long, help = "Near tx with signed tx")]
+        near_tx_hash: Option<String>,
+        #[clap(long, help = "Btc relayer account ID, who sign the BTC tx")]
+        btc_relayer: Option<AccountId>,
         #[clap(
             short,
             long,
@@ -331,6 +335,17 @@ pub enum OmniConnectorSubCommand {
     BtcFinTransfer {
         #[clap(short, long, help = "Near tx hash with signature")]
         near_tx_hash: String,
+        #[clap(short, long, help = "Btc relayer account ID, who sign the BTC tx")]
+        btc_relayer: Option<AccountId>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Omni-Bridge: Sign Btc Transfer")]
+    NearSignBtcTransfer {
+        #[clap(short, long, help = "Omni Bridge Transaction Hash")]
+        near_tx_hash: String,
+        #[clap(short, long, help = "Sender ID who init transfer on Near")]
+        sender_id: Option<AccountId>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -376,6 +391,15 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         amount: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Claim Fee for BTC transfer")]
+    ClaimFeeBTC {
+        #[clap(short, long, help = "The btc transaction hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "Tx hash with Omni Init Transfer")]
+        near_tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -436,6 +460,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     })
                     .await
                     .unwrap();
+            }
+            ChainKind::Btc => {
+                panic!("Deploy tokens on Btc not supported")
             }
         },
         OmniConnectorSubCommand::IsTransferFinalised {
@@ -730,12 +757,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::NearSignBTCTransaction {
             btc_pending_id,
+            near_tx_hash,
+            btc_relayer,
             sign_index,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_sign_btc_transaction(
                     btc_pending_id,
+                    near_tx_hash,
+                    btc_relayer,
                     sign_index,
                     TransactionOptions::default(),
                 )
@@ -775,10 +806,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::BtcFinTransfer {
             near_tx_hash,
+            btc_relayer,
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(near_tx_hash, None)
+                .btc_fin_transfer(near_tx_hash, btc_relayer)
                 .await
                 .unwrap();
 
@@ -809,6 +841,35 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .init_near_to_bitcoin_transfer(
                     target_btc_address,
                     amount,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearSignBtcTransfer {
+            near_tx_hash,
+            sender_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_sign_btc_transfer(
+                    near_tx_hash,
+                    sender_id,
+                    TransactionOptions::default(),
+                    None,
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::ClaimFeeBTC {
+            btc_tx_hash,
+            near_tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .claim_fee_btc(
+                    btc_tx_hash,
+                    near_tx_hash,
                     TransactionOptions::default(),
                 )
                 .await
