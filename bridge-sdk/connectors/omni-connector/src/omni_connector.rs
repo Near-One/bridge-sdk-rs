@@ -5,12 +5,13 @@ use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::prelude::*;
+use hex::FromHex;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
-use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
+use omni_types::prover_args::{BtcProof, BtcVerifyProofArgs, EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
@@ -509,8 +510,7 @@ impl OmniConnector {
         btc_tx_hash: String,
         near_tx_hash: String,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
-    ) -> Result<()> {
+    ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
         let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash)?;
@@ -520,14 +520,32 @@ impl OmniConnector {
         })?;
 
         let transfer_id = near_bridge_client.extract_transaction_id(tx_hash, None).await?;
+        let btc_tx_hash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(btc_tx_hash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?);
+        let tx_block_blockhash = omni_types::prover_args::H256(<[u8; 32]>::from_hex(proof_data.tx_block_blockhash).map_err(|e| BridgeSdkError::BtcClientError(format!("Invalid hex string: {e}")))?);
+        let btc_proof = BtcProof {
+            tx_id: btc_tx_hash,
+            tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof.iter()
+                .map(|s| omni_types::prover_args::H256(<[u8; 32]>::from_hex(s).unwrap()))
+                .collect::<Vec<_>>()
+            ,
+            confirmations: 2,
+        };
+
+        let btc_verify_proof_args = BtcVerifyProofArgs {
+            proof: btc_proof,
+            transfer_id,
+        };
 
         let claim_fee_args = ClaimFeeArgs {
             chain_kind: ChainKind::Btc,
-            prover_args: vec![],
+            prover_args: borsh::to_vec(&btc_verify_proof_args).map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on serialization btc proof args: {err}"))
+            })?,
         };
 
-        println!("Transaction Id: {:?}", transfer_id);
-        Ok(())
+        near_bridge_client.claim_fee(claim_fee_args, transaction_options).await
     }
 
     pub async fn near_sign_btc_transfer(

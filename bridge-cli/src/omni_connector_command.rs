@@ -863,7 +863,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     btc_tx_hash,
                     near_tx_hash,
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();
