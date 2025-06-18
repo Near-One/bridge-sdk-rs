@@ -390,6 +390,15 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Claim Fee for BTC transfer")]
+    ClaimFeeBTC {
+        #[clap(short, long, help = "The btc transaction hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "Tx hash with Omni Init Transfer")]
+        near_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -838,6 +847,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     TransactionOptions::default(),
                     None,
                 )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::ClaimFeeBTC {
+            btc_tx_hash,
+            near_tx_hash,
+            config_cli
+        } => {
+            omni_connector(network, config_cli)
+                .claim_fee_btc(btc_tx_hash,
+                               near_tx_hash,
+                               TransactionOptions::default(),
+                               None,)
                 .await
                 .unwrap();
         }

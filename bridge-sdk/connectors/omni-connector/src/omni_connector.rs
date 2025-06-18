@@ -504,6 +504,27 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
+    pub async fn claim_fee_btc(
+        &self,
+        btc_tx_hash: String,
+        near_tx_hash: String,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<()> {
+        let btc_bridge = self.btc_bridge_client()?;
+        let near_bridge_client = self.near_bridge_client()?;
+        let proof_data = btc_bridge.extract_btc_proof(&btc_tx_hash)?;
+
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+        })?;
+
+        let transfer_id = near_bridge_client.extract_transaction_id(tx_hash, None).await?;
+
+        println!("Transaction Id: {:?}", transfer_id);
+        Ok(())
+    }
+
     pub async fn near_sign_btc_transfer(
         &self,
         near_tx_hash: String,

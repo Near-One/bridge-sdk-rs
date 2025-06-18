@@ -470,6 +470,24 @@ impl NearBridgeClient {
         Ok((recipient.to_string(), amount, TransferId{ origin_chain: sender_chain.get_chain(), origin_nonce: origin_id }))
     }
 
+    pub async fn extract_transaction_id(
+        &self,
+        transaction_hash: CryptoHash,
+        sender_id: Option<AccountId>) -> Result<TransferId> {
+
+        let log = self.extract_transfer_log(transaction_hash, sender_id, "InitTransferEvent").await?;
+        let v: Value = serde_json::from_str(&log)?;
+
+        let origin_nonce =  &v["InitTransferEvent"]["transfer_message"]["origin_nonce"].as_u64().unwrap();
+        let sender = OmniAddress::from_str(&v["InitTransferEvent"]["transfer_message"]["sender"].as_str().unwrap()).unwrap();
+        let origin_chain_id = sender.get_chain();
+
+        Ok(TransferId{
+            origin_chain: origin_chain_id,
+            origin_nonce: *origin_nonce,
+        })
+    }
+
     pub fn btc_connector(&self) -> Result<AccountId> {
         self.btc_connector
             .as_ref()
