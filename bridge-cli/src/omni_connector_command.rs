@@ -279,7 +279,11 @@ pub enum OmniConnectorSubCommand {
     #[clap(about = "Sign BTC transaction on Near")]
     NearSignBTCTransaction {
         #[clap(short, long, help = "Pending BTC transaction ID")]
-        btc_pending_id: String,
+        btc_pending_id: Option<String>,
+        #[clap(short, long, help = "Near tx with signed tx")]
+        near_tx_hash: Option<String>,
+        #[clap(short, long, help = "Btc relayer account ID, who sign the BTC tx")]
+        btc_relayer: Option<AccountId>,
         #[clap(
             short,
             long,
@@ -753,12 +757,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::NearSignBTCTransaction {
             btc_pending_id,
+            near_tx_hash,
+            btc_relayer,
             sign_index,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_sign_btc_transaction(
                     btc_pending_id,
+                    near_tx_hash,
+                    btc_relayer,
                     sign_index,
                     TransactionOptions::default(),
                 )

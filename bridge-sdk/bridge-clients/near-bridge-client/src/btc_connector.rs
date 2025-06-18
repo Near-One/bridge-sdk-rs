@@ -12,6 +12,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 use omni_types::{OmniAddress, TransferId};
+use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
@@ -117,10 +118,30 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
     pub async fn sign_btc_transaction(
         &self,
-        btc_pending_id: String,
+        btc_pending_id: Option<String>,
+        near_tx_hash: Option<String>,
+        relayer: Option<AccountId>,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let btc_pending_id = match btc_pending_id {
+            Some(btc_pending_id) => btc_pending_id,
+            None => {
+                let near_tx_hash = near_tx_hash.ok_or(BtcClientError("btc_pending id and near tx hash not provided".to_string()))?;
+                let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+                })?;
+
+                let relayer_id = relayer.unwrap_or(self.satoshi_relayer()?);
+                let log = self
+                    .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
+                    .await?;
+
+                let v: Value = serde_json::from_str(&log)?;
+                v["data"][0]["btc_pending_id"].as_str().ok_or(BtcClientError("btc_pending id not found in log".to_string()))?.to_string()
+            }
+        };
+
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
         let tx_hash = near_rpc_client::change_and_wait(
