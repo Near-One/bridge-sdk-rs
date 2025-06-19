@@ -16,7 +16,7 @@ use omni_types::{
 };
 
 use btc_bridge_client::BtcBridgeClient;
-use evm_bridge_client::EvmBridgeClient;
+use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
@@ -637,13 +637,12 @@ impl OmniConnector {
         }
 
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
         let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
             BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {e}"))
         })?;
 
-        let transfer_event = evm_bridge_client.get_transfer_event(tx_hash).await?;
+        let transfer_event = self.evm_get_transfer_event(chain_kind, tx_hash).await?;
 
         let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
@@ -698,6 +697,15 @@ impl OmniConnector {
     pub async fn evm_get_last_block_number(&self, chain_kind: ChainKind) -> Result<u64> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
         evm_bridge_client.get_last_block_number().await
+    }
+
+    pub async fn evm_get_transfer_event(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
+    ) -> Result<InitTransferFilter> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        evm_bridge_client.get_transfer_event(tx_hash).await
     }
 
     pub async fn evm_log_metadata(
