@@ -650,26 +650,47 @@ impl OmniConnector {
                 transfer_event.recipient
             ))
         })?;
+        let token_address =
+            OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
+                .map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse token address: {}",
+                        transfer_event.token_address
+                    ))
+                })?;
+
         let token_id = near_bridge_client
-            .get_token_id(
-                OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
-                    .map_err(|_| {
-                        BridgeSdkError::InvalidArgument(format!(
-                            "Failed to parse token address: {}",
-                            transfer_event.token_address
-                        ))
-                    })?,
-            )
+            .get_token_id(token_address.clone())
             .await?;
+
+        let amount = near_bridge_client
+            .denormalize_amount(token_address.clone(), transfer_event.amount)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to denormalize amount for token: {}: {e}",
+                    transfer_event.token_address
+                ))
+            })?;
+
+        let transferred_fee = near_bridge_client
+            .denormalize_amount(token_address.clone(), transfer_event.fee)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to denormalize fee for token: {}: {e}",
+                    transfer_event.token_address
+                ))
+            })?;
 
         near_bridge_client
             .fast_fin_transfer(
                 near_bridge_client::FastFinTransferArgs {
                     token_id,
-                    amount: transfer_event.amount,
+                    amount,
                     recipient,
                     fee: Fee {
-                        fee: transfer_event.fee.into(),
+                        fee: transferred_fee.into(),
                         native_fee: transfer_event.native_token_fee.into(),
                     },
                     transfer_id: omni_types::TransferId {
