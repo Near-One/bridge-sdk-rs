@@ -668,8 +668,10 @@ impl OmniConnector {
             .get_token_id(token_address.clone())
             .await?;
 
+        let decimals = self.near_get_token_decimals(token_address).await?;
+
         let amount = self
-            .denormalize_amount(token_address.clone(), transfer_event.amount)
+            .denormalize_amount(&decimals, transfer_event.amount)
             .await
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!(
@@ -679,7 +681,7 @@ impl OmniConnector {
             })?;
 
         let transferred_fee = self
-            .denormalize_amount(token_address.clone(), transfer_event.fee)
+            .denormalize_amount(&decimals, transfer_event.fee)
             .await
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!(
@@ -1407,12 +1409,7 @@ impl OmniConnector {
         wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
-    pub async fn denormalize_amount(
-        &self,
-        token_address: OmniAddress,
-        amount: u128,
-    ) -> Result<u128> {
-        let decimals = self.near_get_token_decimals(token_address).await?;
+    pub async fn denormalize_amount(&self, decimals: &Decimals, amount: u128) -> Result<u128> {
         amount
             .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
             .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
