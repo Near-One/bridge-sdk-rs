@@ -59,8 +59,7 @@ impl EvmBridgeClient {
 
         let block_number = client
             .get_block(BlockNumber::Latest)
-            .await
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?
+            .await?
             .and_then(|block| block.number)
             .ok_or_else(|| {
                 BridgeSdkError::UnknownError("Failed to get finalized block number".to_string())
