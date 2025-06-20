@@ -914,17 +914,6 @@ impl NearBridgeClient {
         Ok(transfer_log)
     }
 
-    pub async fn denormalize_amount(
-        &self,
-        token_address: OmniAddress,
-        amount: u128,
-    ) -> Result<u128> {
-        let decimals = self.get_token_decimals(token_address).await?;
-        amount
-            .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
-            .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
-    }
-
     pub fn endpoint(&self) -> Result<&str> {
         Ok(self.endpoint.as_ref().ok_or(BridgeSdkError::ConfigError(
             "Near rpc endpoint is not set".to_string(),

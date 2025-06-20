@@ -20,7 +20,7 @@ use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
-use near_bridge_client::{NearBridgeClient, TransactionOptions};
+use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
     TransferId,
@@ -199,6 +199,11 @@ impl OmniConnector {
     ) -> Result<TransferMessage> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_transfer_message(transfer_id).await
+    }
+
+    pub async fn near_get_token_decimals(&self, token_address: OmniAddress) -> Result<Decimals> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.get_token_decimals(token_address).await
     }
 
     pub async fn near_is_transfer_finalised(
@@ -663,7 +668,7 @@ impl OmniConnector {
             .get_token_id(token_address.clone())
             .await?;
 
-        let amount = near_bridge_client
+        let amount = self
             .denormalize_amount(token_address.clone(), transfer_event.amount)
             .await
             .map_err(|e| {
@@ -673,7 +678,7 @@ impl OmniConnector {
                 ))
             })?;
 
-        let transferred_fee = near_bridge_client
+        let transferred_fee = self
             .denormalize_amount(token_address.clone(), transfer_event.fee)
             .await
             .map_err(|e| {
@@ -1400,6 +1405,17 @@ impl OmniConnector {
     pub async fn wormhole_get_vaa_by_tx_hash(&self, tx_hash: String) -> Result<String> {
         let wormhole_bridge_client = self.wormhole_bridge_client()?;
         wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
+    }
+
+    pub async fn denormalize_amount(
+        &self,
+        token_address: OmniAddress,
+        amount: u128,
+    ) -> Result<u128> {
+        let decimals = self.near_get_token_decimals(token_address).await?;
+        amount
+            .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
+            .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
     }
 
     pub fn near_bridge_client(&self) -> Result<&NearBridgeClient> {
