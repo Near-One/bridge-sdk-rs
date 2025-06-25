@@ -686,8 +686,7 @@ impl OmniConnector {
 
         if balance < amount_to_send {
             return Err(BridgeSdkError::InsufficientBalance(format!(
-                "Insufficient balance for fast transfer: {} < {}",
-                balance, amount_to_send
+                "Insufficient balance for fast transfer: {balance} < {amount_to_send}",
             )));
         }
 
