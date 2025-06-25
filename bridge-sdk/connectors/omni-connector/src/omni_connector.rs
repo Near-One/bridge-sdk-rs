@@ -669,10 +669,19 @@ impl OmniConnector {
             .get_token_id(token_address.clone())
             .await?;
 
+        let relayer = near_bridge_client.account_id()?;
         let decimals = self.near_get_token_decimals(token_address).await?;
+        let amount_to_send = self.denormalize_amount(&decimals, transfer_event.amount)?;
+        let balance = near_bridge_client
+            .ft_balance_of(token_id.clone(), relayer)
+            .await?;
 
-        let amount_to_send = self
-            .denormalize_amount(&decimals, transfer_event.amount)?;
+        if balance < amount_to_send {
+            return Err(BridgeSdkError::InsufficientBalance(format!(
+                "Insufficient balance for fast transfer: {} < {}",
+                balance, amount_to_send
+            )));
+        }
 
         near_bridge_client
             .fast_fin_transfer(
@@ -1407,9 +1416,7 @@ impl OmniConnector {
                 "NEAR bridge client not configured".to_string(),
             ))
             .map_err(|e| {
-                BridgeSdkError::InvalidArgument(format!(
-                    "Failed to denormalize amount: {e}",
-                ))
+                BridgeSdkError::InvalidArgument(format!("Failed to denormalize amount: {e}",))
             })
     }
 
