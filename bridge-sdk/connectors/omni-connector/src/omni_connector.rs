@@ -669,9 +669,17 @@ impl OmniConnector {
             .get_token_id(token_address.clone())
             .await?;
 
+        if transfer_event.amount < transfer_event.fee {
+            return Err(BridgeSdkError::InvalidArgument(format!(
+                "Transfer amount is less than fee: {} < {}",
+                transfer_event.amount, transfer_event.fee
+            )));
+        }
+
         let relayer = near_bridge_client.account_id()?;
         let decimals = self.near_get_token_decimals(token_address).await?;
-        let amount_to_send = self.denormalize_amount(&decimals, transfer_event.amount)?;
+        let amount_to_send =
+            self.denormalize_amount(&decimals, transfer_event.amount - transfer_event.fee)?;
         let balance = near_bridge_client
             .ft_balance_of(token_id.clone(), relayer)
             .await?;
