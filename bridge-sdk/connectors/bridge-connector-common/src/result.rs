@@ -46,7 +46,7 @@ pub enum BridgeSdkError {
 impl From<SolanaBridgeClientError> for BridgeSdkError {
     fn from(error: SolanaBridgeClientError) -> Self {
         match error {
-            SolanaBridgeClientError::RpcError(e) => Self::SolanaRpcError(e),
+            SolanaBridgeClientError::RpcError(e) => Self::SolanaRpcError(*e),
             SolanaBridgeClientError::ConfigError(e) => Self::ConfigError(e),
             SolanaBridgeClientError::InvalidAccountData(e) => Self::SolanaOtherError(e),
             SolanaBridgeClientError::InvalidEvent => {
