@@ -292,7 +292,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: omni_bridge,
-                method_name: "sign_btc_transfer".to_string(),
+                method_name: "submit_transfer_to_btc_connector".to_string(),
                 args: serde_json::json!({
                     "transfer_id": transfer_id,
                     "msg": json!(msg).to_string(),
