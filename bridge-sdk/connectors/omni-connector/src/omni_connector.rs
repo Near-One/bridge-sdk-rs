@@ -671,20 +671,18 @@ impl OmniConnector {
 
         let decimals = self.near_get_token_decimals(token_address).await?;
 
-        let amount = self
+        let amount_to_send = self
             .denormalize_amount(&decimals, transfer_event.amount)?;
-
-        let transferred_fee = self
-            .denormalize_amount(&decimals, transfer_event.fee)?;
 
         near_bridge_client
             .fast_fin_transfer(
                 near_bridge_client::FastFinTransferArgs {
                     token_id,
-                    amount,
+                    amount_to_send,
                     recipient,
+                    amount: transfer_event.amount,
                     fee: Fee {
-                        fee: transferred_fee.into(),
+                        fee: transfer_event.fee.into(),
                         native_fee: transfer_event.native_token_fee.into(),
                     },
                     transfer_id: omni_types::TransferId {

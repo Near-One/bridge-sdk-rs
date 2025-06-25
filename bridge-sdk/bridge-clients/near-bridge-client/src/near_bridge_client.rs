@@ -68,9 +68,10 @@ struct StorageBalanceBounds {
 #[derive(serde::Serialize)]
 pub struct FastFinTransferArgs {
     pub token_id: AccountId,
-    pub amount: u128,
+    pub amount_to_send: u128,
     pub transfer_id: TransferId,
     pub recipient: OmniAddress,
+    pub amount: u128,
     pub fee: Fee,
     pub msg: String,
     pub storage_deposit_amount: Option<u128>,
@@ -752,10 +753,11 @@ impl NearBridgeClient {
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
                     "receiver_id": omni_bridge_id,
-                    "amount": args.amount.to_string(),
+                    "amount": args.amount_to_send.to_string(),
                     "msg": serde_json::json!({
                         "FastFinTransfer": {
                             "recipient": args.recipient,
+                            "amount": args.amount.to_string(),
                             "fee": args.fee,
                             "transfer_id": args.transfer_id,
                             "msg": args.msg,
