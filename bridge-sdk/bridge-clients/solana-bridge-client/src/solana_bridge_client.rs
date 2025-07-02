@@ -11,9 +11,10 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
-    system_program, sysvar,
+    sysvar,
     transaction::Transaction,
 };
+use solana_system_interface::program;
 use spl_token::state::Mint;
 
 use crate::{
@@ -123,7 +124,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new(keypair.pubkey(), true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(*program_id, true),
             ],
@@ -265,8 +266,8 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(token_program_id, false),
                 AccountMeta::new_readonly(spl_associated_token_account::ID, false),
             ],
@@ -327,8 +328,8 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(spl_token::ID, false),
                 AccountMeta::new_readonly(metadata_program_id, false),
             ],
@@ -414,7 +415,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(token_program_id, false),
             ],
         );
@@ -521,7 +522,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
             ],
         );
 
@@ -614,9 +615,9 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(spl_associated_token_account::ID, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(token_program_id, false),
             ],
         );
@@ -680,8 +681,8 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(system_program::ID, false),
-                AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
+                AccountMeta::new_readonly(program::ID, false),
             ],
         );
 
