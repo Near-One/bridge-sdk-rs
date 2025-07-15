@@ -1,4 +1,5 @@
-use bitcoin::consensus::{deserialize, serialize};
+use bitcoin::consensus::deserialize;
+use bitcoin::hex::FromHex;
 use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
@@ -7,6 +8,8 @@ use bitcoincore_rpc::{bitcoin, jsonrpc, RpcApi};
 use bridge_connector_common::result::{BridgeSdkError, Result as BridgeResult};
 use jsonrpc::{Request, Response};
 use std::str::FromStr;
+use zebra_chain;
+use zebra_chain::serialization::{ZcashDeserialize, ZcashSerialize};
 
 struct CustomMinreqHttpTransport {
     url: String,
@@ -137,16 +140,24 @@ impl BtcBridgeClient {
 
     pub fn extract_btc_proof(&self, tx_hash: &str) -> BridgeResult<TxProof> {
         let block_hash = self.get_block_hash_by_tx_hash(tx_hash)?;
-        let block = self
+        let block_hex = self
             .bitcoin_client
-            .get_block(&block_hash)
+            .get_block_hex(&block_hash)
             .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on get block: {err}")))?;
-        let tx_block_blockhash = block.header.block_hash();
+
+        let bytes = Vec::from_hex(&block_hex).expect("Invalid hex");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let block = zebra_chain::block::Block::zcash_deserialize(&mut cursor)
+            .expect("Deserialization failed");
+
+        println!("Zebra Block: {:?}", block);
+
+        let tx_block_blockhash = block.header.hash();
 
         let transactions = block
-            .txdata
+            .transactions
             .iter()
-            .map(|tx| tx.compute_txid().to_string())
+            .map(|tx| tx.hash().to_string())
             .collect::<Vec<_>>();
 
         let tx_index = transactions
@@ -162,7 +173,10 @@ impl BtcBridgeClient {
             .map(std::string::ToString::to_string)
             .collect();
 
-        let tx_data = serialize(&block.txdata[tx_index]);
+        let mut tx_data = Vec::new();
+        &block.transactions[tx_index]
+            .zcash_serialize(&mut tx_data)
+            .expect("Serialization failed");
 
         Ok(TxProof {
             tx_bytes: tx_data,
@@ -203,13 +217,13 @@ impl BtcBridgeClient {
     #[must_use]
     #[allow(dead_code)]
     pub fn compute_merkle_proof(
-        block: &bitcoincore_rpc::bitcoin::Block,
+        block: &zebra_chain::block::Block,
         transaction_position: usize,
     ) -> Vec<merkle_tools::H256> {
         let transactions = block
-            .txdata
+            .transactions
             .iter()
-            .map(|tx| tx.compute_txid().to_byte_array().into())
+            .map(|tx| tx.hash().0.into())
             .collect();
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
