@@ -1,7 +1,6 @@
 use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use btc_bridge_client::UTXOBridgeClient;
 use derive_builder::Builder;
 use ethers::prelude::*;
 
@@ -16,7 +15,7 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
-use btc_bridge_client::btc_bridge_client::BtcBridgeClient;
+use btc_bridge_client::UTXOBridgeClient;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -40,7 +39,7 @@ pub struct OmniConnector {
     arb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
-    btc_bridge_client: Option<BtcBridgeClient>,
+    btc_bridge_client: Option<UTXOBridgeClient>,
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -1457,7 +1456,7 @@ impl OmniConnector {
             ))
     }
 
-    pub fn btc_bridge_client(&self) -> Result<&BtcBridgeClient> {
+    pub fn btc_bridge_client(&self) -> Result<&UTXOBridgeClient> {
         self.btc_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
