@@ -1,9 +1,12 @@
-use bitcoin::consensus::{deserialize, serialize};
-use bitcoin::{BlockHash, Transaction};
+use bitcoin::consensus::serialize;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
-use bitcoincore_rpc::{bitcoin, jsonrpc, RpcApi};
+use bitcoincore_rpc::json::EstimateSmartFeeResult;
+use bitcoincore_rpc::bitcoin;
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use std::str::FromStr;
+use reqwest::Client;
+use serde_json::{json, Value};
+
+use crate::UTXOBridgeClient;
 
 #[derive(Debug)]
 pub struct TxProof {
@@ -13,49 +16,66 @@ pub struct TxProof {
     pub merkle_proof: Vec<String>,
 }
 
-#[cfg(feature = "zcash")]
-pub mod zcash_bridge_client;
-
 pub struct BtcBridgeClient {
-    bitcoin_client: bitcoincore_rpc::Client,
+    endpoint_url: String,
+    http_client: Client,
 }
 
 impl BtcBridgeClient {
-    pub fn new(btc_endpoint: &str) -> Self {
-        let mut builder = jsonrpc::minreq_http::Builder::new()
-            .url(btc_endpoint)
-            .expect("Incorrect BTC endpoint");
-        builder = builder.basic_auth(String::new(), Some(String::new()));
+    #[must_use]
+    #[allow(dead_code)]
+    pub fn compute_merkle_proof(
+        block: &bitcoincore_rpc::bitcoin::Block,
+        transaction_position: usize,
+    ) -> Vec<merkle_tools::H256> {
+        let transactions = block
+            .txdata
+            .iter()
+            .map(|tx| tx.compute_txid().to_byte_array().into())
+            .collect();
 
+        merkle_tools::merkle_proof_calculator(transactions, transaction_position)
+    }
+}
+
+impl UTXOBridgeClient for BtcBridgeClient {
+    fn new(btc_endpoint: String, api_key: Option<&str>) -> Self {
         BtcBridgeClient {
-            bitcoin_client: bitcoincore_rpc::Client::from_jsonrpc(builder.build().into()),
+            endpoint_url: btc_endpoint,
+            http_client: Self::build_client(api_key),
         }
     }
 
-    pub fn get_block_hash_by_tx_hash(&self, tx_hash: &str) -> Result<BlockHash> {
-        let tx_raw = self
-            .bitcoin_client
-            .get_raw_transaction_info(
-                &bitcoin::Txid::from_str(tx_hash).map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!("Incorrect tx_hash: {err}"))
-                })?,
-                None,
-            )
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on get raw tx info: {err}"))
-            })?;
-
-        tx_raw
-            .blockhash
-            .ok_or(BridgeSdkError::BtcClientError("Tx not finalized yet".to_string()))
+    fn http_post(&self) -> reqwest::RequestBuilder {
+        self.http_client.post(&self.endpoint_url)
+            .header("Content-Type", "application/json")
     }
 
-    pub fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
-        let block_hash = self.get_block_hash_by_tx_hash(tx_hash)?;
-        let block = self
-            .bitcoin_client
-            .get_block(&block_hash)
-            .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on get block: {err}")))?;
+    async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
+        let block_hash = self.get_block_hash_by_tx_hash(tx_hash).await?;
+        let response = self
+            .http_post()
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "getblock",
+                "params": [block_hash.to_string(), 2],
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to send getblock request: {e}"))
+            })?
+            .text()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
+            })?;
+
+        let value: Value = serde_json::from_str(&response)?;
+        let block: bitcoin::Block = serde_json::from_value(value["result"].clone())
+            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to parse block: {e}")))?;
+
         let tx_block_blockhash = block.header.block_hash();
 
         let transactions = block
@@ -89,44 +109,50 @@ impl BtcBridgeClient {
         })
     }
 
-    pub fn get_fee_rate(&self) -> Result<u64> {
-        let fee_rate = self
-            .bitcoin_client
-            .estimate_smart_fee(2, None)
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on estimate smart fee: {err}"))
+    async fn get_fee_rate(&self) -> Result<u64> {
+        let response = self
+            .http_post()
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "estimatesmartfee",
+                "params": [2]
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Faield to send estimatesmartfee request: {e}"))
             })?
-            .fee_rate
-            .ok_or(BridgeSdkError::BtcClientError(
-                "Error on estimate fee_rate".to_string(),
-            ))?;
-
-        Ok(fee_rate.to_sat())
-    }
-
-    pub fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
-        let tx: Transaction = deserialize(tx_bytes).expect("Failed to deserialize transaction");
-        let tx_hash = self
-            .bitcoin_client
-            .send_raw_transaction(&tx)
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on sending BTC transaction: {err}"))
+            .text()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to read estimatesmartfee response: {e}"))
             })?;
-        Ok(tx_hash.to_string())
+
+        println!("Response: {response}");
+
+        let value: Value = serde_json::from_str(&response)?;
+        let result: EstimateSmartFeeResult = serde_json::from_value(value["result"].clone())
+            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to parse block: {e}")))?;
+
+        Ok(result.fee_rate.ok_or(BridgeSdkError::BtcClientError(
+            "Failed to estimate fee_rate".to_string(),
+        ))?.to_sat())
     }
+}
 
-    #[must_use]
-    #[allow(dead_code)]
-    pub fn compute_merkle_proof(
-        block: &bitcoincore_rpc::bitcoin::Block,
-        transaction_position: usize,
-    ) -> Vec<merkle_tools::H256> {
-        let transactions = block
-            .txdata
-            .iter()
-            .map(|tx| tx.compute_txid().to_byte_array().into())
-            .collect();
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        merkle_tools::merkle_proof_calculator(transactions, transaction_position)
+    #[tokio::test]
+    async fn test_fee_rate() {
+        let client = BtcBridgeClient {
+            endpoint_url: "https://bitcoin-testnet.gateway.tatum.io/".to_string(),
+            http_client: BtcBridgeClient::build_client(Some("t-682d8651b332cd4387ac0270-9c4b05ca2c0d4456a1dcd5ea")),
+        };
+
+        let fee_rate = client.get_fee_rate().await.unwrap();
+        assert!(fee_rate > 0, "Fee rate should be greater than zero");
     }
 }

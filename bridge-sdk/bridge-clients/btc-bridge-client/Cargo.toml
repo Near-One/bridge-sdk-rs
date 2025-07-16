@@ -21,7 +21,7 @@ reqwest.workspace = true
 zebra-rpc = { version = "1.0.0", optional = true }
 
 [lib]
-path = "src/btc_bridge_client.rs"
+path = "src/utxo_bridge_client.rs"
 
 [features]
 default = ["zcash"]
