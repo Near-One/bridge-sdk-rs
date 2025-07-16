@@ -1,7 +1,6 @@
 use bitcoin::{
     consensus::{encode, serialize},
     hex::FromHex,
-    BlockHash,
 };
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bridge_connector_common::result::{BridgeSdkError, Result};
