@@ -1,8 +1,11 @@
+use crate::address::Chain;
 use bitcoin::{Address, Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 use std::str::FromStr;
+
+mod address;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -80,8 +83,8 @@ pub fn get_tx_outs(
     change_amount: u64,
 ) -> Vec<TxOut> {
     let btc_recipient_address =
-        Address::from_str(target_btc_address).expect("Invalid Bitcoin address");
-    let btc_recipient_address = btc_recipient_address.assume_checked();
+        crate::address::Address::parse(target_btc_address, Chain::ZcashTestnet)
+            .expect("Invalid Bitcoin address");
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
     let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");

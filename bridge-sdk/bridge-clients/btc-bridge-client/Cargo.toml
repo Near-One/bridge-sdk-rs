@@ -18,6 +18,8 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 zebra-chain = "1"
+hex = "0.4.3"
+tracing = "0.1.41"
 
 [lib]
 path = "src/btc_bridge_client.rs"

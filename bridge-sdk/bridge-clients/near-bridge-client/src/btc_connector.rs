@@ -25,7 +25,7 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
 #[serde_as]
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct PostAction {
     pub receiver_id: AccountId,
     #[serde_as(as = "DisplayFromStr")]
@@ -35,7 +35,7 @@ pub struct PostAction {
     pub gas: Option<Gas>,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct DepositMsg {
     pub recipient_id: AccountId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -259,6 +259,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
+        tracing::info!("Deposit Msg = {deposit_msg:?}");
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {

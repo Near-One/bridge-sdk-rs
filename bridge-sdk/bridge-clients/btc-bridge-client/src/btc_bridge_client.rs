@@ -178,6 +178,9 @@ impl BtcBridgeClient {
             .zcash_serialize(&mut tx_data)
             .expect("Serialization failed");
 
+        let hex_string = hex::encode(tx_data.clone());
+        tracing::info!("Zcash Tx Bytes: {hex_string}");
+
         Ok(TxProof {
             tx_bytes: tx_data,
             tx_block_blockhash: tx_block_blockhash.to_string(),
