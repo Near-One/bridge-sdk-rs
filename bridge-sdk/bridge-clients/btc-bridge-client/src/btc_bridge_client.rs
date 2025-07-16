@@ -13,6 +13,9 @@ pub struct TxProof {
     pub merkle_proof: Vec<String>,
 }
 
+#[cfg(feature = "zcash")]
+pub mod zcash_bridge_client;
+
 pub struct BtcBridgeClient {
     bitcoin_client: bitcoincore_rpc::Client,
 }
