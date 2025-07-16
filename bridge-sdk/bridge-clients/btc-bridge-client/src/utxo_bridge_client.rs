@@ -1,27 +1,17 @@
-use bitcoin::{
-    consensus::{encode, serialize}, hex::FromHex, BlockHash
-};
+use bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin;
-use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::json::EstimateSmartFeeResult;
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use merkle_tools::H256;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, ClientBuilder,
 };
 use serde_json::{json, Value};
-use zebra_rpc::client::zebra_chain;
-use zebra_chain::serialization::{ZcashDeserialize, ZcashSerialize};
-use std::str::FromStr;
+use std::{marker::PhantomData, str::FromStr};
 
-#[derive(Debug)]
-pub struct TxProof {
-    pub tx_bytes: Vec<u8>,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
-}
+use crate::types::{TxProof, UTXOChain, UTXOChainBlock};
+
+pub mod types;
 
 #[allow(dead_code)]
 #[derive(serde::Deserialize, Debug)]
@@ -31,32 +21,31 @@ struct JsonRpcResponse<T> {
     result: T,
 }
 
-pub struct UTXOBridgeClient {
+pub struct UTXOBridgeClient<T: UTXOChain> {
     endpoint_url: String,
     http_client: Client,
-    // TODO: Change to ChainKind
-    is_zcash: bool,
+    _phantom: PhantomData<T>,
 }
 
-impl UTXOBridgeClient {
-    pub fn new(rpc_endpoint: String, api_key: Option<&str>, is_zcash: bool) -> Self {
+impl<T: UTXOChain> UTXOBridgeClient<T> {
+    pub fn new(rpc_endpoint: String, api_key: Option<&str>) -> Self {
         let mut headers = HeaderMap::new();
         if let Some(key) = api_key {
             headers.insert("x-api-key", HeaderValue::from_str(key).unwrap());
         }
 
-        UTXOBridgeClient {
+        UTXOBridgeClient::<T> {
             endpoint_url: rpc_endpoint,
             http_client: ClientBuilder::new()
                 .default_headers(headers)
                 .build()
                 .unwrap(),
-            is_zcash,
+            _phantom: PhantomData,
         }
     }
 
     pub async fn get_block_hash_by_tx_hash(&self, tx_hash: &str) -> Result<BlockHash> {
-        let args = if self.is_zcash {
+        let args = if T::is_zcash() {
             json!([tx_hash, 1])
         } else {
             json!([tx_hash, true])
@@ -120,88 +109,34 @@ impl UTXOBridgeClient {
                 BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
             })?;
 
-        if self.is_zcash {
-            let bytes = Vec::from_hex(&response.result).expect("Invalid hex");
-            let mut cursor = std::io::Cursor::new(bytes);
-            let block = zebra_chain::block::Block::zcash_deserialize(&mut cursor)
-                .expect("Deserialization failed");
+        let block = T::Block::from_str(&response.result)?;
+        let transactions = block.transactions();
 
-            let tx_block_blockhash = block.header.hash();
+        let tx_index = transactions
+            .iter()
+            .position(|hash| hash.to_string() == tx_hash)
+            .ok_or(BridgeSdkError::InvalidArgument(
+                "btc tx not found in block".to_string(),
+            ))?;
 
-            let transactions = block
-                .transactions
-                .iter()
-                .map(|tx| tx.hash().0.into())
-                .collect::<Vec<H256>>();
+        let merkle_proof = merkle_tools::merkle_proof_calculator(transactions, tx_index);
+        let merkle_proof_str = merkle_proof
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
 
-            let tx_index = transactions
-                .iter()
-                .position(|hash| hash.to_string() == tx_hash)
-                .ok_or(BridgeSdkError::InvalidArgument(
-                    "btc tx not found in block".to_string(),
-                ))?;
-
-            let merkle_proof = merkle_tools::merkle_proof_calculator(transactions, tx_index);
-
-            let merkle_proof_str = merkle_proof
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
-            
-            let mut tx_data = Vec::new();
-            block.transactions[tx_index]
-                .zcash_serialize(&mut tx_data)
-                .expect("Serialization failed");
-
-            Ok(TxProof {
-                tx_bytes: tx_data,
-                tx_block_blockhash: tx_block_blockhash.to_string(),
-                tx_index: tx_index
-                    .try_into()
-                    .expect("Error on convert usize into u64"),
-                merkle_proof: merkle_proof_str,
-            })
-        } else {
-            let block: bitcoin::Block = encode::deserialize_hex(&response.result).map_err(|e| {
-                BridgeSdkError::BtcClientError(format!("Failed to parse block: {e}"))
-            })?;
-
-            let tx_block_blockhash = block.header.block_hash();
-
-            let transactions = block
-                .txdata
-                .iter()
-                .map(|tx| tx.compute_txid().to_byte_array().into())
-                .collect::<Vec<H256>>();
-
-            let tx_index = transactions
-                .iter()
-                .position(|hash| hash.to_string() == tx_hash)
-                .ok_or(BridgeSdkError::InvalidArgument(
-                    "btc tx not found in block".to_string(),
-                ))?;
-
-            let merkle_proof = merkle_tools::merkle_proof_calculator(transactions, tx_index);
-            let merkle_proof_str = merkle_proof
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
-
-            let tx_data = serialize(&block.txdata[tx_index]);
-
-            Ok(TxProof {
-                tx_bytes: tx_data,
-                tx_block_blockhash: tx_block_blockhash.to_string(),
-                tx_index: tx_index
-                    .try_into()
-                    .expect("Error on convert usize into u64"),
-                merkle_proof: merkle_proof_str,
-            })
-        }
+        Ok(TxProof {
+            tx_bytes: block.tx_data(tx_index),
+            tx_block_blockhash: block.hash(),
+            tx_index: tx_index
+                .try_into()
+                .expect("Error on convert usize into u64"),
+            merkle_proof: merkle_proof_str,
+        })
     }
 
     pub async fn get_fee_rate(&self) -> Result<u64> {
-        if self.is_zcash {
+        if T::is_zcash() {
             return Ok(1000);
         }
 
@@ -264,27 +199,5 @@ impl UTXOBridgeClient {
             })?;
 
         Ok(response.result)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_fee_rate() {
-        let client = UTXOBridgeClient::new(
-            "https://zcash-testnet.gateway.tatum.io/".to_string(),
-            "t-682d8651b332cd4387ac0270-9c4b05ca2c0d4456a1dcd5ea".into(),
-            true,
-        );
-
-        let proof = client
-            .extract_btc_proof("e54da658a61074eb36ac8c9353da3348f899e9c012fd3ba11f22dca30ce9cf11")
-            .await
-            .unwrap();
-        println!("Proof: {:?}", proof);
-        // let fee = client.get_fee_rate().await.unwrap();
-        // println!("Fee rate: {}", fee);
     }
 }

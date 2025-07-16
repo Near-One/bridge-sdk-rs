@@ -15,7 +15,7 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
-use btc_bridge_client::UTXOBridgeClient;
+use btc_bridge_client::{types::Bitcoin, UTXOBridgeClient};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -39,7 +39,7 @@ pub struct OmniConnector {
     arb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
-    btc_bridge_client: Option<UTXOBridgeClient>,
+    btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -1456,7 +1456,7 @@ impl OmniConnector {
             ))
     }
 
-    pub fn btc_bridge_client(&self) -> Result<&UTXOBridgeClient> {
+    pub fn btc_bridge_client(&self) -> Result<&UTXOBridgeClient<Bitcoin>> {
         self.btc_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
