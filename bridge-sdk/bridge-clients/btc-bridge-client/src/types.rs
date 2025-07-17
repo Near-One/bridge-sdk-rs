@@ -5,7 +5,7 @@ use bitcoin::{
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use merkle_tools::H256;
-use zebra_rpc::client::zebra_chain::{
+use zebra_chain::{
     self,
     serialization::{ZcashDeserialize, ZcashSerialize},
 };

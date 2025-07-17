@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
-use btc_bridge_client::{types::Bitcoin, UTXOBridgeClient};
+use btc_bridge_client::{types::Bitcoin, AuthOptions, UTXOBridgeClient};
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -881,9 +881,18 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let btc_client_auth = if let Some(api_key) = combined_config.btc_api_key {
+        AuthOptions::XApiKey(api_key)
+    } else if let Some(basic_auth) = combined_config.btc_basic_auth {
+        let (user, password) = basic_auth.split_once(':').unwrap();
+        AuthOptions::BasicAuth(user.to_string(), password.to_string())
+    } else {
+        AuthOptions::None
+    };
+
     let btc_bridge_client = UTXOBridgeClient::<Bitcoin>::new(
         combined_config.btc_endpoint.unwrap(),
-        combined_config.btc_api_key.as_deref(),
+        btc_client_auth,
     );
 
     OmniConnectorBuilder::default()

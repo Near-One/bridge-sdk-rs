@@ -1,5 +1,5 @@
 use bitcoin::BlockHash;
-use bitcoincore_rpc::bitcoin;
+use bitcoincore_rpc::{bitcoin, jsonrpc::base64};
 use bitcoincore_rpc::json::EstimateSmartFeeResult;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use reqwest::{
@@ -12,6 +12,12 @@ use std::{marker::PhantomData, str::FromStr};
 use crate::types::{TxProof, UTXOChain, UTXOChainBlock};
 
 pub mod types;
+
+pub enum AuthOptions {
+    None,
+    XApiKey(String),
+    BasicAuth(String, String),
+}
 
 #[allow(dead_code)]
 #[derive(serde::Deserialize, Debug)]
@@ -28,10 +34,18 @@ pub struct UTXOBridgeClient<T: UTXOChain> {
 }
 
 impl<T: UTXOChain> UTXOBridgeClient<T> {
-    pub fn new(rpc_endpoint: String, api_key: Option<&str>) -> Self {
+    pub fn new(rpc_endpoint: String, auth: AuthOptions) -> Self {
         let mut headers = HeaderMap::new();
-        if let Some(key) = api_key {
-            headers.insert("x-api-key", HeaderValue::from_str(key).unwrap());
+
+        match auth {
+            AuthOptions::None => {}
+            AuthOptions::XApiKey(api_key) => {
+                headers.insert("x-api-key", HeaderValue::from_str(&api_key).unwrap());
+            }
+            AuthOptions::BasicAuth(username, password) => {
+                let auth_value = format!("Basic {}", base64::encode(format!("{}:{}", username, password)));
+                headers.insert("Authorization", HeaderValue::from_str(&auth_value).unwrap());
+            }
         }
 
         UTXOBridgeClient::<T> {
