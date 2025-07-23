@@ -2,13 +2,14 @@ use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
+use eth_light_client::EthLightClient;
 use ethers::prelude::*;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
-use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
+use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{
@@ -40,6 +41,7 @@ pub struct OmniConnector {
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<BtcBridgeClient>,
+    eth_light_client: Option<EthLightClient>,
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -360,10 +362,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::InitTransfer)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::InitTransfer, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -574,10 +575,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::DeployToken)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::DeployToken, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -605,10 +605,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::LogMetadata)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::LogMetadata, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -1440,6 +1439,17 @@ impl OmniConnector {
         ))
     }
 
+    pub fn evm_light_client(&self, chain_kind: ChainKind) -> Result<&EthLightClient> {
+        let light_client = match chain_kind {
+            ChainKind::Eth => self.eth_light_client.as_ref(),
+            _ => unreachable!("Unsupported chain kind"),
+        };
+
+        light_client.ok_or(BridgeSdkError::ConfigError(
+            "EVM light client not configured".to_string(),
+        ))
+    }
+
     pub fn solana_bridge_client(&self) -> Result<&SolanaBridgeClient> {
         self.solana_bridge_client
             .as_ref()
@@ -1462,5 +1472,27 @@ impl OmniConnector {
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC bridge client not configured".to_string(),
             ))
+    }
+
+    async fn get_proof_for_event(
+        &self,
+        tx_hash: TxHash,
+        proof_kind: ProofKind,
+        chain_kind: ChainKind,
+    ) -> Result<EvmProof> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        let evm_light_client = self.evm_light_client(chain_kind)?;
+        let last_eth_block_number_on_near = evm_light_client.get_last_block_number().await?;
+        let tx_block_number = evm_bridge_client.get_tx_block_number(tx_hash).await?;
+
+        if last_eth_block_number_on_near < tx_block_number {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                last_eth_block_number_on_near,
+            ));
+        }
+
+        evm_bridge_client
+            .get_proof_for_event(tx_hash, proof_kind)
+            .await
     }
 }

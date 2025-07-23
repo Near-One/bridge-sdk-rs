@@ -11,7 +11,8 @@ members = [
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
     "bridge-sdk/bridge-clients/btc-bridge-client",
     "bridge-sdk/crypto-utils",
-    "bridge-sdk/btc-utils"
+    "bridge-sdk/btc-utils",
+    "bridge-sdk/eth-light-client"
 ]
 
 [workspace.dependencies]
@@ -58,6 +59,7 @@ spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"]
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }
+eth-light-client =  { path = "bridge-sdk/eth-light-client" }
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"

@@ -3,6 +3,7 @@ use std::{path::Path, str::FromStr};
 use clap::Subcommand;
 
 use btc_bridge_client::BtcBridgeClient;
+use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -821,7 +822,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let combined_config = combined_config(cli_config, network);
 
     let near_bridge_client = NearBridgeClientBuilder::default()
-        .endpoint(combined_config.near_rpc)
+        .endpoint(combined_config.near_rpc.clone())
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
@@ -883,6 +884,12 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let btc_bridge_client = BtcBridgeClient::new(&combined_config.btc_endpoint.unwrap());
 
+    let eth_light_client = EthLightClientBuilder::default()
+        .endpoint(combined_config.near_rpc)
+        .eth_light_client_id(combined_config.eth_light_client_id)
+        .build()
+        .unwrap();
+
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))
         .eth_bridge_client(Some(eth_bridge_client))
@@ -891,6 +898,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
+        .eth_light_client(Some(eth_light_client))
         .build()
         .unwrap()
 }
