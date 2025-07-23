@@ -174,7 +174,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
-            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_MAINNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_MAINNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_MAINNET),
@@ -215,7 +215,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
-            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_TESTNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_TESTNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_TESTNET),
@@ -256,7 +256,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
-            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_DEVNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_DEVNET),

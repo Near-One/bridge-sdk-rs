@@ -1,7 +1,7 @@
 /// Mainnet
 pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
-pub const ETH_LIGHT_CLIENT_MAINNET: &str = "client-eth2.bridge.near";
+pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 
 pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
@@ -31,7 +31,7 @@ pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
-pub const ETH_LIGHT_CLIENT_TESTNET: &str = "client-eth2.sepolia.testnet";
+pub const ETH_LIGHT_CLIENT_ID_TESTNET: &str = "client-eth2.sepolia.testnet";
 
 pub const ETH_RPC_TESTNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_TESTNET: u64 = 11_155_111;
@@ -61,7 +61,7 @@ pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_DEVNET: &str = "omni-locker.testnet";
-pub const ETH_LIGHT_CLIENT_DEVNET: &str = "client-eth2.sepolia.testnet";
+pub const ETH_LIGHT_CLIENT_ID_DEVNET: &str = "client-eth2.sepolia.testnet";
 
 pub const ETH_RPC_DEVNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_DEVNET: u64 = 11_155_111;
