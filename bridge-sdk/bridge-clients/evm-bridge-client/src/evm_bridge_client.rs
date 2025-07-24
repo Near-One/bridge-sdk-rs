@@ -51,6 +51,23 @@ impl EvmBridgeClient {
         Self::default()
     }
 
+    // Gets the block number of a transaction
+    pub async fn get_tx_block_number(&self, tx_hash: TxHash) -> Result<u64> {
+        let endpoint = self.endpoint()?;
+        let client = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let tx_block_number = client
+            .get_transaction(tx_hash)
+            .await?
+            .and_then(|r| r.block_number)
+            .ok_or_else(|| {
+                BridgeSdkError::UnknownError("Failed to get tx block number".to_string())
+            })?;
+
+        Ok(tx_block_number.as_u64())
+    }
+
     /// Gets last finalized block number on EVM chain
     pub async fn get_last_block_number(&self) -> Result<u64> {
         let endpoint = self.endpoint()?;
