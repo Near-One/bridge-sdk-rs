@@ -172,7 +172,7 @@ impl EvmBridgeClient {
         receiver: OmniAddress,
         fee: Fee,
         message: String,
-        tx_nonce: Option<U256>,
+        mut tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
 
@@ -196,6 +196,7 @@ impl EvmBridgeClient {
                     .await?
                     .await
                     .map_err(ContractError::from)?;
+                tx_nonce = tx_nonce.map(|nonce| nonce + 1);
 
                 tracing::debug!("Approved tokens for spending");
             }
@@ -217,8 +218,7 @@ impl EvmBridgeClient {
         );
         let mut transfer_call = transfer_call.value(value);
 
-        // Nonce is incremented since previous was used for approval
-        self.prepare_tx_for_sending(&mut transfer_call, tx_nonce.map(|nonce| nonce + 1))
+        self.prepare_tx_for_sending(&mut transfer_call, tx_nonce)
             .await?;
         let tx = transfer_call.send().await?;
 
