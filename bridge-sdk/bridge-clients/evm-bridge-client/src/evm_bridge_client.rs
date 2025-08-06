@@ -188,8 +188,7 @@ impl EvmBridgeClient {
 
             let amount256: ethers::types::U256 = amount.into();
             if allowance < amount256 {
-                let mut approval_call =
-                    bridge_token.approve(omni_bridge_address, amount256 - allowance);
+                let mut approval_call = bridge_token.approve(omni_bridge_address, amount256);
                 self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
                     .await?;
                 approval_call
