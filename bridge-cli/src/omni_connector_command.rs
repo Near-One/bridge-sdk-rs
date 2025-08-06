@@ -101,8 +101,8 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer on NEAR using EVM proof")]
-    NearFinTransferWithEvmProof {
+    #[clap(about = "Finalize a transfer on NEAR")]
+    NearFinTransfer {
         #[clap(short, long, help = "Origin chain of the transfer to finalize")]
         chain: ChainKind,
         #[clap(
@@ -111,12 +111,6 @@ pub enum OmniConnectorSubCommand {
             help = "Transaction hash of the InitTransfer call on other chain"
         )]
         tx_hash: String,
-        #[clap(
-            short,
-            long,
-            help = "Storage deposit actions. Format: token_id1:account_id1:amount1,token_id2:account_id2:amount2,..."
-        )]
-        storage_deposit_actions: Vec<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -506,32 +500,56 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearFinTransferWithEvmProof {
+        OmniConnectorSubCommand::NearFinTransfer {
             chain,
             tx_hash,
-            storage_deposit_actions,
             config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                    storage_deposit_actions: storage_deposit_actions
-                        .iter()
-                        .map(|action| {
-                            let parts: Vec<&str> = action.split(':').collect();
-                            omni_types::locker_args::StorageDepositAction {
-                                token_id: parts[0].parse().unwrap(),
-                                account_id: parts[1].parse().unwrap(),
-                                storage_deposit_amount: parts[2].parse().ok(),
-                            }
-                        })
-                        .collect(),
-                    transaction_options: TransactionOptions::default(),
-                })
-                .await
-                .unwrap();
-        }
+        } => match chain {
+            ChainKind::Eth => {
+                let connector = omni_connector(network, config_cli);
+                let storage_deposit_actions = connector
+                    .get_storage_deposit_actions_for_evm_tx(chain, tx_hash.parse().unwrap())
+                    .await
+                    .unwrap();
+
+                connector
+                    .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
+                        chain_kind: chain,
+                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        storage_deposit_actions,
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Arb | ChainKind::Base => {
+                let connector = omni_connector(network, config_cli);
+
+                let vaa = connector
+                    .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
+                    .await
+                    .unwrap();
+
+                let storage_deposit_actions = connector
+                    .get_storage_deposit_actions_for_evm_tx(chain, tx_hash.parse().unwrap())
+                    .await
+                    .unwrap();
+
+                connector
+                    .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
+                        chain_kind: chain,
+                        storage_deposit_actions,
+                        vaa,
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            }
+            _ => {
+                // TODO: add support for Solana
+                panic!("Unsupported chain for NearFinTransfer: {:?}", chain);
+            }
+        },
         OmniConnectorSubCommand::NearFinTransferWithVaa {
             chain,
             storage_deposit_actions,

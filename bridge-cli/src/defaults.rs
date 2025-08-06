@@ -1,5 +1,5 @@
 /// Mainnet
-pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.near.org/";
+pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
 pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 
