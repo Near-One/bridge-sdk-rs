@@ -1,5 +1,5 @@
 /// Mainnet
-pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.near.org/";
+pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
 pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 
@@ -29,7 +29,7 @@ pub const BTC_MAINNET: &str = "btc-client.bridge.near";
 pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 
 /// Testnet
-pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.near.org/";
+pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
 pub const ETH_LIGHT_CLIENT_ID_TESTNET: &str = "client-eth2.sepolia.testnet";
 

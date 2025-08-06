@@ -1495,4 +1495,111 @@ impl OmniConnector {
             .get_proof_for_event(tx_hash, proof_kind)
             .await
     }
+
+    pub async fn get_storage_deposit_actions_for_evm_tx(
+        &self,
+        chain: ChainKind,
+        tx_hash: TxHash,
+    ) -> Result<Vec<StorageDepositAction>> {
+        // TODO: add fast transfer support
+        let transfer_event = self.evm_get_transfer_event(chain, tx_hash).await?;
+
+        let token_address =
+            OmniAddress::new_from_evm_address(chain, H160(transfer_event.token_address.0))
+                .map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse token address: {}",
+                        transfer_event.token_address
+                    ))
+                })?;
+
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+            })?;
+
+        self.get_storage_deposit_actions(
+            chain,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            transfer_event.native_token_fee,
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions(
+        &self,
+        chain: ChainKind,
+        recipient: &OmniAddress,
+        fee_recipient: &AccountId,
+        token_address: &OmniAddress,
+        fee: u128,
+        native_fee: u128,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let mut storage_deposit_actions = Vec::new();
+        if let OmniAddress::Near(near_recipient) = recipient {
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                self.near_get_token_id(token_address.clone()).await?,
+                near_recipient.clone(),
+            )
+            .await?;
+        }
+
+        if fee > 0 {
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                self.near_get_token_id(token_address.clone()).await?,
+                fee_recipient.clone(),
+            )
+            .await?;
+        }
+
+        if native_fee > 0 {
+            let token_id = self.near_get_native_token_id(chain).await?;
+
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                token_id,
+                fee_recipient.clone(),
+            )
+            .await?;
+        }
+
+        Ok(storage_deposit_actions)
+    }
+
+    async fn add_storage_deposit_action(
+        &self,
+        storage_deposit_actions: &mut Vec<StorageDepositAction>,
+        token_id: AccountId,
+        account_id: AccountId,
+    ) -> Result<()> {
+        let storage_deposit_amount = match self
+            .near_get_required_storage_deposit(token_id.clone(), account_id.clone())
+            .await?
+        {
+            amount if amount > 0 => Some(amount),
+            _ => None,
+        };
+
+        storage_deposit_actions.push(StorageDepositAction {
+            token_id,
+            account_id,
+            storage_deposit_amount,
+        });
+
+        Ok(())
+    }
 }
