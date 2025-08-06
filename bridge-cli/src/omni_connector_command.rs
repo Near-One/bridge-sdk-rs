@@ -547,7 +547,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             }
             _ => {
                 // TODO: add support for Solana
-                panic!("Unsupported chain for NearFinTransfer: {:?}", chain);
+                panic!("Unsupported chain for NearFinTransfer: {chain:?}");
             }
         },
         OmniConnectorSubCommand::NearFinTransferWithVaa {
