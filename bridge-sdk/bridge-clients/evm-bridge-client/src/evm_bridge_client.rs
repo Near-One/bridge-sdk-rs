@@ -115,8 +115,13 @@ impl EvmBridgeClient {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
+        // TODO: uncomment when logMetadata becomes payable
+        // let wormhole_core = self.wormhole_core()?;
+
+        // let wormhole_fee = wormhole_core.message_fee().call().await?;
 
         let mut call = omni_bridge.log_metadata(address.0.into());
+        // let mut call = call.value(wormhole_fee);
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -136,6 +141,7 @@ impl EvmBridgeClient {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
+        let wormhole_core = self.wormhole_core()?;
 
         let OmniBridgeEvent::LogMetadataEvent {
             signature,
@@ -158,9 +164,12 @@ impl EvmBridgeClient {
 
         assert!(serialized_signature.len() == 65);
 
-        let mut call = omni_bridge
+        let wormhole_fee = wormhole_core.message_fee().call().await?;
+
+        let call = omni_bridge
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
+        let mut call = call.value(wormhole_fee);
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -249,6 +258,7 @@ impl EvmBridgeClient {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
+        let wormhole_core = self.wormhole_core()?;
 
         let OmniBridgeEvent::SignTransferEvent {
             message_payload,
@@ -292,7 +302,11 @@ impl EvmBridgeClient {
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let mut call = omni_bridge.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+        let wormhole_fee = wormhole_core.message_fee().call().await?;
+
+        let call = omni_bridge.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+        let mut call = call.value(wormhole_fee);
+
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
