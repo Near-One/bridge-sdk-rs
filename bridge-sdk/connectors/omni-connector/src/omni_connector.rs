@@ -828,6 +828,19 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn solana_get_transfer_event(
+        &self,
+        signature: &Signature,
+    ) -> Result<solana_bridge_client::Transfer> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+        solana_bridge_client
+            .get_transfer_event(signature)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::SolanaOtherError(format!("Failed to get transfer event: {e}"))
+            })
+    }
+
     pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
@@ -1496,6 +1509,32 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn get_storage_deposit_actions_for_tx(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+    ) -> Result<Vec<StorageDepositAction>> {
+        match chain {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+                let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
+                })?;
+                self.get_storage_deposit_actions_for_evm_tx(chain, tx_hash)
+                    .await
+            }
+            ChainKind::Sol => {
+                let signature = Signature::from_str(&tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!("Failed to parse signature: {tx_hash}"))
+                })?;
+                self.get_storage_deposit_actions_for_solana_tx(&signature)
+                    .await
+            }
+            ChainKind::Near => Err(BridgeSdkError::ConfigError(
+                "Storage deposit actions are not supported for NEAR".to_string(),
+            )),
+        }
+    }
+
     pub async fn get_storage_deposit_actions_for_evm_tx(
         &self,
         chain: ChainKind,
@@ -1534,6 +1573,49 @@ impl OmniConnector {
             &token_address,
             transfer_event.fee,
             transfer_event.native_token_fee,
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions_for_solana_tx(
+        &self,
+        signature: &Signature,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let transfer_event = self.solana_get_transfer_event(signature).await?;
+
+        let token = Pubkey::from_str(&transfer_event.token).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse token address as Pubkey: {:?}",
+                transfer_event.token
+            ))
+        })?;
+
+        let token_address = OmniAddress::new_from_slice(ChainKind::Sol, &token.to_bytes())
+            .map_err(|_| {
+                BridgeSdkError::InvalidArgument(format!("Failed to parse token address: {token}"))
+            })?;
+
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+            })?;
+
+        self.get_storage_deposit_actions(
+            ChainKind::Sol,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            u128::from(transfer_event.native_fee),
         )
         .await
     }
