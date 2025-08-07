@@ -29,8 +29,6 @@ struct CliConfig {
     eth_private_key: Option<String>,
     #[arg(long)]
     eth_bridge_token_factory_address: Option<String>,
-    #[arg(long)]
-    eth_wormhole_address: Option<String>,
 
     #[arg(long)]
     base_rpc: Option<String>,
@@ -94,7 +92,6 @@ impl CliConfig {
             eth_bridge_token_factory_address: self
                 .eth_bridge_token_factory_address
                 .or(other.eth_bridge_token_factory_address),
-            eth_wormhole_address: self.eth_wormhole_address.or(other.eth_wormhole_address),
 
             base_rpc: self.base_rpc.or(other.base_rpc),
             base_chain_id: self.base_chain_id.or(other.base_chain_id),
@@ -144,7 +141,6 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         eth_private_key: env::var("ETH_PRIVATE_KEY").ok(),
         eth_bridge_token_factory_address: env::var("ETH_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
-        eth_wormhole_address: env::var("ETH_WORMHOLE_ADDRESS").ok(),
 
         base_rpc: env::var("BASE_RPC").ok(),
         base_chain_id: env::var("BASE_CHAIN_ID")
@@ -194,7 +190,6 @@ fn default_config(network: Network) -> CliConfig {
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
-            eth_wormhole_address: Some(defaults::ETH_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             base_rpc: Some(defaults::BASE_RPC_MAINNET.to_owned()),
             base_chain_id: Some(defaults::BASE_CHAIN_ID_MAINNET),
@@ -238,7 +233,6 @@ fn default_config(network: Network) -> CliConfig {
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
-            eth_wormhole_address: Some(defaults::ETH_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             base_rpc: Some(defaults::BASE_RPC_TESTNET.to_owned()),
             base_chain_id: Some(defaults::BASE_CHAIN_ID_TESTNET),
@@ -282,7 +276,6 @@ fn default_config(network: Network) -> CliConfig {
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
-            eth_wormhole_address: Some(defaults::ETH_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             base_rpc: Some(defaults::BASE_RPC_DEVNET.to_owned()),
             base_chain_id: Some(defaults::BASE_CHAIN_ID_DEVNET),

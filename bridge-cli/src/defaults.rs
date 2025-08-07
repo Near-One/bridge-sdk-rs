@@ -7,7 +7,6 @@ pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xe00c629aFaCCb0510995A2B95560E446A24c85B9";
-pub const ETH_WORMHOLE_ADDRESS_MAINNET: &str = "0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B";
 
 pub const BASE_RPC_MAINNET: &str = "https://base.llamarpc.com";
 pub const BASE_CHAIN_ID_MAINNET: u64 = 8453;
@@ -40,7 +39,6 @@ pub const ETH_RPC_TESTNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_TESTNET: u64 = 11_155_111;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x68a86e0Ea5B1d39F385c1326e4d493526dFe4401";
-pub const ETH_WORMHOLE_ADDRESS_TESTNET: &str = "0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78";
 
 pub const BASE_RPC_TESTNET: &str = "https://base-sepolia-rpc.publicnode.com";
 pub const BASE_CHAIN_ID_TESTNET: u64 = 84_532;
@@ -73,7 +71,6 @@ pub const ETH_RPC_DEVNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_DEVNET: u64 = 11_155_111;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x3701B9859Dbb9a4333A3dd933ab18e9011ddf2C8";
-pub const ETH_WORMHOLE_ADDRESS_DEVNET: &str = "0x4a8bc80Ed5a4067f1CCf107057b8270E0cC11A78";
 
 pub const BASE_RPC_DEVNET: &str = "https://base-sepolia-rpc.publicnode.com";
 pub const BASE_CHAIN_ID_DEVNET: u64 = 84_532;
