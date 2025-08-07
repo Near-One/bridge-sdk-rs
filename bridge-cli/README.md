@@ -179,16 +179,10 @@ bridge-cli near-sign-transfer \
     --fee <FEE_AMOUNT> \
     --native-fee <NATIVE_FEE_AMOUNT>
 
-# Finalize a transfer on NEAR (for transfers from EVM)
+# Finalize a transfer on NEAR
 bridge-cli near-fin-transfer \
     --chain <SOURCE_CHAIN> \
     --tx-hash <TX_HASH> \
-
-# Finalize a transfer on NEAR (using VAA, use this method only for transfers from Solana)
-bridge-cli near-fin-transfer-with-vaa \
-    --chain <SOURCE_CHAIN> \
-    --storage-deposit-actions <TOKEN1:ACCOUNT1:AMOUNT1,...> \
-    --vaa <VAA_DATA>
 ```
 
 #### EVM Chain Operations
