@@ -809,6 +809,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
         .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.eth_wormhole_address)
         .build()
         .unwrap();
 
@@ -817,6 +818,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
         .omni_bridge_address(combined_config.base_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.base_wormhole_address)
         .build()
         .unwrap();
 
@@ -825,6 +827,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
         .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.arb_wormhole_address)
         .build()
         .unwrap();
 

@@ -32,6 +32,13 @@ abigen!(
     ]"#
 );
 
+abigen!(
+    WormholeCore,
+    r#"[
+        function messageFee() external view returns (uint256)
+    ]"#
+);
+
 /// Bridging NEAR-originated NEP-141 tokens to EVM and back
 #[derive(Builder, Default, Clone)]
 pub struct EvmBridgeClient {
@@ -43,6 +50,8 @@ pub struct EvmBridgeClient {
     private_key: Option<String>,
     #[doc = r"OmniBridge address on EVM. Required for `deploy_token`, `mint`, `burn`"]
     omni_bridge_address: Option<String>,
+    #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
+    wormhole_core_address: Option<String>,
 }
 
 impl EvmBridgeClient {
@@ -175,6 +184,7 @@ impl EvmBridgeClient {
         mut tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
+        let wormhole_core = self.wormhole_core()?;
 
         if token != H160::zero() {
             let bridge_token = &self.bridge_token(token)?;
@@ -202,11 +212,12 @@ impl EvmBridgeClient {
             }
         }
 
-        let value = if token == H160::zero() {
-            U256::from(fee.native_fee.0) + U256::from(amount)
-        } else {
-            U256::from(fee.native_fee.0)
-        };
+        let wormhole_fee = wormhole_core.message_fee().call().await?;
+        let mut value = U256::from(fee.native_fee.0) + wormhole_fee;
+
+        if token == H160::zero() {
+            value += U256::from(amount);
+        }
 
         let transfer_call = omni_bridge.init_transfer(
             token,
@@ -380,6 +391,37 @@ impl EvmBridgeClient {
         let client = Arc::new(signer);
 
         Ok(OmniBridge::new(self.omni_bridge_address()?, client))
+    }
+
+    pub fn wormhole_core_address(&self) -> Result<Address> {
+        self.wormhole_core_address
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Wormhole core address is not set".to_string(),
+            ))
+            .and_then(|addr| {
+                Address::from_str(addr).map_err(|_| {
+                    BridgeSdkError::ConfigError(
+                        "wormhole_core_address is not a valid EVM address".to_string(),
+                    )
+                })
+            })
+    }
+
+    pub fn wormhole_core(
+        &self,
+    ) -> Result<WormholeCore<SignerMiddleware<Provider<Http>, LocalWallet>>> {
+        let endpoint = self.endpoint()?;
+
+        let provider = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let wallet = self.signer()?;
+
+        let signer = SignerMiddleware::new(provider, wallet);
+        let client = Arc::new(signer);
+
+        Ok(WormholeCore::new(self.wormhole_core_address()?, client))
     }
 
     pub fn bridge_token(
