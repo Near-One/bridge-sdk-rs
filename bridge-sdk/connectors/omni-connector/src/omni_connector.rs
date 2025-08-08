@@ -38,6 +38,7 @@ pub struct OmniConnector {
     eth_bridge_client: Option<EvmBridgeClient>,
     base_bridge_client: Option<EvmBridgeClient>,
     arb_bridge_client: Option<EvmBridgeClient>,
+    bnb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<BtcBridgeClient>,
@@ -1111,15 +1112,17 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<String> {
         match &token {
-            OmniAddress::Eth(address) | OmniAddress::Arb(address) | OmniAddress::Base(address) => {
-                self.evm_log_metadata(
+            OmniAddress::Eth(address)
+            | OmniAddress::Arb(address)
+            | OmniAddress::Base(address)
+            | OmniAddress::Bnb(address) => self
+                .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
                     transaction_options.nonce.map(std::convert::Into::into),
                 )
                 .await
-                .map(|hash| hash.to_string())
-            }
+                .map(|hash| hash.to_string()),
             OmniAddress::Near(token_id) => self
                 .near_log_metadata(token_id.to_string(), transaction_options)
                 .await
@@ -1394,7 +1397,7 @@ impl OmniConnector {
                 })
                 .await
             }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -1441,10 +1444,11 @@ impl OmniConnector {
 
     pub fn evm_bridge_client(&self, chain_kind: ChainKind) -> Result<&EvmBridgeClient> {
         let bridge_client = match chain_kind {
+            ChainKind::Eth => self.eth_bridge_client.as_ref(),
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
-            ChainKind::Eth => self.eth_bridge_client.as_ref(),
-            _ => unreachable!("Unsupported chain kind"),
+            ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
+            ChainKind::Near | ChainKind::Sol => unreachable!("Unsupported chain kind"),
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
@@ -1515,7 +1519,7 @@ impl OmniConnector {
         tx_hash: String,
     ) -> Result<Vec<StorageDepositAction>> {
         match chain {
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;
