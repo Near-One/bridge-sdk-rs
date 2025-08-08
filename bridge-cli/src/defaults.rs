@@ -12,11 +12,13 @@ pub const BASE_RPC_MAINNET: &str = "https://base.llamarpc.com";
 pub const BASE_CHAIN_ID_MAINNET: u64 = 8453;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
+pub const BASE_WORMHOLE_ADDRESS_MAINNET: &str = "0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6";
 
 pub const ARB_RPC_MAINNET: &str = "https://arbitrum.llamarpc.com";
 pub const ARB_CHAIN_ID_MAINNET: u64 = 42_161;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
+pub const ARB_WORMHOLE_ADDRESS_MAINNET: &str = "0xa5f208e072434bC67592E4C49C1B991BA79BCA46";
 
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
@@ -42,11 +44,13 @@ pub const BASE_RPC_TESTNET: &str = "https://base-sepolia-rpc.publicnode.com";
 pub const BASE_CHAIN_ID_TESTNET: u64 = 84_532;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xa56b860017152cD296ad723E8409Abd6e5D86d4d";
+pub const BASE_WORMHOLE_ADDRESS_TESTNET: &str = "0x79A1027a6A159502049F10906D333EC57E95F083";
 
 pub const ARB_RPC_TESTNET: &str = "https://arbitrum-sepolia-rpc.publicnode.com";
 pub const ARB_CHAIN_ID_TESTNET: u64 = 421_614;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x0C981337fFe39a555d3A40dbb32f21aD0eF33FFA";
+pub const ARB_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
@@ -72,11 +76,13 @@ pub const BASE_RPC_DEVNET: &str = "https://base-sepolia-rpc.publicnode.com";
 pub const BASE_CHAIN_ID_DEVNET: u64 = 84_532;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x0C981337fFe39a555d3A40dbb32f21aD0eF33FFA";
+pub const BASE_WORMHOLE_ADDRESS_DEVNET: &str = "0x79A1027a6A159502049F10906D333EC57E95F083";
 
 pub const ARB_RPC_DEVNET: &str = "https://arbitrum-sepolia-rpc.publicnode.com";
 pub const ARB_CHAIN_ID_DEVNET: u64 = 421_614;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
+pub const ARB_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_DEVNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEpGSS5zeBge28p";

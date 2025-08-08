@@ -38,6 +38,8 @@ struct CliConfig {
     base_private_key: Option<String>,
     #[arg(long)]
     base_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    base_wormhole_address: Option<String>,
 
     #[arg(long)]
     arb_rpc: Option<String>,
@@ -47,6 +49,8 @@ struct CliConfig {
     arb_private_key: Option<String>,
     #[arg(long)]
     arb_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    arb_wormhole_address: Option<String>,
 
     #[arg(long)]
     solana_rpc: Option<String>,
@@ -95,6 +99,7 @@ impl CliConfig {
             base_bridge_token_factory_address: self
                 .base_bridge_token_factory_address
                 .or(other.base_bridge_token_factory_address),
+            base_wormhole_address: self.base_wormhole_address.or(other.base_wormhole_address),
 
             arb_rpc: self.arb_rpc.or(other.arb_rpc),
             arb_chain_id: self.arb_chain_id.or(other.arb_chain_id),
@@ -102,6 +107,7 @@ impl CliConfig {
             arb_bridge_token_factory_address: self
                 .arb_bridge_token_factory_address
                 .or(other.arb_bridge_token_factory_address),
+            arb_wormhole_address: self.arb_wormhole_address.or(other.arb_wormhole_address),
 
             solana_rpc: self.solana_rpc.or(other.solana_rpc),
             solana_bridge_address: self.solana_bridge_address.or(other.solana_bridge_address),
@@ -142,6 +148,7 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         base_private_key: env::var("BASE_PRIVATE_KEY").ok(),
         base_bridge_token_factory_address: env::var("BASE_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        base_wormhole_address: env::var("BASE_WORMHOLE_ADDRESS").ok(),
 
         arb_rpc: env::var("ARB_RPC").ok(),
         arb_chain_id: env::var("ARB_CHAIN_ID")
@@ -149,6 +156,7 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         arb_private_key: env::var("ARB_PRIVATE_KEY").ok(),
         arb_bridge_token_factory_address: env::var("ARB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        arb_wormhole_address: env::var("ARB_WORMHOLE_ADDRESS").ok(),
 
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
@@ -189,6 +197,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_MAINNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_MAINNET),
@@ -196,6 +205,7 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
@@ -230,6 +240,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_TESTNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_TESTNET),
@@ -237,6 +248,7 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
@@ -271,6 +283,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_DEVNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_DEVNET),
@@ -278,6 +291,7 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
