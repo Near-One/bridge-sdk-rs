@@ -824,8 +824,6 @@ impl OmniConnector {
             .extract_transfer_log(near_tx_hash, None, "SignTransferEvent")
             .await?;
 
-        println!("Transfer log: {}", transfer_log);
-
         evm_bridge_client
             .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
             .await
