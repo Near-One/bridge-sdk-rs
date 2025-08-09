@@ -280,10 +280,11 @@ impl EvmBridgeClient {
             origin_chain: message_payload.transfer_id.origin_chain.into(),
             origin_nonce: message_payload.transfer_id.origin_nonce,
             token_address: match message_payload.token_address {
-                OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {
-                    addr.0.into()
-                }
-                _ => {
+                OmniAddress::Eth(addr)
+                | OmniAddress::Base(addr)
+                | OmniAddress::Arb(addr)
+                | OmniAddress::Bnb(addr) => addr.0.into(),
+                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported token address type in SignTransferEvent: {:?}",
                         message_payload.token_address
@@ -292,10 +293,11 @@ impl EvmBridgeClient {
             },
             amount: message_payload.amount.into(),
             recipient: match message_payload.recipient {
-                OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {
-                    H160(addr.0)
-                }
-                _ => {
+                OmniAddress::Eth(addr)
+                | OmniAddress::Base(addr)
+                | OmniAddress::Arb(addr)
+                | OmniAddress::Bnb(addr) => H160(addr.0),
+                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported recipient address type in SignTransferEvent: {:?}",
                         message_payload.recipient
