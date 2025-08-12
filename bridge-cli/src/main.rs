@@ -234,12 +234,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
-            // TODO: Replace with actual BNB defaults once it'll be deployed on mainnet
-            bnb_rpc: None,
-            bnb_chain_id: None,
+            bnb_rpc: Some(defaults::BNB_RPC_MAINNET.to_owned()),
+            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_MAINNET),
             bnb_private_key: None,
-            bnb_bridge_token_factory_address: None,
-            bnb_wormhole_address: None,
+            bnb_bridge_token_factory_address: Some(
+                defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
+            bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
