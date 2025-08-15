@@ -24,7 +24,7 @@ thiserror = "2.0.3"
 ethers = "2.0.14"
 ethers-core = "2.0.14"
 ethereum-types = "0.14.1"
-tokio = { version = "1.38.0", features = ["full"]}
+tokio = { version = "1.38.0", features = ["full"] }
 serde = { version = "1.0" }
 hex = "0.4.3"
 serde_json = "1.0.117"
@@ -58,6 +58,7 @@ spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"]
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }
+zcash_primitives = "0.24.0"
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"

@@ -469,6 +469,7 @@ impl OmniConnector {
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        tracing::info!("Init neat to bitoin transfer");
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
         let utxos = near_bridge_client.get_utxos().await?;

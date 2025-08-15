@@ -223,6 +223,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc = self.btc()?;
         let btc_connector = self.btc_connector()?;
+        tracing::info!("Init BTC transfer");
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -280,6 +281,7 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc_connector = self.btc_connector()?;
 
+        tracing::info!("Get UTXOs");
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
@@ -288,13 +290,18 @@ impl NearBridgeClient {
                 args: serde_json::json!({}),
             },
         )
-        .await?;
+        .await;
+
+        tracing::info!("Response = {response:?}");
+        let response = response?;
 
         let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
+        tracing::info!("UTXOs = {utxos:?}");
         Ok(utxos)
     }
 
     pub async fn get_withdraw_fee(&self) -> Result<u128> {
+        tracing::info!("Get withdraw fee");
         let config = self.get_config().await?;
         Ok(config.withdraw_bridge_fee.fee_min)
     }

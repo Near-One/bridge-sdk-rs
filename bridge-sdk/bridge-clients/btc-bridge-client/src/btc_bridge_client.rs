@@ -1,13 +1,17 @@
-use bitcoin::consensus::deserialize;
+use crate::bitcoin::transaction;
+use bitcoin::consensus::encode::Error;
+use bitcoin::consensus::{deserialize, Decodable};
 use bitcoin::hex::FromHex;
+use bitcoin::io::Read;
 use bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
 use bitcoincore_rpc::jsonrpc::Transport;
-use bitcoincore_rpc::{bitcoin, jsonrpc, RpcApi};
+use bitcoincore_rpc::{bitcoin, jsonrpc, RawTx, RpcApi};
 use bridge_connector_common::result::{BridgeSdkError, Result as BridgeResult};
 use jsonrpc::{Request, Response};
 use std::str::FromStr;
+use zcash_primitives::consensus::BranchId;
 use zebra_chain;
 use zebra_chain::serialization::{ZcashDeserialize, ZcashSerialize};
 
@@ -192,7 +196,8 @@ impl BtcBridgeClient {
     }
 
     pub fn get_fee_rate(&self) -> BridgeResult<u64> {
-        let fee_rate = self
+        return Ok(1000);
+        /*let fee_rate = self
             .bitcoin_client
             .estimate_smart_fee(2, None)
             .map_err(|err| {
@@ -203,14 +208,20 @@ impl BtcBridgeClient {
                 "Error on estimate fee_rate".to_string(),
             ))?;
 
-        Ok(fee_rate.to_sat())
+        Ok(fee_rate.to_sat())*/
     }
 
     pub fn send_tx(&self, tx_bytes: &[u8]) -> BridgeResult<String> {
-        let tx: Transaction = deserialize(tx_bytes).expect("Failed to deserialize transaction");
+        let tx: ZCashTransaction =
+            deserialize(tx_bytes).expect("Failed to deserialize transaction");
+
+        let mut cursor = std::io::Cursor::new(tx_bytes);
+        let _ =
+            zcash_primitives::transaction::Transaction::read(&mut cursor, BranchId::Nu6_1).unwrap();
+
         let tx_hash = self
             .bitcoin_client
-            .send_raw_transaction(&tx)
+            .send_raw_transaction(tx)
             .map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on sending BTC transaction: {err}"))
             })?;
@@ -230,5 +241,26 @@ impl BtcBridgeClient {
             .collect();
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ZCashTransaction {
+    pub hex_str: String,
+}
+
+impl Decodable for ZCashTransaction {
+    fn consensus_decode<R: Read + ?Sized>(reader: &mut R) -> Result<Self, Error> {
+        let mut data = vec![];
+        reader.read_to_limit(&mut data, 100000);
+        Ok(Self {
+            hex_str: hex::encode(data),
+        })
+    }
+}
+
+impl RawTx for ZCashTransaction {
+    fn raw_hex(self) -> String {
+        self.hex_str
     }
 }

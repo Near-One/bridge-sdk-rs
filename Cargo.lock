@@ -887,9 +887,9 @@ dependencies = [
 
 [[package]]
 name = "block-buffer"
-version = "0.11.0-rc.4"
+version = "0.11.0-rc.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a229bfd78e4827c91b9b95784f69492c1b77c1ab75a45a8a037b139215086f94"
+checksum = "3fd016a0ddc7cb13661bf5576073ce07330a693f8608a1320b4e20561cc12cdc"
 dependencies = [
  "hybrid-array",
 ]
@@ -977,7 +977,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "btc-bridge-client",
  "clap",
@@ -1052,7 +1052,7 @@ dependencies = [
 
 [[package]]
 name = "btc-bridge-client"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
@@ -1067,6 +1067,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+ "zcash_primitives",
  "zebra-chain",
 ]
 
@@ -1089,10 +1090,12 @@ version = "0.2.0"
 dependencies = [
  "bitcoin",
  "bridge-connector-common",
+ "k256",
  "near-sdk",
  "serde",
  "serde_json",
  "serde_with",
+ "zcash_address",
 ]
 
 [[package]]
@@ -1656,9 +1659,9 @@ dependencies = [
 
 [[package]]
 name = "crypto-common"
-version = "0.2.0-rc.3"
+version = "0.2.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a23fa214dea9efd4dacee5a5614646b30216ae0f05d4bb51bafb50e9da1c5be"
+checksum = "b0b8ce8218c97789f16356e7896b3714f26c2ee1079b79c0b7ae7064bb9089fa"
 dependencies = [
  "hybrid-array",
 ]
@@ -1965,8 +1968,8 @@ version = "0.11.0-pre.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf2e3d6615d99707295a9673e889bf363a04b2a466bd320c65a72536f7577379"
 dependencies = [
- "block-buffer 0.11.0-rc.4",
- "crypto-common 0.2.0-rc.3",
+ "block-buffer 0.11.0-rc.3",
+ "crypto-common 0.2.0-rc.1",
  "subtle",
 ]
 
@@ -3480,9 +3483,9 @@ checksum = "9b112acc8b3adf4b107a8ec20977da0273a8c386765a3ec0229bd500a1443f9f"
 
 [[package]]
 name = "hybrid-array"
-version = "0.3.1"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891d15931895091dea5c47afa5b3c9a01ba634b311919fd4d41388fa0e3d76af"
+checksum = "f2d35805454dc9f8662a98d6d61886ffe26bd465f5960e0e55345c70d5c0d2a9"
 dependencies = [
  "typenum",
 ]
@@ -10975,9 +10978,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_address"
-version = "0.7.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71591bb4eb2fd7622e88eed42e7d7d8501cd1e920a0698c7fb08723a8c1d0b4f"
+checksum = "7c984ae01367a4a3d20e9d34ae4e4cc0dca004b22d9a10a51eec43f43934612e"
 dependencies = [
  "bech32 0.11.0",
  "bs58 0.5.1",
@@ -11023,14 +11026,16 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.22.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7574550ec5eba75f4e9d447b186de1541c40251d7f3ae2693ddaa5a477760190"
+checksum = "3a0c26140f2e6b760dcf052d22bd01f1a8773cdefb650ff5829430798a21b85b"
 dependencies = [
  "bip32",
  "blake2b_simd",
+ "block-buffer 0.11.0-rc.3",
  "bs58 0.5.1",
  "core2",
+ "crypto-common 0.2.0-rc.1",
  "document-features",
  "equihash",
  "ff",
@@ -11063,9 +11068,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_protocol"
-version = "0.5.3"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0525851dd97796f47537e9b15e504888cd214b2c6d021731fdfa0e7cb941a21e"
+checksum = "f9cfe9e3fb08e6851efe3d0ced457e4cb2c305daa928f64cb0d70c040f8f8336"
 dependencies = [
  "core2",
  "document-features",
@@ -11084,9 +11089,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_transparent"
-version = "0.2.3"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cd8c2d138ec893d3d384d97304da9ff879424056087c8ac811780a0e8d96a99"
+checksum = "3a7c162a8aa6f708e842503ed5157032465dadfb1d7f63adf9db2d45213a0b11"
 dependencies = [
  "bip32",
  "blake2b_simd",
@@ -11108,9 +11113,9 @@ dependencies = [
 
 [[package]]
 name = "zebra-chain"
-version = "1.0.0"
+version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78b9b4cd22ccd7d0d03c219992433f12600a3012f240fb0ca65caee8b68e887b"
+checksum = "17a86ec712da2f25d3edc7e5cf0b1d15ef41ab35305e253f0f7cd9cecc0f1939"
 dependencies = [
  "bech32 0.11.0",
  "bitflags 2.9.1",

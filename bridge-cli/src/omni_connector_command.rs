@@ -805,6 +805,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             amount,
             config_cli,
         } => {
+            tracing::info!("Init NEAR-to-BTC transfer");
             omni_connector(network, config_cli)
                 .init_near_to_bitcoin_transfer(
                     target_btc_address,

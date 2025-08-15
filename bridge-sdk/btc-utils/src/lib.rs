@@ -1,5 +1,5 @@
 use crate::address::Chain;
-use bitcoin::{Address, Amount, OutPoint, TxOut};
+use bitcoin::{Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
@@ -37,8 +37,9 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
 }
 
 pub fn get_gas_fee(num_input: u64, num_output: u64, fee_rate: u64) -> u64 {
-    let tx_size = 12 + num_input * 68 + num_output * 31;
-    (fee_rate * tx_size / 1024) + 50
+    10000
+    /*let tx_size = 12 + num_input * 68 + num_output * 31;
+    (fee_rate * tx_size / 1024) + 50*/
 }
 
 #[allow(clippy::implicit_hasher)]
@@ -87,8 +88,8 @@ pub fn get_tx_outs(
             .expect("Invalid Bitcoin address");
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
-    let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");
-    let change_address = change_address.assume_checked();
+    let change_address = crate::address::Address::parse(change_address, Chain::ZcashTestnet)
+        .expect("Invalid Bitcoin Change address");
     let change_script_pubkey = change_address.script_pubkey();
     vec![
         TxOut {
