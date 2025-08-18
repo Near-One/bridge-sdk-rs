@@ -1,6 +1,6 @@
 [package]
 name = "solana-bridge-client"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 
 [dependencies]
@@ -11,6 +11,7 @@ sha2.workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true
 solana-system-interface.workspace = true
+solana-transaction-status-client-types.workspace = true
 mpl-token-metadata.workspace = true
 spl-token.workspace = true
 spl-token-2022 = { workspace = true, features = ["no-entrypoint"] }

@@ -105,10 +105,9 @@ bridge-cli testnet evm-init-transfer \
     --message ""
 
 # 2. Wait for the transaction to be confirmed, then finalize on NEAR
-bridge-cli testnet near-fin-transfer-with-evm-proof \
+bridge-cli testnet near-fin-transfer \
     --chain eth \
     --tx-hash 0xabc...def \
-    --storage-deposit-actions usdc.near:alice.near:0.1
 ```
 
 ### Example 3: Transfer token from NEAR to Solana
@@ -180,17 +179,10 @@ bridge-cli near-sign-transfer \
     --fee <FEE_AMOUNT> \
     --native-fee <NATIVE_FEE_AMOUNT>
 
-# Finalize a transfer on NEAR (using EVM proof)
-bridge-cli near-fin-transfer-with-evm-proof \
+# Finalize a transfer on NEAR
+bridge-cli near-fin-transfer \
     --chain <SOURCE_CHAIN> \
     --tx-hash <TX_HASH> \
-    --storage-deposit-actions <TOKEN1:ACCOUNT1:AMOUNT1,...>
-
-# Finalize a transfer on NEAR (using VAA)
-bridge-cli near-fin-transfer-with-vaa \
-    --chain <SOURCE_CHAIN> \
-    --storage-deposit-actions <TOKEN1:ACCOUNT1:AMOUNT1,...> \
-    --vaa <VAA_DATA>
 ```
 
 #### EVM Chain Operations

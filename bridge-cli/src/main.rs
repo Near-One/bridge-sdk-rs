@@ -18,6 +18,8 @@ struct CliConfig {
     near_private_key: Option<String>,
     #[arg(long)]
     near_token_locker_id: Option<String>,
+    #[arg(long)]
+    eth_light_client_id: Option<String>,
 
     #[arg(long)]
     eth_rpc: Option<String>,
@@ -36,6 +38,8 @@ struct CliConfig {
     base_private_key: Option<String>,
     #[arg(long)]
     base_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    base_wormhole_address: Option<String>,
 
     #[arg(long)]
     arb_rpc: Option<String>,
@@ -45,6 +49,19 @@ struct CliConfig {
     arb_private_key: Option<String>,
     #[arg(long)]
     arb_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    arb_wormhole_address: Option<String>,
+
+    #[arg(long)]
+    bnb_rpc: Option<String>,
+    #[arg(long)]
+    bnb_chain_id: Option<u64>,
+    #[arg(long)]
+    bnb_private_key: Option<String>,
+    #[arg(long)]
+    bnb_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    bnb_wormhole_address: Option<String>,
 
     #[arg(long)]
     solana_rpc: Option<String>,
@@ -82,6 +99,7 @@ impl CliConfig {
             near_signer: self.near_signer.or(other.near_signer),
             near_private_key: self.near_private_key.or(other.near_private_key),
             near_token_locker_id: self.near_token_locker_id.or(other.near_token_locker_id),
+            eth_light_client_id: self.eth_light_client_id.or(other.eth_light_client_id),
 
             eth_rpc: self.eth_rpc.or(other.eth_rpc),
             eth_chain_id: self.eth_chain_id.or(other.eth_chain_id),
@@ -96,6 +114,7 @@ impl CliConfig {
             base_bridge_token_factory_address: self
                 .base_bridge_token_factory_address
                 .or(other.base_bridge_token_factory_address),
+            base_wormhole_address: self.base_wormhole_address.or(other.base_wormhole_address),
 
             arb_rpc: self.arb_rpc.or(other.arb_rpc),
             arb_chain_id: self.arb_chain_id.or(other.arb_chain_id),
@@ -103,6 +122,15 @@ impl CliConfig {
             arb_bridge_token_factory_address: self
                 .arb_bridge_token_factory_address
                 .or(other.arb_bridge_token_factory_address),
+            arb_wormhole_address: self.arb_wormhole_address.or(other.arb_wormhole_address),
+
+            bnb_rpc: self.bnb_rpc.or(other.bnb_rpc),
+            bnb_chain_id: self.bnb_chain_id.or(other.bnb_chain_id),
+            bnb_private_key: self.bnb_private_key.or(other.bnb_private_key),
+            bnb_bridge_token_factory_address: self
+                .bnb_bridge_token_factory_address
+                .or(other.bnb_bridge_token_factory_address),
+            bnb_wormhole_address: self.bnb_wormhole_address.or(other.bnb_wormhole_address),
 
             solana_rpc: self.solana_rpc.or(other.solana_rpc),
             solana_bridge_address: self.solana_bridge_address.or(other.solana_bridge_address),
@@ -131,7 +159,7 @@ fn env_config() -> CliConfig {
         near_signer: env::var("NEAR_SIGNER").ok(),
         near_private_key: env::var("NEAR_PRIVATE_KEY").ok(),
         near_token_locker_id: env::var("TOKEN_LOCKER_ID").ok(),
-
+        eth_light_client_id: env::var("ETH_LIGHT_CLIENT_ID").ok(),
         eth_rpc: env::var("ETH_RPC").ok(),
         eth_chain_id: env::var("ETH_CHAIN_ID")
             .ok()
@@ -145,6 +173,7 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         base_private_key: env::var("BASE_PRIVATE_KEY").ok(),
         base_bridge_token_factory_address: env::var("BASE_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        base_wormhole_address: env::var("BASE_WORMHOLE_ADDRESS").ok(),
 
         arb_rpc: env::var("ARB_RPC").ok(),
         arb_chain_id: env::var("ARB_CHAIN_ID")
@@ -152,6 +181,15 @@ fn env_config() -> CliConfig {
             .and_then(|val| val.parse::<u64>().ok()),
         arb_private_key: env::var("ARB_PRIVATE_KEY").ok(),
         arb_bridge_token_factory_address: env::var("ARB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        arb_wormhole_address: env::var("ARB_WORMHOLE_ADDRESS").ok(),
+
+        bnb_rpc: env::var("BNB_RPC").ok(),
+        bnb_chain_id: env::var("BNB_CHAIN_ID")
+            .ok()
+            .and_then(|val| val.parse::<u64>().ok()),
+        bnb_private_key: env::var("BNB_PRIVATE_KEY").ok(),
+        bnb_bridge_token_factory_address: env::var("BNB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        bnb_wormhole_address: env::var("BNB_WORMHOLE_ADDRESS").ok(),
 
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
@@ -179,6 +217,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_MAINNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_MAINNET),
@@ -193,6 +232,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_MAINNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_MAINNET),
@@ -200,6 +240,15 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+
+            bnb_rpc: Some(defaults::BNB_RPC_MAINNET.to_owned()),
+            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_MAINNET),
+            bnb_private_key: None,
+            bnb_bridge_token_factory_address: Some(
+                defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
+            bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
@@ -221,6 +270,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_TESTNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_TESTNET),
@@ -235,6 +285,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_TESTNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_TESTNET),
@@ -242,6 +293,15 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+
+            bnb_rpc: Some(defaults::BNB_RPC_TESTNET.to_owned()),
+            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_TESTNET),
+            bnb_private_key: None,
+            bnb_bridge_token_factory_address: Some(
+                defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
+            bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
@@ -263,6 +323,7 @@ fn default_config(network: Network) -> CliConfig {
             near_signer: None,
             near_private_key: None,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
+            eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
             eth_chain_id: Some(defaults::ETH_CHAIN_ID_DEVNET),
@@ -277,6 +338,7 @@ fn default_config(network: Network) -> CliConfig {
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
+            base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_DEVNET.to_owned()),
             arb_chain_id: Some(defaults::ARB_CHAIN_ID_DEVNET),
@@ -284,6 +346,15 @@ fn default_config(network: Network) -> CliConfig {
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
+            arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+
+            bnb_rpc: Some(defaults::BNB_RPC_DEVNET.to_owned()),
+            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_DEVNET),
+            bnb_private_key: None,
+            bnb_bridge_token_factory_address: Some(
+                defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+            bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),

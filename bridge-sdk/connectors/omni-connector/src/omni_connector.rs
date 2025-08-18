@@ -2,13 +2,14 @@ use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
+use eth_light_client::EthLightClient;
 use ethers::prelude::*;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
-use omni_types::prover_args::{EvmVerifyProofArgs, WormholeVerifyProofArgs};
+use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{
@@ -37,9 +38,11 @@ pub struct OmniConnector {
     eth_bridge_client: Option<EvmBridgeClient>,
     base_bridge_client: Option<EvmBridgeClient>,
     arb_bridge_client: Option<EvmBridgeClient>,
+    bnb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
+    eth_light_client: Option<EthLightClient>,
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -360,10 +363,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::InitTransfer)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::InitTransfer, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -574,10 +576,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::DeployToken)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::DeployToken, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -605,10 +606,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
 
-        let proof = evm_bridge_client
-            .get_proof_for_event(tx_hash, ProofKind::LogMetadata)
+        let proof = self
+            .get_proof_for_event(tx_hash, ProofKind::LogMetadata, chain_kind)
             .await?;
 
         let verify_proof_args = EvmVerifyProofArgs {
@@ -827,6 +827,19 @@ impl OmniConnector {
         evm_bridge_client
             .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
             .await
+    }
+
+    pub async fn solana_get_transfer_event(
+        &self,
+        signature: &Signature,
+    ) -> Result<solana_bridge_client::Transfer> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+        solana_bridge_client
+            .get_transfer_event(signature)
+            .await
+            .map_err(|e| {
+                BridgeSdkError::SolanaOtherError(format!("Failed to get transfer event: {e}"))
+            })
     }
 
     pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
@@ -1099,15 +1112,17 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<String> {
         match &token {
-            OmniAddress::Eth(address) | OmniAddress::Arb(address) | OmniAddress::Base(address) => {
-                self.evm_log_metadata(
+            OmniAddress::Eth(address)
+            | OmniAddress::Arb(address)
+            | OmniAddress::Base(address)
+            | OmniAddress::Bnb(address) => self
+                .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
                     transaction_options.nonce.map(std::convert::Into::into),
                 )
                 .await
-                .map(|hash| hash.to_string())
-            }
+                .map(|hash| hash.to_string()),
             OmniAddress::Near(token_id) => self
                 .near_log_metadata(token_id.to_string(), transaction_options)
                 .await
@@ -1382,7 +1397,7 @@ impl OmniConnector {
                 })
                 .await
             }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -1429,14 +1444,26 @@ impl OmniConnector {
 
     pub fn evm_bridge_client(&self, chain_kind: ChainKind) -> Result<&EvmBridgeClient> {
         let bridge_client = match chain_kind {
+            ChainKind::Eth => self.eth_bridge_client.as_ref(),
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
-            ChainKind::Eth => self.eth_bridge_client.as_ref(),
-            _ => unreachable!("Unsupported chain kind"),
+            ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
+            ChainKind::Near | ChainKind::Sol => unreachable!("Unsupported chain kind"),
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
             "EVM bridge client not configured".to_string(),
+        ))
+    }
+
+    pub fn evm_light_client(&self, chain_kind: ChainKind) -> Result<&EthLightClient> {
+        let light_client = match chain_kind {
+            ChainKind::Eth => self.eth_light_client.as_ref(),
+            _ => unreachable!("Unsupported chain kind"),
+        };
+
+        light_client.ok_or(BridgeSdkError::ConfigError(
+            "EVM light client not configured".to_string(),
         ))
     }
 
@@ -1462,5 +1489,203 @@ impl OmniConnector {
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC bridge client not configured".to_string(),
             ))
+    }
+
+    async fn get_proof_for_event(
+        &self,
+        tx_hash: TxHash,
+        proof_kind: ProofKind,
+        chain_kind: ChainKind,
+    ) -> Result<EvmProof> {
+        let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
+        let evm_light_client = self.evm_light_client(chain_kind)?;
+        let last_eth_block_number_on_near = evm_light_client.get_last_block_number().await?;
+        let tx_block_number = evm_bridge_client.get_tx_block_number(tx_hash).await?;
+
+        if last_eth_block_number_on_near < tx_block_number {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                last_eth_block_number_on_near,
+            ));
+        }
+
+        evm_bridge_client
+            .get_proof_for_event(tx_hash, proof_kind)
+            .await
+    }
+
+    pub async fn get_storage_deposit_actions_for_tx(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+    ) -> Result<Vec<StorageDepositAction>> {
+        match chain {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
+                let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
+                })?;
+                self.get_storage_deposit_actions_for_evm_tx(chain, tx_hash)
+                    .await
+            }
+            ChainKind::Sol => {
+                let signature = Signature::from_str(&tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!("Failed to parse signature: {tx_hash}"))
+                })?;
+                self.get_storage_deposit_actions_for_solana_tx(&signature)
+                    .await
+            }
+            ChainKind::Near => Err(BridgeSdkError::ConfigError(
+                "Storage deposit actions are not supported for NEAR".to_string(),
+            )),
+        }
+    }
+
+    pub async fn get_storage_deposit_actions_for_evm_tx(
+        &self,
+        chain: ChainKind,
+        tx_hash: TxHash,
+    ) -> Result<Vec<StorageDepositAction>> {
+        // TODO: add fast transfer support
+        let transfer_event = self.evm_get_transfer_event(chain, tx_hash).await?;
+
+        let token_address =
+            OmniAddress::new_from_evm_address(chain, H160(transfer_event.token_address.0))
+                .map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse token address: {}",
+                        transfer_event.token_address
+                    ))
+                })?;
+
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+            })?;
+
+        self.get_storage_deposit_actions(
+            chain,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            transfer_event.native_token_fee,
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions_for_solana_tx(
+        &self,
+        signature: &Signature,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let transfer_event = self.solana_get_transfer_event(signature).await?;
+
+        let token = Pubkey::from_str(&transfer_event.token).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse token address as Pubkey: {:?}",
+                transfer_event.token
+            ))
+        })?;
+
+        let token_address = OmniAddress::new_from_slice(ChainKind::Sol, &token.to_bytes())
+            .map_err(|_| {
+                BridgeSdkError::InvalidArgument(format!("Failed to parse token address: {token}"))
+            })?;
+
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+            })?;
+
+        self.get_storage_deposit_actions(
+            ChainKind::Sol,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            u128::from(transfer_event.native_fee),
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions(
+        &self,
+        chain: ChainKind,
+        recipient: &OmniAddress,
+        fee_recipient: &AccountId,
+        token_address: &OmniAddress,
+        fee: u128,
+        native_fee: u128,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let mut storage_deposit_actions = Vec::new();
+        if let OmniAddress::Near(near_recipient) = recipient {
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                self.near_get_token_id(token_address.clone()).await?,
+                near_recipient.clone(),
+            )
+            .await?;
+        }
+
+        if fee > 0 {
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                self.near_get_token_id(token_address.clone()).await?,
+                fee_recipient.clone(),
+            )
+            .await?;
+        }
+
+        if native_fee > 0 {
+            let token_id = self.near_get_native_token_id(chain).await?;
+
+            self.add_storage_deposit_action(
+                &mut storage_deposit_actions,
+                token_id,
+                fee_recipient.clone(),
+            )
+            .await?;
+        }
+
+        Ok(storage_deposit_actions)
+    }
+
+    async fn add_storage_deposit_action(
+        &self,
+        storage_deposit_actions: &mut Vec<StorageDepositAction>,
+        token_id: AccountId,
+        account_id: AccountId,
+    ) -> Result<()> {
+        let storage_deposit_amount = match self
+            .near_get_required_storage_deposit(token_id.clone(), account_id.clone())
+            .await?
+        {
+            amount if amount > 0 => Some(amount),
+            _ => None,
+        };
+
+        storage_deposit_actions.push(StorageDepositAction {
+            token_id,
+            account_id,
+            storage_deposit_amount,
+        });
+
+        Ok(())
     }
 }

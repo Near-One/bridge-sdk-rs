@@ -41,6 +41,8 @@ pub enum BridgeSdkError {
     InsufficientBalance(String),
     #[error("Invalid argument provided: {0}")]
     InvalidArgument(String),
+    #[error("Light client not synced, current height {0}")]
+    LightClientNotSynced(u64),
     #[error("Unexpected error occured: {0}")]
     UnknownError(String),
 }

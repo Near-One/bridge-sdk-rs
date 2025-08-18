@@ -3,8 +3,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
 use sha2::{Digest, Sha256};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
+    bs58,
+    commitment_config::CommitmentConfig,
     instruction::{AccountMeta, Instruction},
     program_option::COption,
     program_pack::Pack,
@@ -15,6 +17,9 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use solana_system_interface::program;
+use solana_transaction_status_client_types::{
+    option_serializer::OptionSerializer, EncodedTransaction, UiMessage, UiTransactionEncoding,
+};
 use spl_token::state::Mint;
 
 use crate::{
@@ -29,7 +34,18 @@ pub mod error;
 mod instructions;
 
 const DISCRIMINATOR_LEN: usize = 8;
+const INIT_TRANSFER_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] = [174, 50, 134, 99, 122, 243, 243, 224];
+const INIT_TRANSFER_SOL_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] =
+    [124, 167, 164, 191, 81, 140, 108, 30];
+
+const INIT_TRANSFER_SENDER_INDEX: usize = 5;
+const INIT_TRANSFER_TOKEN_INDEX: usize = 1;
+const INIT_TRANSFER_EMITTER_INDEX: usize = 6;
+const INIT_TRANSFER_SOL_SENDER_INDEX: usize = 1;
+const INIT_TRANSFER_SOL_EMITTER_INDEX: usize = 2;
+
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::as_conversions,
@@ -64,6 +80,28 @@ pub struct DepositPayload {
     pub amount: u128,
     pub recipient: Pubkey,
     pub fee_recipient: Option<String>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
+struct InitTransferPayload {
+    pub amount: u128,
+    pub recipient: String,
+    pub fee: u128,
+    pub native_fee: u64,
+    pub message: String,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
+pub struct Transfer {
+    pub amount: u128,
+    pub token: String,
+    pub sender: String,
+    pub recipient: String,
+    pub fee: u128,
+    pub native_fee: u64,
+    pub message: String,
+    pub emitter: String,
+    pub sequence: u64,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
@@ -156,6 +194,106 @@ impl SolanaBridgeClient {
 
         self.send_and_confirm_transaction(vec![instruction], &[keypair])
             .await
+    }
+
+    pub async fn get_transfer_event(
+        &self,
+        signature: &Signature,
+    ) -> Result<Transfer, SolanaBridgeClientError> {
+        let client = self.client()?;
+        let tx = client
+            .get_transaction_with_config(
+                signature,
+                RpcTransactionConfig {
+                    encoding: Some(UiTransactionEncoding::Json),
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await?;
+
+        if let EncodedTransaction::Json(ref transaction) = tx.transaction.transaction {
+            if let UiMessage::Raw(ref raw) = transaction.message {
+                for instruction in &raw.instructions {
+                    let decoded_data = bs58::decode(&instruction.data).into_vec().unwrap();
+
+                    let account_keys = instruction
+                        .accounts
+                        .clone()
+                        .into_iter()
+                        .map(|i| raw.account_keys.get(usize::from(i)).cloned())
+                        .collect::<Vec<_>>();
+
+                    let get_key = |idx: usize| -> Result<&String, SolanaBridgeClientError> {
+                        account_keys
+                            .get(idx)
+                            .and_then(Option::as_ref)
+                            .ok_or(SolanaBridgeClientError::InvalidEvent)
+                    };
+
+                    if let Some(discriminator) =
+                        [INIT_TRANSFER_DISCRIMINATOR, INIT_TRANSFER_SOL_DISCRIMINATOR]
+                            .into_iter()
+                            .find(|discriminator| decoded_data.starts_with(discriminator))
+                    {
+                        let mut payload_data = &decoded_data[discriminator.len()..];
+
+                        if let Ok(payload) = InitTransferPayload::deserialize(&mut payload_data) {
+                            let (sender_index, token_index, emitter_index) =
+                                if discriminator == INIT_TRANSFER_DISCRIMINATOR {
+                                    (
+                                        INIT_TRANSFER_SENDER_INDEX,
+                                        Some(INIT_TRANSFER_TOKEN_INDEX),
+                                        INIT_TRANSFER_EMITTER_INDEX,
+                                    )
+                                } else {
+                                    (
+                                        INIT_TRANSFER_SOL_SENDER_INDEX,
+                                        None,
+                                        INIT_TRANSFER_SOL_EMITTER_INDEX,
+                                    )
+                                };
+
+                            let sender = get_key(sender_index)?.clone();
+                            let token = if let Some(token_index) = token_index {
+                                get_key(token_index)?.clone()
+                            } else {
+                                Pubkey::default().to_string()
+                            };
+                            let emitter = get_key(emitter_index)?.clone();
+
+                            if let Some(OptionSerializer::Some(logs)) =
+                                tx.transaction.clone().meta.map(|meta| meta.log_messages)
+                            {
+                                let sequence = logs
+                                    .iter()
+                                    .find(|log| log.contains("Sequence"))
+                                    .and_then(|log| log.split_ascii_whitespace().last())
+                                    .ok_or_else(|| SolanaBridgeClientError::InvalidEvent)?
+                                    .parse::<u64>()
+                                    .map_err(|_| SolanaBridgeClientError::InvalidEvent)?;
+
+                                return Ok(Transfer {
+                                    amount: payload.amount,
+                                    token: token.clone(),
+                                    sender: sender.clone(),
+                                    recipient: payload.recipient.clone(),
+                                    fee: payload.fee,
+                                    native_fee: payload.native_fee,
+                                    message: payload.message.clone(),
+                                    emitter: emitter.clone(),
+                                    sequence,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(SolanaBridgeClientError::InvalidArgument(
+            "InitTransfer event not found".to_string(),
+        ))
     }
 
     pub async fn update_metadata(

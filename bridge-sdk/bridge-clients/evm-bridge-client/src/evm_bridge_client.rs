@@ -32,6 +32,13 @@ abigen!(
     ]"#
 );
 
+abigen!(
+    WormholeCore,
+    r#"[
+        function messageFee() external view returns (uint256)
+    ]"#
+);
+
 /// Bridging NEAR-originated NEP-141 tokens to EVM and back
 #[derive(Builder, Default, Clone)]
 pub struct EvmBridgeClient {
@@ -43,12 +50,31 @@ pub struct EvmBridgeClient {
     private_key: Option<String>,
     #[doc = r"OmniBridge address on EVM. Required for `deploy_token`, `mint`, `burn`"]
     omni_bridge_address: Option<String>,
+    #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
+    wormhole_core_address: Option<String>,
 }
 
 impl EvmBridgeClient {
     /// Creates an empty instance of the bridging client. Property values can be set separately depending on the required use case.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    // Gets the block number of a transaction
+    pub async fn get_tx_block_number(&self, tx_hash: TxHash) -> Result<u64> {
+        let endpoint = self.endpoint()?;
+        let client = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let tx_block_number = client
+            .get_transaction(tx_hash)
+            .await?
+            .and_then(|r| r.block_number)
+            .ok_or_else(|| {
+                BridgeSdkError::UnknownError("Failed to get tx block number".to_string())
+            })?;
+
+        Ok(tx_block_number.as_u64())
     }
 
     /// Gets last finalized block number on EVM chain
@@ -91,6 +117,12 @@ impl EvmBridgeClient {
         let omni_bridge = self.omni_bridge()?;
 
         let mut call = omni_bridge.log_metadata(address.0.into());
+
+        if let Ok(wormhole_core) = self.wormhole_core() {
+            let wormhole_fee = wormhole_core.message_fee().call().await?;
+            call = call.value(wormhole_fee);
+        }
+
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -135,6 +167,12 @@ impl EvmBridgeClient {
         let mut call = omni_bridge
             .deploy_token(serialized_signature.into(), payload)
             .gas(500_000);
+
+        if let Ok(wormhole_core) = self.wormhole_core() {
+            let wormhole_fee = wormhole_core.message_fee().call().await?;
+            call = call.value(wormhole_fee);
+        }
+
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -155,7 +193,7 @@ impl EvmBridgeClient {
         receiver: OmniAddress,
         fee: Fee,
         message: String,
-        tx_nonce: Option<U256>,
+        mut tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let omni_bridge = self.omni_bridge()?;
 
@@ -171,8 +209,7 @@ impl EvmBridgeClient {
 
             let amount256: ethers::types::U256 = amount.into();
             if allowance < amount256 {
-                let mut approval_call =
-                    bridge_token.approve(omni_bridge_address, amount256 - allowance);
+                let mut approval_call = bridge_token.approve(omni_bridge_address, amount256);
                 self.prepare_tx_for_sending(&mut approval_call, tx_nonce)
                     .await?;
                 approval_call
@@ -180,16 +217,22 @@ impl EvmBridgeClient {
                     .await?
                     .await
                     .map_err(ContractError::from)?;
+                tx_nonce = tx_nonce.map(|nonce| nonce + 1);
 
                 tracing::debug!("Approved tokens for spending");
             }
         }
 
-        let value = if token == H160::zero() {
-            U256::from(fee.native_fee.0) + U256::from(amount)
-        } else {
-            U256::from(fee.native_fee.0)
-        };
+        let mut value = U256::from(fee.native_fee.0);
+
+        if let Ok(wormhole_core) = self.wormhole_core() {
+            let wormhole_fee = wormhole_core.message_fee().call().await?;
+            value += wormhole_fee;
+        }
+
+        if token == H160::zero() {
+            value += U256::from(amount);
+        }
 
         let transfer_call = omni_bridge.init_transfer(
             token,
@@ -201,8 +244,7 @@ impl EvmBridgeClient {
         );
         let mut transfer_call = transfer_call.value(value);
 
-        // Nonce is incremented since previous was used for approval
-        self.prepare_tx_for_sending(&mut transfer_call, tx_nonce.map(|nonce| nonce + 1))
+        self.prepare_tx_for_sending(&mut transfer_call, tx_nonce)
             .await?;
         let tx = transfer_call.send().await?;
 
@@ -238,10 +280,11 @@ impl EvmBridgeClient {
             origin_chain: message_payload.transfer_id.origin_chain.into(),
             origin_nonce: message_payload.transfer_id.origin_nonce,
             token_address: match message_payload.token_address {
-                OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {
-                    addr.0.into()
-                }
-                _ => {
+                OmniAddress::Eth(addr)
+                | OmniAddress::Base(addr)
+                | OmniAddress::Arb(addr)
+                | OmniAddress::Bnb(addr) => addr.0.into(),
+                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported token address type in SignTransferEvent: {:?}",
                         message_payload.token_address
@@ -250,10 +293,11 @@ impl EvmBridgeClient {
             },
             amount: message_payload.amount.into(),
             recipient: match message_payload.recipient {
-                OmniAddress::Eth(addr) | OmniAddress::Base(addr) | OmniAddress::Arb(addr) => {
-                    H160(addr.0)
-                }
-                _ => {
+                OmniAddress::Eth(addr)
+                | OmniAddress::Base(addr)
+                | OmniAddress::Arb(addr)
+                | OmniAddress::Bnb(addr) => H160(addr.0),
+                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported recipient address type in SignTransferEvent: {:?}",
                         message_payload.recipient
@@ -266,6 +310,12 @@ impl EvmBridgeClient {
         };
 
         let mut call = omni_bridge.fin_transfer(signature.to_bytes().into(), bridge_deposit);
+
+        if let Ok(wormhole_core) = self.wormhole_core() {
+            let wormhole_fee = wormhole_core.message_fee().call().await?;
+            call = call.value(wormhole_fee);
+        }
+
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
         let tx = call.send().await?;
 
@@ -364,6 +414,37 @@ impl EvmBridgeClient {
         let client = Arc::new(signer);
 
         Ok(OmniBridge::new(self.omni_bridge_address()?, client))
+    }
+
+    pub fn wormhole_core_address(&self) -> Result<Address> {
+        self.wormhole_core_address
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Wormhole core address is not set".to_string(),
+            ))
+            .and_then(|addr| {
+                Address::from_str(addr).map_err(|_| {
+                    BridgeSdkError::ConfigError(
+                        "wormhole_core_address is not a valid EVM address".to_string(),
+                    )
+                })
+            })
+    }
+
+    pub fn wormhole_core(
+        &self,
+    ) -> Result<WormholeCore<SignerMiddleware<Provider<Http>, LocalWallet>>> {
+        let endpoint = self.endpoint()?;
+
+        let provider = Provider::<Http>::try_from(endpoint)
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
+
+        let wallet = self.signer()?;
+
+        let signer = SignerMiddleware::new(provider, wallet);
+        let client = Arc::new(signer);
+
+        Ok(WormholeCore::new(self.wormhole_core_address()?, client))
     }
 
     pub fn bridge_token(

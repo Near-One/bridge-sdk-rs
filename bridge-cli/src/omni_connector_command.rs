@@ -3,6 +3,7 @@ use std::{path::Path, str::FromStr};
 use clap::Subcommand;
 
 use btc_bridge_client::{types::Bitcoin, AuthOptions, UTXOBridgeClient};
+use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
@@ -100,8 +101,8 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer on NEAR using EVM proof")]
-    NearFinTransferWithEvmProof {
+    #[clap(about = "Finalize a transfer on NEAR")]
+    NearFinTransfer {
         #[clap(short, long, help = "Origin chain of the transfer to finalize")]
         chain: ChainKind,
         #[clap(
@@ -110,27 +111,6 @@ pub enum OmniConnectorSubCommand {
             help = "Transaction hash of the InitTransfer call on other chain"
         )]
         tx_hash: String,
-        #[clap(
-            short,
-            long,
-            help = "Storage deposit actions. Format: token_id1:account_id1:amount1,token_id2:account_id2:amount2,..."
-        )]
-        storage_deposit_actions: Vec<String>,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Finalize a transfer on NEAR using VAA")]
-    NearFinTransferWithVaa {
-        #[clap(short, long, help = "Origin chain of the transfer to finalize")]
-        chain: ChainKind,
-        #[clap(
-            short,
-            long,
-            help = "Storage deposit actions. Format: token_id1:account_id1:amount1,token_id2:account_id2:amount2,..."
-        )]
-        storage_deposit_actions: Vec<String>,
-        #[clap(short, long, help = "VAA from InitTransfer call")]
-        vaa: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -418,7 +398,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .unwrap();
                 }
             },
-            ChainKind::Eth | ChainKind::Arb | ChainKind::Base => {
+            ChainKind::Eth | ChainKind::Arb | ChainKind::Base | ChainKind::Bnb => {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
@@ -505,57 +485,50 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearFinTransferWithEvmProof {
+        OmniConnectorSubCommand::NearFinTransfer {
             chain,
             tx_hash,
-            storage_deposit_actions,
             config_cli,
         } => {
-            omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
-                    chain_kind: chain,
-                    tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                    storage_deposit_actions: storage_deposit_actions
-                        .iter()
-                        .map(|action| {
-                            let parts: Vec<&str> = action.split(':').collect();
-                            omni_types::locker_args::StorageDepositAction {
-                                token_id: parts[0].parse().unwrap(),
-                                account_id: parts[1].parse().unwrap(),
-                                storage_deposit_amount: parts[2].parse().ok(),
-                            }
-                        })
-                        .collect(),
-                    transaction_options: TransactionOptions::default(),
-                })
+            let connector = omni_connector(network, config_cli);
+
+            let storage_deposit_actions = connector
+                .get_storage_deposit_actions_for_tx(chain, tx_hash.clone())
                 .await
                 .unwrap();
-        }
-        OmniConnectorSubCommand::NearFinTransferWithVaa {
-            chain,
-            storage_deposit_actions,
-            vaa,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
-                    chain_kind: chain,
-                    storage_deposit_actions: storage_deposit_actions
-                        .iter()
-                        .map(|action| {
-                            let parts: Vec<&str> = action.split(':').collect();
-                            omni_types::locker_args::StorageDepositAction {
-                                token_id: parts[0].parse().unwrap(),
-                                account_id: parts[1].parse().unwrap(),
-                                storage_deposit_amount: parts[2].parse().ok(),
-                            }
+
+            match chain {
+                ChainKind::Eth => {
+                    connector
+                        .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
+                            chain_kind: chain,
+                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            storage_deposit_actions,
+                            transaction_options: TransactionOptions::default(),
                         })
-                        .collect(),
-                    vaa,
-                    transaction_options: TransactionOptions::default(),
-                })
-                .await
-                .unwrap();
+                        .await
+                        .unwrap();
+                }
+                ChainKind::Arb | ChainKind::Base | ChainKind::Bnb | ChainKind::Sol => {
+                    let vaa = connector
+                        .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
+                        .await
+                        .unwrap();
+
+                    connector
+                        .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
+                            chain_kind: chain,
+                            storage_deposit_actions,
+                            vaa,
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                }
+                ChainKind::Near => {
+                    panic!("Unsupported chain for NearFinTransfer: {chain:?}");
+                }
+            }
         }
         OmniConnectorSubCommand::NearFastFinTransfer {
             chain,
@@ -821,7 +794,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let combined_config = combined_config(cli_config, network);
 
     let near_bridge_client = NearBridgeClientBuilder::default()
-        .endpoint(combined_config.near_rpc)
+        .endpoint(combined_config.near_rpc.clone())
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
@@ -836,6 +809,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
         .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
+        .wormhole_core_address(None)
         .build()
         .unwrap();
 
@@ -844,6 +818,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
         .omni_bridge_address(combined_config.base_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.base_wormhole_address)
         .build()
         .unwrap();
 
@@ -852,6 +827,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
         .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.arb_wormhole_address)
+        .build()
+        .unwrap();
+
+    let bnb_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.bnb_rpc)
+        .chain_id(combined_config.bnb_chain_id)
+        .private_key(combined_config.bnb_private_key)
+        .omni_bridge_address(combined_config.bnb_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.bnb_wormhole_address)
         .build()
         .unwrap();
 
@@ -890,19 +875,25 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         AuthOptions::None
     };
 
-    let btc_bridge_client = UTXOBridgeClient::<Bitcoin>::new(
-        combined_config.btc_endpoint.unwrap(),
-        btc_client_auth,
-    );
+    let btc_bridge_client =
+        UTXOBridgeClient::<Bitcoin>::new(combined_config.btc_endpoint.unwrap(), btc_client_auth);
+
+    let eth_light_client = EthLightClientBuilder::default()
+        .endpoint(combined_config.near_rpc)
+        .eth_light_client_id(combined_config.eth_light_client_id)
+        .build()
+        .unwrap();
 
     OmniConnectorBuilder::default()
         .near_bridge_client(Some(near_bridge_client))
         .eth_bridge_client(Some(eth_bridge_client))
         .base_bridge_client(Some(base_bridge_client))
         .arb_bridge_client(Some(arb_bridge_client))
+        .bnb_bridge_client(Some(bnb_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
+        .eth_light_client(Some(eth_light_client))
         .build()
         .unwrap()
 }
