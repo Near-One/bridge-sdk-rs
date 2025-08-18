@@ -275,9 +275,14 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(&self) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxos(&self, is_zcash: bool) -> Result<HashMap<String, UTXO>> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        }
+        else {
+            self.btc_connector()?
+        };
 
         let response = near_rpc_client::view(
             endpoint,
@@ -409,7 +414,11 @@ impl NearBridgeClient {
     }
 
     pub fn btc_connector(&self) -> Result<AccountId> {
-        self.btc_connector
+        self.btc_bridge.as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC accounts id is not set".to_string(),
+            ))?
+            .utxo_chain_connector
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC Connector account id is not set".to_string(),
@@ -420,8 +429,29 @@ impl NearBridgeClient {
             })
     }
 
+    pub fn zcash_connector(&self) -> Result<AccountId> {
+        self.zcash_bridge.as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Zcash accounts id is not set".to_string(),
+            ))?
+            .utxo_chain_connector
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Zcash Connector account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid zcash connector account id".to_string())
+            })
+    }
+
+
     pub fn btc(&self) -> Result<AccountId> {
-        self.btc
+        self.btc_bridge.as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC accounts id is not set".to_string(),
+            ))?
+            .utxo_chain_token
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Bitcoin account id is not set".to_string(),
@@ -431,7 +461,11 @@ impl NearBridgeClient {
     }
 
     pub fn satoshi_relayer(&self) -> Result<AccountId> {
-        self.satoshi_relayer
+        self.btc_bridge.as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC accounts id is not set".to_string(),
+            ))?
+            .satoshi_relayer
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Satoshi Relayer account id is not set".to_string(),

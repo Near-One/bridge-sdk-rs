@@ -467,6 +467,22 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn active_utxo_management(&self, is_zcash: bool, transaction_options: TransactionOptions) -> Result<()>  {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let fee_rate = if is_zcash {
+            let zcash_bridge_client = self.zcash_bridge_client()?;
+            zcash_bridge_client.get_fee_rate().await?
+        } else {
+            let btc_bridge_client = self.btc_bridge_client()?;
+            btc_bridge_client.get_fee_rate().await?
+        };
+
+        let utxos = near_bridge_client.get_utxos(is_zcash).await?;
+
+        return Ok(());
+    }
+
     pub async fn init_near_to_bitcoin_transfer(
         &self,
         target_btc_address: String,
@@ -475,7 +491,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_bridge_client = self.btc_bridge_client()?;
-        let utxos = near_bridge_client.get_utxos().await?;
+        let utxos = near_bridge_client.get_utxos(false).await?;
 
         let fee_rate = btc_bridge_client.get_fee_rate().await?;
         let (out_points, utxos_balance, gas_fee) =
@@ -1490,6 +1506,14 @@ impl OmniConnector {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC bridge client not configured".to_string(),
+            ))
+    }
+
+    pub fn zcash_bridge_client(&self) -> Result<&UTXOBridgeClient<Zcash>> {
+        self.zcash_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "ZCash bridge client not configured".to_string(),
             ))
     }
 

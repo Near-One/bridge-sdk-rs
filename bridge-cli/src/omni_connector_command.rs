@@ -6,7 +6,7 @@ use btc_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeCli
 use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
-use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions};
+use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
     BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
@@ -19,6 +19,12 @@ use solana_sdk::{signature::Keypair, signer::EncodableKey};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
 use crate::{combined_config, CliConfig, Network};
+
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
+pub enum UTXOChain {
+    Bitcoin,
+    Zcash,
+}
 
 #[derive(Subcommand, Debug)]
 pub enum OmniConnectorSubCommand {
@@ -356,6 +362,13 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         amount: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Perform UTXO rebalancing for UTXO Chain Connector")]
+    ActiveUTXOManagement {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -787,6 +800,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
+            omni_connector(network, config_cli)
+                .active_utxo_management(chain == UTXOChain::Zcash, TransactionOptions::default())
+                .await
+                .unwrap();
+        }
     }
 }
 
@@ -798,9 +817,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
-        .btc_connector(combined_config.btc_connector)
-        .btc(combined_config.btc)
-        .satoshi_relayer(combined_config.satoshi_relayer)
+        .btc_bridge(Some(UTXOChainAccounts {
+            utxo_chain_connector: combined_config.btc_connector,
+            utxo_chain_token: combined_config.btc,
+            satoshi_relayer: combined_config.satoshi_relayer,
+        }))
+        .zcash_bridge(Some(UTXOChainAccounts {
+            utxo_chain_connector: combined_config.zcash_connector,
+            utxo_chain_token: combined_config.zcash,
+            satoshi_relayer: None,
+        }))
         .build()
         .unwrap();
 
