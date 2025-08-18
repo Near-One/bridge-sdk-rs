@@ -36,6 +36,10 @@ pub const BTC_CONNECTOR_MAINNET: &str = "btc-connector.bridge.near";
 pub const BTC_MAINNET: &str = "btc-client.bridge.near";
 pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 
+pub const ZCASH_ENDPOINT_MAINNET: &str = "";
+pub const ZCASH_CONNECTOR_MAINNET: &str = "";
+pub const ZCASH_MAINNET: &str = "";
+
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
@@ -74,6 +78,10 @@ pub const BTC_CONNECTOR_TESTNET: &str = "brg-dev.testnet";
 pub const BTC_TESTNET: &str = "nbtc-dev.testnet";
 pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 
+pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
+pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
+
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_DEVNET: &str = "omni-locker.testnet";
@@ -111,3 +119,7 @@ pub const BTC_ENDPOINT_DEVNET: &str = "https://bitcoin-testnet-rpc.publicnode.co
 pub const BTC_CONNECTOR_DEVNET: &str = "brg-dev.testnet";
 pub const BTC_DEVNET: &str = "nbtc-dev.testnet";
 pub const SATOSHI_RELAYER_DEVNET: &str = "cosmosfirst.testnet";
+
+pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
+pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";

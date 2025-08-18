@@ -2,7 +2,7 @@ use std::{path::Path, str::FromStr};
 
 use clap::Subcommand;
 
-use btc_bridge_client::{types::Bitcoin, AuthOptions, UTXOBridgeClient};
+use btc_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
@@ -875,8 +875,20 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         AuthOptions::None
     };
 
+    let zcash_client_auth = if let Some(api_key) = combined_config.zcash_api_key {
+        AuthOptions::XApiKey(api_key)
+    } else if let Some(basic_auth) = combined_config.zcash_basic_auth {
+        let (user, password) = basic_auth.split_once(':').unwrap();
+        AuthOptions::BasicAuth(user.to_string(), password.to_string())
+    } else {
+        AuthOptions::None
+    };
+
     let btc_bridge_client =
         UTXOBridgeClient::<Bitcoin>::new(combined_config.btc_endpoint.unwrap(), btc_client_auth);
+
+    let zcash_bridge_client =
+        UTXOBridgeClient::<Zcash>::new(combined_config.zcash_endpoint.unwrap(), zcash_client_auth);
 
     let eth_light_client = EthLightClientBuilder::default()
         .endpoint(combined_config.near_rpc)
@@ -893,6 +905,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
+        .zcash_bridge_client(Some(zcash_bridge_client))
         .eth_light_client(Some(eth_light_client))
         .build()
         .unwrap()

@@ -16,6 +16,7 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
+use btc_bridge_client::types::Zcash;
 use btc_bridge_client::{types::Bitcoin, UTXOBridgeClient};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
@@ -42,6 +43,7 @@ pub struct OmniConnector {
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
+    zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
     eth_light_client: Option<EthLightClient>,
 }
 
