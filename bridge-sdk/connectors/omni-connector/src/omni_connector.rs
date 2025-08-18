@@ -467,7 +467,11 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn active_utxo_management(&self, is_zcash: bool, transaction_options: TransactionOptions) -> Result<()>  {
+    pub async fn active_utxo_management(
+        &self,
+        is_zcash: bool,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let fee_rate = if is_zcash {
@@ -479,8 +483,22 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(is_zcash).await?;
+        let (out_points, utxos_balance, gas_fee) =
+            btc_utils::choose_utxos_for_active_management(utxos, fee_rate)?;
 
-        return Ok(());
+        let change_address = near_bridge_client.get_change_address().await?;
+        let tx_outs = btc_utils::get_tx_outs(
+            &change_address,
+            (utxos_balance - gas_fee).try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+            })?,
+            &change_address,
+            0,
+        );
+
+        near_bridge_client
+            .active_utxo_management(is_zcash, out_points, tx_outs, transaction_options)
+            .await
     }
 
     pub async fn init_near_to_bitcoin_transfer(

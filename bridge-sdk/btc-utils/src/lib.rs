@@ -52,6 +52,9 @@ pub fn choose_utxos(
     let mut gas_fee: u128 = 0;
 
     for utxo in utxo_list {
+        utxos_balance += u128::from(utxo.1.balance);
+        selected.push(utxo);
+
         gas_fee = get_gas_fee(
             selected
                 .len()
@@ -65,9 +68,38 @@ pub fn choose_utxos(
         if utxos_balance >= gas_fee + amount {
             break;
         }
-        utxos_balance += u128::from(utxo.1.balance);
-        selected.push(utxo);
     }
+
+    let out_points = utxo_to_out_points(selected)?;
+    Ok((out_points, utxos_balance, gas_fee))
+}
+
+#[allow(clippy::implicit_hasher)]
+pub fn choose_utxos_for_active_management(
+    utxos: HashMap<String, UTXO>,
+    fee_rate: u64,
+) -> Result<(Vec<OutPoint>, u128, u128)> {
+    let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
+    utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
+
+    let mut selected = Vec::new();
+    let mut utxos_balance = 0;
+    let utxo_amount = 2;
+
+    for i in 0..utxo_amount {
+        utxos_balance += u128::from(utxo_list[i].1.balance);
+        selected.push(utxo_list[i].clone());
+    }
+
+    let gas_fee: u128 = get_gas_fee(
+        selected
+            .len()
+            .try_into()
+            .expect("Error on convert usize into u64"),
+        1,
+        fee_rate,
+    )
+    .into();
 
     let out_points = utxo_to_out_points(selected)?;
     Ok((out_points, utxos_balance, gas_fee))
@@ -84,17 +116,21 @@ pub fn get_tx_outs(
     let btc_recipient_address = btc_recipient_address.assume_checked();
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
-    let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");
-    let change_address = change_address.assume_checked();
-    let change_script_pubkey = change_address.script_pubkey();
-    vec![
-        TxOut {
-            value: Amount::from_sat(amount),
-            script_pubkey: btc_recipient_script_pubkey,
-        },
-        TxOut {
+    let mut res = vec![TxOut {
+        value: Amount::from_sat(amount),
+        script_pubkey: btc_recipient_script_pubkey,
+    }];
+
+    if change_amount > 0 {
+        let change_address =
+            Address::from_str(change_address).expect("Invalid Bitcoin Change address");
+        let change_address = change_address.assume_checked();
+        let change_script_pubkey = change_address.script_pubkey();
+        res.push(TxOut {
             value: Amount::from_sat(change_amount),
             script_pubkey: change_script_pubkey,
-        },
-    ]
+        });
+    }
+
+    res
 }
