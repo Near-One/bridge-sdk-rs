@@ -264,6 +264,8 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Sign BTC transaction on Near")]
     NearSignBTCTransaction {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(short, long, help = "Pending BTC transaction ID")]
         btc_pending_id: String,
         #[clap(
@@ -278,6 +280,8 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Finalize Transfer from Bitcoin on Near")]
     NearFinTransferBTC {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
         #[clap(
@@ -308,6 +312,8 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Verify BTC Withdraw in btc_connector")]
     BtcVerifyWithdraw {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
         #[command(flatten)]
@@ -324,6 +330,8 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Finalize Transfer from Near on Bitcoin")]
     BtcFinTransfer {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(short, long, help = "Near tx hash with signature")]
         near_tx_hash: String,
         #[command(flatten)]
@@ -333,6 +341,8 @@ pub enum OmniConnectorSubCommand {
         about = "Requests a Bitcoin address for transferring the specified amount to the given recipient on the Bitcoin network"
     )]
     GetBitcoinAddress {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(
             short,
             long,
@@ -358,6 +368,8 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
     InitNearToBitcoinTransfer {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
         #[clap(
             short,
             long,
@@ -724,12 +736,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::NearSignBTCTransaction {
+            chain,
             btc_pending_id,
             sign_index,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_sign_btc_transaction(
+                    chain == UTXOChain::Zcash,
                     btc_pending_id,
                     sign_index,
                     TransactionOptions::default(),
@@ -738,6 +752,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::NearFinTransferBTC {
+            chain,
             btc_tx_hash,
             vout,
             recipient_id,
@@ -747,6 +762,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_fin_transfer_btc(
+                    chain == UTXOChain::Zcash,
                     btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
@@ -760,11 +776,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
+            chain,
             btc_tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_btc_verify_withdraw(btc_tx_hash, TransactionOptions::default())
+                .near_btc_verify_withdraw(
+                    chain == UTXOChain::Zcash,
+                    btc_tx_hash,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }
@@ -783,17 +804,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::BtcFinTransfer {
+            chain,
             near_tx_hash,
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(near_tx_hash, None)
+                .btc_fin_transfer(chain == UTXOChain::Zcash, near_tx_hash, None)
                 .await
                 .unwrap();
 
             tracing::info!("BTC Tx Hash: {tx_hash}");
         }
         OmniConnectorSubCommand::GetBitcoinAddress {
+            chain,
             recipient_id,
             amount,
             fee,
@@ -801,21 +824,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(&recipient_id, amount, fee)
+                .get_btc_address(chain == UTXOChain::Zcash, &recipient_id, amount, fee)
                 .await
                 .unwrap();
 
-            let transfer_amount = omni_connector.get_amount_to_transfer(amount).await.unwrap();
+            let transfer_amount = omni_connector
+                .get_amount_to_transfer(chain == UTXOChain::Zcash, amount)
+                .await
+                .unwrap();
             tracing::info!("BTC Address: {btc_address}");
             tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
         OmniConnectorSubCommand::InitNearToBitcoinTransfer {
+            chain,
             target_btc_address,
             amount,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .init_near_to_bitcoin_transfer(
+                    chain == UTXOChain::Zcash,
                     target_btc_address,
                     amount,
                     TransactionOptions::default(),

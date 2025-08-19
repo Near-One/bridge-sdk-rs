@@ -121,12 +121,17 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
     pub async fn sign_btc_transaction(
         &self,
+        is_zcash: bool,
         btc_pending_id: String,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -157,11 +162,16 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
+        is_zcash: bool,
         args: FinBtcTransferArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -191,11 +201,16 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY WITHDRAW")]
     pub async fn btc_verify_withdraw(
         &self,
+        is_zcash: bool,
         args: BtcVerifyWithdrawArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -298,13 +313,18 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR INIT BTC TRANSFER")]
     pub async fn init_btc_transfer_near_to_btc(
         &self,
+        is_zcash: bool,
         amount: u128,
         msg: TokenReceiverMessage,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc = self.btc()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -333,13 +353,18 @@ impl NearBridgeClient {
 
     pub async fn get_btc_address(
         &self,
+        is_zcash: bool,
         recipient_id: &str,
         amount: u128,
         fee: u128,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
 
         let response = near_rpc_client::view(
             endpoint,
@@ -379,35 +404,39 @@ impl NearBridgeClient {
         Ok(utxos)
     }
 
-    pub async fn get_withdraw_fee(&self) -> Result<u128> {
-        let config = self.get_config().await?;
+    pub async fn get_withdraw_fee(&self, is_zcash: bool) -> Result<u128> {
+        let config = self.get_config(is_zcash).await?;
         Ok(config.withdraw_bridge_fee.fee_min)
     }
 
-    pub async fn get_change_address(&self) -> Result<String> {
-        let config = self.get_config().await?;
+    pub async fn get_change_address(&self, is_zcash: bool) -> Result<String> {
+        let config = self.get_config(is_zcash).await?;
         Ok(config.change_address)
     }
 
-    pub async fn get_active_management_limit(&self) -> Result<(u32, u32)> {
-        let config = self.get_config().await?;
+    pub async fn get_active_management_limit(&self, is_zcash: bool) -> Result<(u32, u32)> {
+        let config = self.get_config(is_zcash).await?;
         Ok((
             config.active_management_lower_limit,
             config.active_management_upper_limit,
         ))
     }
 
-    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
-        let config = self.get_config().await?;
+    pub async fn get_amount_to_transfer(&self, is_zcash: bool, amount: u128) -> Result<u128> {
+        let config = self.get_config(is_zcash).await?;
         Ok(max(
             config.deposit_bridge_fee.get_fee(amount) + amount,
             config.min_deposit_amount,
         ))
     }
 
-    async fn get_config(&self) -> Result<PartialConfig> {
+    async fn get_config(&self, is_zcash: bool) -> Result<PartialConfig> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.btc_connector()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
 
         let response = near_rpc_client::view(
             endpoint,
