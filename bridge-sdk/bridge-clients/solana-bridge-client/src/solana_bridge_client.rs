@@ -145,6 +145,7 @@ impl SolanaBridgeClient {
         let instruction_data = Initialize {
             admin: keypair.pubkey(),
             pausable_admin: keypair.pubkey(),
+            metadata_admin: keypair.pubkey(),
             derived_near_bridge_address,
         };
 
