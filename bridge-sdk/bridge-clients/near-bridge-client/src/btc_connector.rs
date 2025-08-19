@@ -109,6 +109,10 @@ struct PartialConfig {
     deposit_bridge_fee: BridgeFee,
     #[serde_as(as = "DisplayFromStr")]
     min_deposit_amount: u128,
+    max_active_utxo_management_input_number: u8,
+    max_active_utxo_management_output_number: u8,
+    active_management_lower_limit: u32,
+    active_management_upper_limit: u32,
 }
 
 impl NearBridgeClient {
@@ -345,6 +349,14 @@ impl NearBridgeClient {
     pub async fn get_change_address(&self) -> Result<String> {
         let config = self.get_config().await?;
         Ok(config.change_address)
+    }
+
+    pub async fn get_active_management_limit(&self) -> Result<(u32, u32)> {
+        let config = self.get_config().await?;
+        Ok((
+            config.active_management_lower_limit,
+            config.active_management_upper_limit,
+        ))
     }
 
     pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {

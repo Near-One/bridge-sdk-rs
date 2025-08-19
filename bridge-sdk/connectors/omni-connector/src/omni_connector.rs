@@ -483,18 +483,18 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(is_zcash).await?;
-        let (out_points, utxos_balance, gas_fee) =
-            btc_utils::choose_utxos_for_active_management(utxos, fee_rate)?;
+        let (active_management_lower_limit, active_management_upper_limit) =
+            near_bridge_client.get_active_management_limit().await?;
 
         let change_address = near_bridge_client.get_change_address().await?;
-        let tx_outs = btc_utils::get_tx_outs(
-            &change_address,
-            (utxos_balance - gas_fee).try_into().map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
-            })?,
-            &change_address,
-            0,
-        );
+
+        let (out_points, tx_outs) = btc_utils::choose_utxos_for_active_management(
+            utxos,
+            fee_rate,
+            change_address,
+            active_management_lower_limit,
+            active_management_upper_limit,
+        )?;
 
         near_bridge_client
             .active_utxo_management(is_zcash, out_points, tx_outs, transaction_options)

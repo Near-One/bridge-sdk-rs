@@ -78,31 +78,63 @@ pub fn choose_utxos(
 pub fn choose_utxos_for_active_management(
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
-) -> Result<(Vec<OutPoint>, u128, u128)> {
+    change_address: String,
+    active_management_lower_limit: u32,
+    active_management_upper_limit: u32,
+) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
 
     let mut selected = Vec::new();
     let mut utxos_balance = 0;
-    let utxo_amount = 2;
 
-    for i in 0..utxo_amount {
-        utxos_balance += u128::from(utxo_list[i].1.balance);
-        selected.push(utxo_list[i].clone());
-    }
+    if utxo_list.len() < active_management_lower_limit as usize {
+        let utxo_amount = 1;
+        for i in 0..utxo_amount {
+            utxos_balance += u128::from(utxo_list[utxo_list.len() - 1 - i].1.balance);
+            selected.push(utxo_list[i].clone());
+        }
 
-    let gas_fee: u128 = get_gas_fee(
-        selected
-            .len()
+        let gas_fee: u128 = get_gas_fee(1, 2, fee_rate).into();
+
+        let out_points = utxo_to_out_points(selected)?;
+        let mut amount_1: u64 = (utxos_balance - gas_fee).try_into().map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+        })?;
+        amount_1 = amount_1 / 2;
+        let amount_2: u64 = (utxos_balance - gas_fee - amount_1 as u128)
             .try_into()
-            .expect("Error on convert usize into u64"),
-        1,
-        fee_rate,
-    )
-    .into();
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+            })?;
 
-    let out_points = utxo_to_out_points(selected)?;
-    Ok((out_points, utxos_balance, gas_fee))
+        let tx_outs = get_tx_outs(&change_address, amount_1, &change_address, amount_2);
+
+        Ok((out_points, tx_outs))
+    } else if utxo_list.len() > active_management_upper_limit as usize {
+        let utxo_amount = 2;
+        for i in 0..utxo_amount {
+            utxos_balance += u128::from(utxo_list[i].1.balance);
+            selected.push(utxo_list[i].clone());
+        }
+        let gas_fee: u128 = get_gas_fee(2, 1, fee_rate).into();
+        let out_points = utxo_to_out_points(selected)?;
+
+        let tx_outs = get_tx_outs(
+            &change_address,
+            (utxos_balance - gas_fee).try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+            })?,
+            &change_address,
+            0,
+        );
+
+        Ok((out_points, tx_outs))
+    } else {
+        Err(BridgeSdkError::BtcClientError(
+            "Incorrect number of UTXOs for active management".to_string(),
+        ))
+    }
 }
 
 pub fn get_tx_outs(
