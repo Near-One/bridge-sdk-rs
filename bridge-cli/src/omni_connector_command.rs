@@ -313,6 +313,15 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Verify Active UTXO Management in btc_connector")]
+    BtcVerifyActiveUtxoManagement {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
+        #[clap(short, long, help = "Bitcoin/ZCash tx hash")]
+        btc_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Finalize Transfer from Near on Bitcoin")]
     BtcFinTransfer {
         #[clap(short, long, help = "Near tx hash with signature")]
@@ -756,6 +765,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_withdraw(btc_tx_hash, TransactionOptions::default())
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcVerifyActiveUtxoManagement {
+            chain,
+            btc_tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_btc_verify_active_utxo_management(
+                    chain == UTXOChain::Zcash,
+                    btc_tx_hash,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

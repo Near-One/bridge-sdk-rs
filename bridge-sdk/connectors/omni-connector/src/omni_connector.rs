@@ -455,6 +455,33 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_btc_verify_active_utxo_management(
+        &self,
+        is_zcash: bool,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let proof_data = if is_zcash {
+            let btc_bridge = self.zcash_bridge_client()?;
+            btc_bridge.extract_btc_proof(&tx_hash).await?
+        } else {
+            let btc_bridge = self.btc_bridge_client()?;
+            btc_bridge.extract_btc_proof(&tx_hash).await?
+        };
+
+        let near_bridge_client = self.near_bridge_client()?;
+        let args = BtcVerifyWithdrawArgs {
+            tx_id: tx_hash,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
+
+        near_bridge_client
+            .btc_verify_active_utxo_management(is_zcash, args, transaction_options)
+            .await
+    }
+
     pub async fn get_btc_address(
         &self,
         recipient_id: &str,
