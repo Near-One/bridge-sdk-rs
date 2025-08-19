@@ -16,7 +16,7 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
-use btc_bridge_client::BtcBridgeClient;
+use btc_bridge_client::{types::Bitcoin, UTXOBridgeClient};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -41,7 +41,7 @@ pub struct OmniConnector {
     bnb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
-    btc_bridge_client: Option<BtcBridgeClient>,
+    btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
     eth_light_client: Option<EthLightClient>,
 }
 
@@ -409,7 +409,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
+        let proof_data = btc_bridge.extract_btc_proof(&tx_hash).await?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
@@ -440,7 +440,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let btc_bridge = self.btc_bridge_client()?;
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
+        let proof_data = btc_bridge.extract_btc_proof(&tx_hash).await?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
             tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -475,7 +475,7 @@ impl OmniConnector {
         let btc_bridge_client = self.btc_bridge_client()?;
         let utxos = near_bridge_client.get_utxos().await?;
 
-        let fee_rate = btc_bridge_client.get_fee_rate()?;
+        let fee_rate = btc_bridge_client.get_fee_rate().await?;
         let (out_points, utxos_balance, gas_fee) =
             btc_utils::choose_utxos(amount, utxos, fee_rate)?;
 
@@ -521,7 +521,7 @@ impl OmniConnector {
             .await?;
 
         let btc_bridge_client = self.btc_bridge_client()?;
-        let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
+        let tx_hash = btc_bridge_client.send_tx(&btc_tx_data).await?;
         Ok(tx_hash)
     }
 
@@ -1483,7 +1483,7 @@ impl OmniConnector {
             ))
     }
 
-    pub fn btc_bridge_client(&self) -> Result<&BtcBridgeClient> {
+    pub fn btc_bridge_client(&self) -> Result<&UTXOBridgeClient<Bitcoin>> {
         self.btc_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
