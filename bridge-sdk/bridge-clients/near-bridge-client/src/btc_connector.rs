@@ -17,6 +17,7 @@ const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
+const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
@@ -24,6 +25,7 @@ const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
 const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
+const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
@@ -230,6 +232,44 @@ impl NearBridgeClient {
         tracing::info!(
             tx_hash = tx_hash.to_string(),
             "Sent BTC Verify Withdraw transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    #[tracing::instrument(skip_all, name = "NEAR BTC CANCEL WITHDRAW")]
+    pub async fn btc_cancel_withdraw(
+        &self,
+        is_zcash: bool,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = if is_zcash {
+            self.zcash_connector()?
+        } else {
+            self.btc_connector()?
+        };
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "cancel_withdraw".to_string(),
+                args: serde_json::json!({"original_btc_pending_verify_id": tx_hash, "output": []})
+                    .to_string()
+                    .into_bytes(),
+                gas: BTC_CANCEL_WITHDRAW_GAS,
+                deposit: BTC_CANCEL_WITHDRAW_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Cancel Withdraw transaction"
         );
         Ok(tx_hash)
     }

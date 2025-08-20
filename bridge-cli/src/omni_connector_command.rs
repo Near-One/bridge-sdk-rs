@@ -319,6 +319,15 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Cancel BTC Withdraw in btc_connector")]
+    BtcCancelWithdraw {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChain,
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Verify Active UTXO Management in btc_connector")]
     BtcVerifyActiveUtxoManagement {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -782,6 +791,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_withdraw(
+                    chain == UTXOChain::Zcash,
+                    btc_tx_hash,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcCancelWithdraw {
+            chain,
+            btc_tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_btc_cancel_withdraw(
                     chain == UTXOChain::Zcash,
                     btc_tx_hash,
                     TransactionOptions::default(),

@@ -469,6 +469,19 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_btc_cancel_withdraw(
+        &self,
+        is_zcash: bool,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .btc_cancel_withdraw(is_zcash, tx_hash, transaction_options)
+            .await
+    }
+
     pub async fn near_btc_verify_active_utxo_management(
         &self,
         is_zcash: bool,
