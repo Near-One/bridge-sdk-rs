@@ -1,12 +1,13 @@
 [package]
 name = "solana-bridge-client"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 
 [dependencies]
 derive_builder.workspace = true
 borsh.workspace = true
 bitvec = "1.0.1"
+base64.workspace = true
 sha2.workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true

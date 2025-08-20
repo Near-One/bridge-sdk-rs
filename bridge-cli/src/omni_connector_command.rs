@@ -173,6 +173,11 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Get version of Solana OmniBridge program")]
+    SolanaGetVersion {
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on Solana")]
     SolanaInitTransfer {
         #[clap(short, long, help = "Token to transfer")]
@@ -593,6 +598,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .solana_initialize(extract_solana_keypair(&program_keypair))
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::SolanaGetVersion { config_cli } => {
+            omni_connector(network, config_cli)
+                .solana_get_version()
                 .await
                 .unwrap();
         }
