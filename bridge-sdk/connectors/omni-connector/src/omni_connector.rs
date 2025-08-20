@@ -538,7 +538,12 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(is_zcash).await?;
-        let (active_management_lower_limit, active_management_upper_limit) = near_bridge_client
+        let (
+            active_management_lower_limit,
+            active_management_upper_limit,
+            max_active_utxo_management_input_number,
+            max_active_utxo_management_output_number,
+        ) = near_bridge_client
             .get_active_management_limit(is_zcash)
             .await?;
 
@@ -550,6 +555,8 @@ impl OmniConnector {
             change_address,
             active_management_lower_limit,
             active_management_upper_limit,
+            max_active_utxo_management_input_number,
+            max_active_utxo_management_output_number,
         )?;
 
         near_bridge_client

@@ -81,6 +81,8 @@ pub fn choose_utxos_for_active_management(
     change_address: String,
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
+    max_active_utxo_management_input_number: u8,
+    _max_active_utxo_management_output_number: u8,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -112,12 +114,15 @@ pub fn choose_utxos_for_active_management(
 
         Ok((out_points, tx_outs))
     } else if utxo_list.len() > active_management_upper_limit as usize {
-        let utxo_amount = 2;
+        let utxo_amount = std::cmp::min(
+            utxo_list.len() - active_management_upper_limit as usize,
+            max_active_utxo_management_input_number as usize,
+        );
         for i in 0..utxo_amount {
             utxos_balance += u128::from(utxo_list[i].1.balance);
             selected.push(utxo_list[i].clone());
         }
-        let gas_fee: u128 = get_gas_fee(2, 1, fee_rate).into();
+        let gas_fee: u128 = get_gas_fee(selected.len() as u64, 1, fee_rate).into();
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs(

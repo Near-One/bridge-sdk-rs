@@ -454,11 +454,13 @@ impl NearBridgeClient {
         Ok(config.change_address)
     }
 
-    pub async fn get_active_management_limit(&self, is_zcash: bool) -> Result<(u32, u32)> {
+    pub async fn get_active_management_limit(&self, is_zcash: bool) -> Result<(u32, u32, u8, u8)> {
         let config = self.get_config(is_zcash).await?;
         Ok((
             config.active_management_lower_limit,
             config.active_management_upper_limit,
+            config.max_active_utxo_management_input_number,
+            config.max_active_utxo_management_output_number,
         ))
     }
 
