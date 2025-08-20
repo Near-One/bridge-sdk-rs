@@ -234,7 +234,9 @@ impl SolanaBridgeClient {
                 "returnData too short".into(),
             ));
         }
-        let len = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]) as usize;
+        let len = usize::try_from(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])).map_err(
+            |_| SolanaBridgeClientError::InvalidAccountData("Invalid length in returnData".into()),
+        )?;
         if raw.len() < 4 + len {
             return Err(SolanaBridgeClientError::InvalidAccountData(format!(
                 "returnData length mismatch: {} < {}",
