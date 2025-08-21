@@ -22,8 +22,21 @@ use crate::{combined_config, CliConfig, Network};
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 pub enum UTXOChain {
-    Bitcoin,
-    Zcash,
+    BitcoinMainnet,
+    BitcoinTestnet,
+    ZcashMainnet,
+    ZcashTestnet,
+}
+
+impl UTXOChain {
+    pub fn to_chain(&self) -> btc_utils::address::Chain {
+        match self {
+            UTXOChain::BitcoinMainnet => btc_utils::address::Chain::BitcoinMainnet,
+            UTXOChain::BitcoinTestnet => btc_utils::address::Chain::BitcoinTestnet,
+            UTXOChain::ZcashMainnet => btc_utils::address::Chain::ZcashMainnet,
+            UTXOChain::ZcashTestnet => btc_utils::address::Chain::ZcashTestnet,
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -752,7 +765,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_sign_btc_transaction(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     btc_pending_id,
                     sign_index,
                     TransactionOptions::default(),
@@ -771,7 +784,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_fin_transfer_btc(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
@@ -791,7 +804,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_withdraw(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     btc_tx_hash,
                     TransactionOptions::default(),
                 )
@@ -805,7 +818,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_cancel_withdraw(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     btc_tx_hash,
                     TransactionOptions::default(),
                 )
@@ -819,7 +832,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_active_utxo_management(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     btc_tx_hash,
                     TransactionOptions::default(),
                 )
@@ -832,7 +845,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(chain == UTXOChain::Zcash, near_tx_hash, None)
+                .btc_fin_transfer(chain.to_chain(), near_tx_hash, None)
                 .await
                 .unwrap();
 
@@ -847,12 +860,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain == UTXOChain::Zcash, &recipient_id, amount, fee)
+                .get_btc_address(chain.to_chain(), &recipient_id, amount, fee)
                 .await
                 .unwrap();
 
             let transfer_amount = omni_connector
-                .get_amount_to_transfer(chain == UTXOChain::Zcash, amount)
+                .get_amount_to_transfer(chain.to_chain(), amount)
                 .await
                 .unwrap();
             tracing::info!("BTC Address: {btc_address}");
@@ -866,7 +879,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .init_near_to_bitcoin_transfer(
-                    chain == UTXOChain::Zcash,
+                    chain.to_chain(),
                     target_btc_address,
                     amount,
                     TransactionOptions::default(),
@@ -876,7 +889,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
             omni_connector(network, config_cli)
-                .active_utxo_management(chain == UTXOChain::Zcash, TransactionOptions::default())
+                .active_utxo_management(chain.to_chain(), TransactionOptions::default())
                 .await
                 .unwrap();
         }

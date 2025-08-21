@@ -1,8 +1,10 @@
-use bitcoin::{Address, Amount, OutPoint, TxOut};
+pub mod address;
+
+use crate::address::Address;
+use bitcoin::{Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
-use std::str::FromStr;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -84,6 +86,7 @@ pub fn choose_utxos_for_active_management(
     max_active_utxo_management_input_number: u8,
     max_active_utxo_management_output_number: u8,
     min_deposit_amount: u128,
+    chain: address::Chain,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -109,8 +112,12 @@ pub fn choose_utxos_for_active_management(
         let gas_fee: u128 = get_gas_fee(1, output_amount, fee_rate).into();
         let out_points = utxo_to_out_points(selected)?;
 
-        let tx_outs =
-            get_tx_outs_utxo_management(&change_address, output_amount, utxos_balance - gas_fee);
+        let tx_outs = get_tx_outs_utxo_management(
+            &change_address,
+            output_amount,
+            utxos_balance - gas_fee,
+            chain,
+        );
 
         Ok((out_points, tx_outs))
     } else if utxo_list.len() > active_management_upper_limit as usize {
@@ -132,6 +139,7 @@ pub fn choose_utxos_for_active_management(
             })?,
             &change_address,
             0,
+            chain,
         );
 
         Ok((out_points, tx_outs))
@@ -147,10 +155,10 @@ pub fn get_tx_outs(
     amount: u64,
     change_address: &str,
     change_amount: u64,
+    chain: address::Chain,
 ) -> Vec<TxOut> {
     let btc_recipient_address =
-        Address::from_str(target_btc_address).expect("Invalid Bitcoin address");
-    let btc_recipient_address = btc_recipient_address.assume_checked();
+        Address::parse(target_btc_address, chain).expect("Invalid Bitcoin address");
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
     let mut res = vec![TxOut {
@@ -160,8 +168,7 @@ pub fn get_tx_outs(
 
     if change_amount > 0 {
         let change_address =
-            Address::from_str(change_address).expect("Invalid Bitcoin Change address");
-        let change_address = change_address.assume_checked();
+            Address::parse(change_address, chain).expect("Invalid Bitcoin Change address");
         let change_script_pubkey = change_address.script_pubkey();
         res.push(TxOut {
             value: Amount::from_sat(change_amount),
@@ -176,9 +183,10 @@ pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
     amount: u128,
+    chain: address::Chain,
 ) -> Vec<TxOut> {
-    let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");
-    let change_address = change_address.assume_checked();
+    let change_address =
+        Address::parse(change_address, chain).expect("Invalid Bitcoin Change address");
     let change_script_pubkey = change_address.script_pubkey();
 
     let one_amount = amount as u64 / output_amount;

@@ -980,6 +980,7 @@ name = "bridge-cli"
 version = "0.3.5"
 dependencies = [
  "btc-bridge-client",
+ "btc-utils",
  "clap",
  "dotenv",
  "eth-light-client",
@@ -1089,9 +1090,12 @@ version = "0.2.0"
 dependencies = [
  "bitcoin",
  "bridge-connector-common",
+ "k256",
+ "near-sdk",
  "serde",
  "serde_json",
  "serde_with",
+ "zcash_address",
 ]
 
 [[package]]
