@@ -82,7 +82,8 @@ pub fn choose_utxos_for_active_management(
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
     max_active_utxo_management_input_number: u8,
-    _max_active_utxo_management_output_number: u8,
+    max_active_utxo_management_output_number: u8,
+    min_deposit_amount: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -97,20 +98,19 @@ pub fn choose_utxos_for_active_management(
             selected.push(utxo_list[i].clone());
         }
 
-        let gas_fee: u128 = get_gas_fee(1, 2, fee_rate).into();
+        let output_amount = std::cmp::min(
+            (active_management_lower_limit as usize - utxo_list.len()) as u128,
+            std::cmp::min(
+                utxos_balance as u128 / min_deposit_amount - 1,
+                max_active_utxo_management_output_number as u128,
+            ),
+        ) as u64;
 
+        let gas_fee: u128 = get_gas_fee(1, output_amount, fee_rate).into();
         let out_points = utxo_to_out_points(selected)?;
-        let mut amount_1: u64 = (utxos_balance - gas_fee).try_into().map_err(|err| {
-            BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
-        })?;
-        amount_1 = amount_1 / 2;
-        let amount_2: u64 = (utxos_balance - gas_fee - amount_1 as u128)
-            .try_into()
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
-            })?;
 
-        let tx_outs = get_tx_outs(&change_address, amount_1, &change_address, amount_2);
+        let tx_outs =
+            get_tx_outs_utxo_management(&change_address, output_amount, utxos_balance - gas_fee);
 
         Ok((out_points, tx_outs))
     } else if utxo_list.len() > active_management_upper_limit as usize {
@@ -166,6 +166,31 @@ pub fn get_tx_outs(
         res.push(TxOut {
             value: Amount::from_sat(change_amount),
             script_pubkey: change_script_pubkey,
+        });
+    }
+
+    res
+}
+
+pub fn get_tx_outs_utxo_management(
+    change_address: &str,
+    output_amount: u64,
+    amount: u128,
+) -> Vec<TxOut> {
+    let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");
+    let change_address = change_address.assume_checked();
+    let change_script_pubkey = change_address.script_pubkey();
+
+    let one_amount = amount as u64 / output_amount;
+    let mut res = vec![TxOut {
+        value: Amount::from_sat(amount as u64 - one_amount * (output_amount - 1)),
+        script_pubkey: change_script_pubkey.clone(),
+    }];
+
+    for _ in 0..output_amount - 1 {
+        res.push(TxOut {
+            value: Amount::from_sat(one_amount),
+            script_pubkey: change_script_pubkey.clone(),
         });
     }
 

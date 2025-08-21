@@ -548,6 +548,7 @@ impl OmniConnector {
             .await?;
 
         let change_address = near_bridge_client.get_change_address(is_zcash).await?;
+        let min_deposit_amount = near_bridge_client.get_min_deposit_amount(is_zcash).await?;
 
         let (out_points, tx_outs) = btc_utils::choose_utxos_for_active_management(
             utxos,
@@ -557,6 +558,7 @@ impl OmniConnector {
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
+            min_deposit_amount,
         )?;
 
         near_bridge_client

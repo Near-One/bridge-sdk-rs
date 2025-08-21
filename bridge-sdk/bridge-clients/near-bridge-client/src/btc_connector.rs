@@ -472,6 +472,11 @@ impl NearBridgeClient {
         ))
     }
 
+    pub async fn get_min_deposit_amount(&self, is_zcash: bool) -> Result<u128> {
+        let config = self.get_config(is_zcash).await?;
+        Ok(config.min_deposit_amount)
+    }
+
     async fn get_config(&self, is_zcash: bool) -> Result<PartialConfig> {
         let endpoint = self.endpoint()?;
         let btc_connector = if is_zcash {
