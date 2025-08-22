@@ -110,7 +110,7 @@ struct PartialConfig {
 }
 
 impl NearBridgeClient {
-    /// Signs a NEAR transfer to BTC by calling sign_btc_transaction on the BTC connector contract.
+    /// Signs a NEAR transfer to BTC by calling `sign_btc_transaction` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
     pub async fn sign_btc_transaction(
         &self,
@@ -146,7 +146,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling verify_deposit on the BTC connector contract.
+    /// Finalizes a BTC transfer by calling `verify_deposit` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,

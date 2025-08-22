@@ -48,7 +48,7 @@ pub struct EvmBridgeClient {
     chain_id: Option<u64>,
     #[doc = r"EVM private key. Required for `deploy_token`, `mint`, `burn`"]
     private_key: Option<String>,
-    #[doc = r"OmniBridge address on EVM. Required for `deploy_token`, `mint`, `burn`"]
+    #[doc = r"`OmniBridge` address on EVM. Required for `deploy_token`, `mint`, `burn`"]
     omni_bridge_address: Option<String>,
     #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
     wormhole_core_address: Option<String>,
@@ -134,7 +134,7 @@ impl EvmBridgeClient {
         Ok(tx.tx_hash())
     }
 
-    /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from log_metadata transaction on Near
+    /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from `log_metadata` transaction on Near
     #[tracing::instrument(skip_all, name = "EVM DEPLOY TOKEN")]
     pub async fn deploy_token(
         &self,

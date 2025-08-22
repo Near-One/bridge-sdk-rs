@@ -1,3 +1,4 @@
+use base64::Engine;
 use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
@@ -37,6 +38,7 @@ const DISCRIMINATOR_LEN: usize = 8;
 const INIT_TRANSFER_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] = [174, 50, 134, 99, 122, 243, 243, 224];
 const INIT_TRANSFER_SOL_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] =
     [124, 167, 164, 191, 81, 140, 108, 30];
+const GET_VERSION_DISCRIMINATOR: [u8; 8] = [168, 85, 244, 45, 81, 56, 130, 50];
 
 const INIT_TRANSFER_SENDER_INDEX: usize = 5;
 const INIT_TRANSFER_TOKEN_INDEX: usize = 1;
@@ -174,6 +176,79 @@ impl SolanaBridgeClient {
             &[keypair, &wormhole_message, &program_keypair],
         )
         .await
+    }
+
+    pub async fn get_version(&self) -> Result<String, SolanaBridgeClientError> {
+        use solana_client::rpc_config::RpcSimulateTransactionConfig;
+
+        let client = self.client()?;
+        let program_id = self.program_id()?;
+        let fee_payer = self.keypair()?.pubkey();
+
+        let instruction = Instruction {
+            program_id: *program_id,
+            accounts: vec![],
+            data: GET_VERSION_DISCRIMINATOR.to_vec(),
+        };
+
+        let recent_blockhash = client.get_latest_blockhash().await?;
+        let tx = Transaction::new_unsigned(solana_sdk::message::Message::new_with_blockhash(
+            &[instruction],
+            Some(&fee_payer),
+            &recent_blockhash,
+        ));
+
+        let sim = client
+            .simulate_transaction_with_config(
+                &tx,
+                RpcSimulateTransactionConfig {
+                    sig_verify: false,
+                    replace_recent_blockhash: true,
+                    commitment: Some(CommitmentConfig::processed()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        if let Some(err) = sim.value.err {
+            let logs = sim.value.logs.unwrap_or_default().join("\n");
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Simulate error: {err:?}\n{logs}"
+            )));
+        }
+
+        let Some(return_data) = sim.value.return_data else {
+            let logs = sim.value.logs.unwrap_or_default().join("\n");
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "No return data from get_version.\n{logs}"
+            )));
+        };
+
+        let (b64, _enc) = return_data.data;
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| SolanaBridgeClientError::InvalidAccountData(e.to_string()))?;
+
+        if raw.len() < 4 {
+            return Err(SolanaBridgeClientError::InvalidAccountData(
+                "returnData too short".into(),
+            ));
+        }
+        let len = usize::try_from(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])).map_err(
+            |_| SolanaBridgeClientError::InvalidAccountData("Invalid length in returnData".into()),
+        )?;
+        if raw.len() < 4 + len {
+            return Err(SolanaBridgeClientError::InvalidAccountData(format!(
+                "returnData length mismatch: {} < {}",
+                raw.len(),
+                4 + len
+            )));
+        }
+
+        let version = String::from_utf8(raw[4..4 + len].to_vec())
+            .map_err(|e| SolanaBridgeClientError::InvalidAccountData(e.to_string()))?;
+
+        Ok(version)
     }
 
     pub async fn set_admin(&self, admin: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
