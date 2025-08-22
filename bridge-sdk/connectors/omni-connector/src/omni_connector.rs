@@ -593,7 +593,7 @@ impl OmniConnector {
         };
 
         let near_bridge_client = self.near_bridge_client()?;
-        let utxos = near_bridge_client.get_utxos(false).await?;
+        let utxos = near_bridge_client.get_utxos(chain.is_zcash()).await?;
 
         let (out_points, utxos_balance, gas_fee) =
             btc_utils::choose_utxos(amount, utxos, fee_rate)?;
