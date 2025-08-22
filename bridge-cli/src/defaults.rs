@@ -36,9 +36,9 @@ pub const BTC_CONNECTOR_MAINNET: &str = "btc-connector.bridge.near";
 pub const BTC_MAINNET: &str = "btc-client.bridge.near";
 pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 
-pub const ZCASH_ENDPOINT_MAINNET: &str = "";
-pub const ZCASH_CONNECTOR_MAINNET: &str = "";
-pub const ZCASH_MAINNET: &str = "";
+pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
+pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
