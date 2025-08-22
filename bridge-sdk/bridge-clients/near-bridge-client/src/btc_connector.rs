@@ -359,11 +359,10 @@ impl NearBridgeClient {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc = self.btc()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
+        let (btc_connector, btc) = if is_zcash {
+            (self.zcash_connector()?, self.zcash()?)
         } else {
-            self.btc_connector()?
+            (self.btc_connector()?, self.btc()?)
         };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -614,6 +613,21 @@ impl NearBridgeClient {
 
     pub fn btc(&self) -> Result<AccountId> {
         self.btc_bridge
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "BTC accounts id is not set".to_string(),
+            ))?
+            .utxo_chain_token
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Bitcoin account id is not set".to_string(),
+            ))?
+            .parse::<AccountId>()
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
+    }
+
+    pub fn zcash(&self) -> Result<AccountId> {
+        self.zcash_bridge
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
