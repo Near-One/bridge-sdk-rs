@@ -1059,6 +1059,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "bridge-connector-common",
+ "hex",
  "merkle-tools",
  "minreq",
  "near-crypto",
