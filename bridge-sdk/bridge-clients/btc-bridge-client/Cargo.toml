@@ -9,6 +9,7 @@ edition = "2021"
 bitcoincore-rpc.workspace = true
 bitcoin.workspace = true
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
+hex.workspace = true
 merkle-tools.workspace = true
 minreq.workspace = true
 near-crypto.workspace = true
