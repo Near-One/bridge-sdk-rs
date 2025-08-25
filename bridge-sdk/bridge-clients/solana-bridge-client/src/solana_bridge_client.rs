@@ -640,6 +640,7 @@ impl SolanaBridgeClient {
             .await
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn init_transfer(
         &self,
         token: Pubkey,
@@ -839,7 +840,6 @@ impl SolanaBridgeClient {
         let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
-        let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
 
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
@@ -862,7 +862,6 @@ impl SolanaBridgeClient {
         let (data, signers) = if version == OLD_WORMHOLE_VERSION {
             (
                 vec![
-                    AccountMeta::new_readonly(authority, false),
                     AccountMeta::new(sol_vault, false),
                     AccountMeta::new_readonly(keypair.pubkey(), true),
                     AccountMeta::new_readonly(config, false),
@@ -890,7 +889,6 @@ impl SolanaBridgeClient {
 
             (
                 vec![
-                    AccountMeta::new_readonly(authority, false),
                     AccountMeta::new(sol_vault, false),
                     AccountMeta::new_readonly(keypair.pubkey(), true),
                     AccountMeta::new_readonly(config, false),
@@ -916,6 +914,7 @@ impl SolanaBridgeClient {
             .await
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn finalize_transfer(
         &self,
         data: FinalizeDepositData,
