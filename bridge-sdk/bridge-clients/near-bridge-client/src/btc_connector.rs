@@ -1,6 +1,7 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
+use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use btc_utils::UTXO;
 use near_primitives::types::Gas;
@@ -124,10 +125,38 @@ impl NearBridgeClient {
     pub async fn sign_btc_transaction(
         &self,
         is_zcash: bool,
-        btc_pending_id: String,
+        btc_pending_id: Option<String>,
+        near_tx_hash: Option<String>,
+        user_account_id: Option<AccountId>,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let btc_pending_id = match btc_pending_id {
+            Some(btc_pending_id) => btc_pending_id,
+            None => {
+                let near_tx_hash = near_tx_hash.ok_or(BtcClientError(
+                    "btc_pending id and near tx hash not provided".to_string(),
+                ))?;
+                let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+                })?;
+                let relayer_id = user_account_id.unwrap_or(self.satoshi_relayer()?);
+                let log = self
+                    .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
+                    .await?;
+                let json_str = log
+                    .strip_prefix("EVENT_JSON:")
+                    .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+
+                let v: Value = serde_json::from_str(&json_str)?;
+                v["data"][0]["btc_pending_id"]
+                    .as_str()
+                    .ok_or(BtcClientError(
+                        "btc_pending id not found in log".to_string(),
+                    ))?
+                    .to_string()
+            }
+        };
         let endpoint = self.endpoint()?;
         let btc_connector = if is_zcash {
             self.zcash_connector()?

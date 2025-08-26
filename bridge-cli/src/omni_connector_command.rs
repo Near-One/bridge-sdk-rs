@@ -280,7 +280,11 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChain,
         #[clap(short, long, help = "Pending BTC transaction ID")]
-        btc_pending_id: String,
+        btc_pending_id: Option<String>,
+        #[clap(long, help = "Near tx Id of init transfer")]
+        near_tx_hash: Option<String>,
+        #[clap(long, help = "User Account ID who init the transfer")]
+        user_account: Option<AccountId>,
         #[clap(
             short,
             long,
@@ -760,6 +764,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::NearSignBTCTransaction {
             chain,
             btc_pending_id,
+            near_tx_hash,
+            user_account,
             sign_index,
             config_cli,
         } => {
@@ -767,6 +773,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .near_sign_btc_transaction(
                     chain.to_chain(),
                     btc_pending_id,
+                    near_tx_hash,
+                    user_account,
                     sign_index,
                     TransactionOptions::default(),
                 )
