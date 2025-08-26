@@ -33,7 +33,7 @@ pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596a
 pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
 pub const BTC_ENDPOINT_MAINNET: &str = "https://bitcoin-rpc.publicnode.com";
 pub const BTC_CONNECTOR_MAINNET: &str = "btc-connector.bridge.near";
-pub const BTC_MAINNET: &str = "btc-client.bridge.near";
+pub const BTC_MAINNET: &str = "nbtc.bridge.near";
 pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 
 pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io/";
