@@ -6,6 +6,7 @@ use std::fmt;
 use zcash_address;
 use zcash_address::unified::{Container, Receiver};
 use zcash_address::{ConversionError, ToAddress, ZcashAddress};
+use zcash_protocol::consensus::NetworkType;
 
 #[near(serializers = [borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -52,13 +53,13 @@ pub enum Address {
 impl zcash_address::TryFromAddress for Address {
     type Error = &'static str;
     fn try_from_transparent_p2pkh(
-        net: zcash_address::Network,
+        net: NetworkType,
         data: [u8; 20],
     ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
         let chain = match net {
-            zcash_address::Network::Main => Chain::ZcashMainnet,
-            zcash_address::Network::Test => Chain::ZcashTestnet,
-            zcash_address::Network::Regtest => {
+            NetworkType::Main => Chain::ZcashMainnet,
+            NetworkType::Test => Chain::ZcashTestnet,
+            NetworkType::Regtest => {
                 return Err("Regtest network not supported".into());
             }
         };
@@ -70,13 +71,13 @@ impl zcash_address::TryFromAddress for Address {
     }
 
     fn try_from_unified(
-        net: zcash_address::Network,
+        net: NetworkType,
         data: zcash_address::unified::Address,
     ) -> Result<Self, ConversionError<Self::Error>> {
         let chain = match net {
-            zcash_address::Network::Main => Chain::ZcashMainnet,
-            zcash_address::Network::Test => Chain::ZcashTestnet,
-            zcash_address::Network::Regtest => {
+            NetworkType::Main => Chain::ZcashMainnet,
+            NetworkType::Test => Chain::ZcashTestnet,
+            NetworkType::Regtest => {
                 return Err("Regtest network not supported".into());
             }
         };
@@ -96,8 +97,8 @@ impl Address {
                 .map_err(|e| format!("Error on parsing ZCash Address: {e}"))?;
 
             let network = match chain {
-                Chain::ZcashMainnet => zcash_address::Network::Main,
-                Chain::ZcashTestnet => zcash_address::Network::Test,
+                Chain::ZcashMainnet => NetworkType::Main,
+                Chain::ZcashTestnet => NetworkType::Test,
                 _ => unreachable!(),
             };
 
@@ -242,8 +243,8 @@ impl fmt::Display for Address {
             }
             Unified { address, chain } => {
                 let network = match chain {
-                    Chain::ZcashMainnet => zcash_address::Network::Main,
-                    Chain::ZcashTestnet => zcash_address::Network::Test,
+                    Chain::ZcashMainnet => NetworkType::Main,
+                    Chain::ZcashTestnet => NetworkType::Test,
                     _ => unreachable!(),
                 };
 
