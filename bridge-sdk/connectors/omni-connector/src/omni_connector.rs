@@ -182,6 +182,11 @@ pub enum FinTransferArgs {
         sender_id: Option<AccountId>,
         solana_token: Pubkey,
     },
+    UTXOChainFinTransfer {
+        chain: Chain,
+        near_tx_hash: String,
+        relayer: Option<AccountId>,
+    },
 }
 
 pub enum BtcDepositArgs {
@@ -1534,6 +1539,11 @@ impl OmniConnector {
                 .solana_finalize_transfer_with_tx_hash(near_tx_hash, sender_id, solana_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
+            FinTransferArgs::UTXOChainFinTransfer {
+                chain,
+                near_tx_hash,
+                relayer,
+            } => self.btc_fin_transfer(chain, near_tx_hash, relayer).await,
         }
     }
 

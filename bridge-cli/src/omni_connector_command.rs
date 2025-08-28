@@ -880,7 +880,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
-                .btc_fin_transfer(chain.to_chain(), near_tx_hash, None)
+                .fin_transfer(FinTransferArgs::UTXOChainFinTransfer {
+                    chain: chain.to_chain(),
+                    near_tx_hash,
+                    relayer: None,
+                })
                 .await
                 .unwrap();
 
