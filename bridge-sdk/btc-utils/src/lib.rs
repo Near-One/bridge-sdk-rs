@@ -35,8 +35,13 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
         .collect()
 }
 
-pub fn get_gas_fee(is_zcash: bool, num_input: u64, num_output: u64, fee_rate: u64) -> u64 {
-    if is_zcash {
+pub fn get_gas_fee(
+    chain: &crate::address::Chain,
+    num_input: u64,
+    num_output: u64,
+    fee_rate: u64,
+) -> u64 {
+    if chain.is_zcash() {
         5000 * std::cmp::max(num_input, num_output)
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
@@ -46,7 +51,7 @@ pub fn get_gas_fee(is_zcash: bool, num_input: u64, num_output: u64, fee_rate: u6
 
 #[allow(clippy::implicit_hasher)]
 pub fn choose_utxos(
-    is_zcash: bool,
+    chain: &crate::address::Chain,
     amount: u128,
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
@@ -63,7 +68,7 @@ pub fn choose_utxos(
         selected.push(utxo);
 
         gas_fee = get_gas_fee(
-            is_zcash,
+            chain,
             selected
                 .len()
                 .try_into()
@@ -115,7 +120,7 @@ pub fn choose_utxos_for_active_management(
             ),
         ) as u64;
 
-        let gas_fee: u128 = get_gas_fee(chain.is_zcash(), 1, output_amount, fee_rate).into();
+        let gas_fee: u128 = get_gas_fee(&chain, 1, output_amount, fee_rate).into();
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs_utxo_management(
@@ -135,8 +140,7 @@ pub fn choose_utxos_for_active_management(
             utxos_balance += u128::from(utxo_list[i].1.balance);
             selected.push(utxo_list[i].clone());
         }
-        let gas_fee: u128 =
-            get_gas_fee(chain.is_zcash(), selected.len() as u64, 1, fee_rate).into();
+        let gas_fee: u128 = get_gas_fee(&chain, selected.len() as u64, 1, fee_rate).into();
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs(

@@ -1,6 +1,6 @@
-use std::{path::Path, str::FromStr};
-
 use clap::Subcommand;
+use std::collections::HashMap;
+use std::{path::Path, str::FromStr};
 
 use btc_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use eth_light_client::EthLightClientBuilder;
@@ -907,21 +907,51 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let combined_config = combined_config(cli_config, network);
 
+    let utxo_bridges = match network {
+        Network::Mainnet => HashMap::from([
+            (
+                btc_utils::address::Chain::ZcashMainnet,
+                UTXOChainAccounts {
+                    utxo_chain_connector: combined_config.zcash_connector,
+                    utxo_chain_token: combined_config.zcash,
+                    satoshi_relayer: None,
+                },
+            ),
+            (
+                btc_utils::address::Chain::BitcoinMainnet,
+                UTXOChainAccounts {
+                    utxo_chain_connector: combined_config.btc_connector,
+                    utxo_chain_token: combined_config.btc,
+                    satoshi_relayer: combined_config.satoshi_relayer,
+                },
+            ),
+        ]),
+        _ => HashMap::from([
+            (
+                btc_utils::address::Chain::ZcashTestnet,
+                UTXOChainAccounts {
+                    utxo_chain_connector: combined_config.zcash_connector,
+                    utxo_chain_token: combined_config.zcash,
+                    satoshi_relayer: None,
+                },
+            ),
+            (
+                btc_utils::address::Chain::BitcoinTestnet,
+                UTXOChainAccounts {
+                    utxo_chain_connector: combined_config.btc_connector,
+                    utxo_chain_token: combined_config.btc,
+                    satoshi_relayer: combined_config.satoshi_relayer,
+                },
+            ),
+        ]),
+    };
+
     let near_bridge_client = NearBridgeClientBuilder::default()
         .endpoint(combined_config.near_rpc.clone())
         .private_key(combined_config.near_private_key)
         .signer(combined_config.near_signer)
         .omni_bridge_id(combined_config.near_token_locker_id)
-        .btc_bridge(Some(UTXOChainAccounts {
-            utxo_chain_connector: combined_config.btc_connector,
-            utxo_chain_token: combined_config.btc,
-            satoshi_relayer: combined_config.satoshi_relayer,
-        }))
-        .zcash_bridge(Some(UTXOChainAccounts {
-            utxo_chain_connector: combined_config.zcash_connector,
-            utxo_chain_token: combined_config.zcash,
-            satoshi_relayer: None,
-        }))
+        .utxo_bridges(utxo_bridges)
         .build()
         .unwrap();
 

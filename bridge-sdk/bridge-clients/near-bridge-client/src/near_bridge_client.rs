@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -99,10 +100,8 @@ pub struct NearBridgeClient {
     signer: Option<String>,
     #[doc = r"OmniBridge account id on Near"]
     omni_bridge_id: Option<String>,
-    #[doc = r"Accounts Id for Bitcoin Bridge"]
-    btc_bridge: Option<UTXOChainAccounts>,
-    #[doc = r"Accounts Id for Bitcoin Bridge"]
-    zcash_bridge: Option<UTXOChainAccounts>,
+    #[doc = r"Accounts Id for UTXO chains Bridges"]
+    utxo_bridges: HashMap<btc_utils::address::Chain, UTXOChainAccounts>,
 }
 
 impl NearBridgeClient {

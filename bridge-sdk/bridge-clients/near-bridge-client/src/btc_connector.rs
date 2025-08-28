@@ -124,7 +124,7 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
     pub async fn sign_btc_transaction(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         btc_pending_id: Option<String>,
         near_tx_hash: Option<String>,
         user_account_id: Option<AccountId>,
@@ -140,7 +140,7 @@ impl NearBridgeClient {
                 let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
                 })?;
-                let relayer_id = user_account_id.unwrap_or(self.satoshi_relayer()?);
+                let relayer_id = user_account_id.unwrap_or(self.satoshi_relayer(chain)?);
                 let log = self
                     .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
                     .await?;
@@ -158,11 +158,7 @@ impl NearBridgeClient {
             }
         };
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -193,16 +189,12 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         args: FinBtcTransferArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -232,16 +224,12 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY WITHDRAW")]
     pub async fn btc_verify_withdraw(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         args: BtcVerifyWithdrawArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -268,16 +256,12 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR BTC CANCEL WITHDRAW")]
     pub async fn btc_cancel_withdraw(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -306,16 +290,12 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY ACTIVE UTXO MANAGEMENT")]
     pub async fn btc_verify_active_utxo_management(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         args: BtcVerifyWithdrawArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -342,17 +322,13 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "ACTIVE UTXO MANAGEMENT")]
     pub async fn active_utxo_management(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -382,17 +358,15 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR INIT BTC TRANSFER")]
     pub async fn init_btc_transfer_near_to_btc(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         amount: u128,
         msg: TokenReceiverMessage,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let (btc_connector, btc) = if is_zcash {
-            (self.zcash_connector()?, self.zcash()?)
-        } else {
-            (self.btc_connector()?, self.btc()?)
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        let btc = self.utxo_chain_token(chain)?;
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -421,18 +395,14 @@ impl NearBridgeClient {
 
     pub async fn get_btc_address(
         &self,
-        is_zcash: bool,
+        chain: &btc_utils::address::Chain,
         recipient_id: &str,
         amount: u128,
         fee: u128,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?;
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -450,13 +420,9 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(&self, is_zcash: bool) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxos(&self, chain: &btc_utils::address::Chain) -> Result<HashMap<String, UTXO>> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
+        let btc_connector = self.utxo_chain_connector(chain)?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -472,18 +438,18 @@ impl NearBridgeClient {
         Ok(utxos)
     }
 
-    pub async fn get_withdraw_fee(&self, is_zcash: bool) -> Result<u128> {
-        let config = self.get_config(is_zcash).await?;
+    pub async fn get_withdraw_fee(&self, chain: &btc_utils::address::Chain) -> Result<u128> {
+        let config = self.get_config(chain).await?;
         Ok(config.withdraw_bridge_fee.fee_min)
     }
 
-    pub async fn get_change_address(&self, is_zcash: bool) -> Result<String> {
-        let config = self.get_config(is_zcash).await?;
+    pub async fn get_change_address(&self, chain: &btc_utils::address::Chain) -> Result<String> {
+        let config = self.get_config(chain).await?;
         Ok(config.change_address)
     }
 
-    pub async fn get_active_management_limit(&self, is_zcash: bool) -> Result<(u32, u32, u8, u8)> {
-        let config = self.get_config(is_zcash).await?;
+    pub async fn get_active_management_limit(&self, chain: &btc_utils::address::Chain) -> Result<(u32, u32, u8, u8)> {
+        let config = self.get_config(chain).await?;
         Ok((
             config.active_management_lower_limit,
             config.active_management_upper_limit,
@@ -492,27 +458,22 @@ impl NearBridgeClient {
         ))
     }
 
-    pub async fn get_amount_to_transfer(&self, is_zcash: bool, amount: u128) -> Result<u128> {
-        let config = self.get_config(is_zcash).await?;
+    pub async fn get_amount_to_transfer(&self, chain: &btc_utils::address::Chain, amount: u128) -> Result<u128> {
+        let config = self.get_config(chain).await?;
         Ok(max(
             config.deposit_bridge_fee.get_fee(amount) + amount,
             config.min_deposit_amount,
         ))
     }
 
-    pub async fn get_min_deposit_amount(&self, is_zcash: bool) -> Result<u128> {
-        let config = self.get_config(is_zcash).await?;
+    pub async fn get_min_deposit_amount(&self, chain: &btc_utils::address::Chain) -> Result<u128> {
+        let config = self.get_config(chain).await?;
         Ok(config.min_deposit_amount)
     }
 
-    async fn get_config(&self, is_zcash: bool) -> Result<PartialConfig> {
+    async fn get_config(&self, chain: &btc_utils::address::Chain) -> Result<PartialConfig> {
         let endpoint = self.endpoint()?;
-        let btc_connector = if is_zcash {
-            self.zcash_connector()?
-        } else {
-            self.btc_connector()?
-        };
-
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
@@ -564,6 +525,7 @@ impl NearBridgeClient {
 
     pub async fn get_btc_tx_data(
         &self,
+        chain: &btc_utils::address::Chain,
         near_tx_hash: String,
         relayer: Option<AccountId>,
     ) -> Result<Vec<u8>> {
@@ -571,7 +533,7 @@ impl NearBridgeClient {
             BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
         })?;
 
-        let relayer_id = relayer.unwrap_or(self.satoshi_relayer()?);
+        let relayer_id = relayer.unwrap_or(self.satoshi_relayer(chain)?);
         let log = self
             .extract_transfer_log(tx_hash, Some(relayer_id), "signed_btc_transaction")
             .await?;
@@ -606,9 +568,8 @@ impl NearBridgeClient {
         Ok(bytes)
     }
 
-    pub fn btc_connector(&self) -> Result<AccountId> {
-        self.btc_bridge
-            .as_ref()
+    pub fn utxo_chain_connector(&self, chain: &btc_utils::address::Chain) -> Result<AccountId> {
+        self.utxo_bridges.get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?
@@ -623,26 +584,8 @@ impl NearBridgeClient {
             })
     }
 
-    pub fn zcash_connector(&self) -> Result<AccountId> {
-        self.zcash_bridge
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "Zcash accounts id is not set".to_string(),
-            ))?
-            .utxo_chain_connector
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "Zcash Connector account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
-            .map_err(|_| {
-                BridgeSdkError::ConfigError("Invalid zcash connector account id".to_string())
-            })
-    }
-
-    pub fn btc(&self) -> Result<AccountId> {
-        self.btc_bridge
-            .as_ref()
+    pub fn utxo_chain_token(&self,  chain: &btc_utils::address::Chain) -> Result<AccountId> {
+        self.utxo_bridges.get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?
@@ -655,24 +598,8 @@ impl NearBridgeClient {
             .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
     }
 
-    pub fn zcash(&self) -> Result<AccountId> {
-        self.zcash_bridge
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "BTC accounts id is not set".to_string(),
-            ))?
-            .utxo_chain_token
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "Bitcoin account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
-    }
-
-    pub fn satoshi_relayer(&self) -> Result<AccountId> {
-        self.btc_bridge
-            .as_ref()
+    pub fn satoshi_relayer(&self,  chain: &btc_utils::address::Chain) -> Result<AccountId> {
+        self.utxo_bridges.get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?

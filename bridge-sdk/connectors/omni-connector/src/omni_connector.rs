@@ -403,7 +403,7 @@ impl OmniConnector {
 
         near_bridge_client
             .sign_btc_transaction(
-                chain.is_zcash(),
+                &chain,
                 btc_pending_id,
                 near_tx_hash,
                 user_account_id,
@@ -449,7 +449,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .fin_btc_transfer(chain.is_zcash(), args, transaction_options)
+            .fin_btc_transfer(&chain, args, transaction_options)
             .await
     }
 
@@ -475,7 +475,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_withdraw(chain.is_zcash(), args, transaction_options)
+            .btc_verify_withdraw(&chain, args, transaction_options)
             .await
     }
 
@@ -488,7 +488,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         near_bridge_client
-            .btc_cancel_withdraw(chain.is_zcash(), tx_hash, transaction_options)
+            .btc_cancel_withdraw(&chain, tx_hash, transaction_options)
             .await
     }
 
@@ -515,7 +515,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_active_utxo_management(chain.is_zcash(), args, transaction_options)
+            .btc_verify_active_utxo_management(&chain, args, transaction_options)
             .await
     }
 
@@ -528,7 +528,7 @@ impl OmniConnector {
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain.is_zcash(), recipient_id, amount, fee)
+            .get_btc_address(&chain, recipient_id, amount, fee)
             .await
     }
 
@@ -547,22 +547,18 @@ impl OmniConnector {
             btc_bridge_client.get_fee_rate().await?
         };
 
-        let utxos = near_bridge_client.get_utxos(chain.is_zcash()).await?;
+        let utxos = near_bridge_client.get_utxos(&chain).await?;
         let (
             active_management_lower_limit,
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
         ) = near_bridge_client
-            .get_active_management_limit(chain.is_zcash())
+            .get_active_management_limit(&chain)
             .await?;
 
-        let change_address = near_bridge_client
-            .get_change_address(chain.is_zcash())
-            .await?;
-        let min_deposit_amount = near_bridge_client
-            .get_min_deposit_amount(chain.is_zcash())
-            .await?;
+        let change_address = near_bridge_client.get_change_address(&chain).await?;
+        let min_deposit_amount = near_bridge_client.get_min_deposit_amount(&chain).await?;
 
         let (out_points, tx_outs) = btc_utils::choose_utxos_for_active_management(
             utxos,
@@ -577,7 +573,7 @@ impl OmniConnector {
         )?;
 
         near_bridge_client
-            .active_utxo_management(chain.is_zcash(), out_points, tx_outs, transaction_options)
+            .active_utxo_management(&chain, out_points, tx_outs, transaction_options)
             .await
     }
 
@@ -597,14 +593,12 @@ impl OmniConnector {
         };
 
         let near_bridge_client = self.near_bridge_client()?;
-        let utxos = near_bridge_client.get_utxos(chain.is_zcash()).await?;
+        let utxos = near_bridge_client.get_utxos(&chain).await?;
 
         let (out_points, utxos_balance, gas_fee) =
-            btc_utils::choose_utxos(chain.is_zcash(), amount, utxos, fee_rate)?;
+            btc_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
 
-        let change_address = near_bridge_client
-            .get_change_address(chain.is_zcash())
-            .await?;
+        let change_address = near_bridge_client.get_change_address(&chain).await?;
         let tx_outs = btc_utils::get_tx_outs(
             &target_btc_address,
             amount.try_into().map_err(|err| {
@@ -621,14 +615,11 @@ impl OmniConnector {
             chain,
         );
 
-        let fee = near_bridge_client
-            .get_withdraw_fee(chain.is_zcash())
-            .await?
-            + gas_fee;
+        let fee = near_bridge_client.get_withdraw_fee(&chain).await? + gas_fee;
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
-                chain.is_zcash(),
+                &chain,
                 amount + fee,
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
@@ -648,7 +639,7 @@ impl OmniConnector {
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_tx_data = near_bridge_client
-            .get_btc_tx_data(near_tx_hash, relayer)
+            .get_btc_tx_data(&chain, near_tx_hash, relayer)
             .await?;
 
         if chain.is_zcash() {
@@ -665,7 +656,7 @@ impl OmniConnector {
     pub async fn get_amount_to_transfer(&self, chain: Chain, amount: u128) -> Result<u128> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_amount_to_transfer(chain.is_zcash(), amount)
+            .get_amount_to_transfer(&chain, amount)
             .await
     }
 
