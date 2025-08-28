@@ -12,6 +12,7 @@ fn get_instruction_identifier(instruction_name: &str) -> [u8; 8] {
 pub struct Initialize {
     pub admin: Pubkey,
     pub pausable_admin: Pubkey,
+    pub metadata_admin: Pubkey,
     pub derived_near_bridge_address: [u8; 64],
 }
 
@@ -20,6 +21,7 @@ impl BorshSerialize for Initialize {
         writer.write_all(&get_instruction_identifier("global:initialize"))?;
         writer.write_all(&self.admin.to_bytes())?;
         writer.write_all(&self.pausable_admin.to_bytes())?;
+        writer.write_all(&self.metadata_admin.to_bytes())?;
         writer.write_all(&self.derived_near_bridge_address)?;
         Ok(())
     }

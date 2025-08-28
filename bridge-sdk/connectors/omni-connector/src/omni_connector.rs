@@ -1083,6 +1083,16 @@ impl OmniConnector {
         Ok(signature)
     }
 
+    pub async fn solana_get_version(&self) -> Result<String> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+
+        let version = solana_bridge_client.get_version().await?;
+
+        tracing::info!(version = version, "Fetched Solana program version");
+
+        Ok(version)
+    }
+
     pub async fn solana_log_metadata(&self, token: Pubkey) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
@@ -1670,7 +1680,7 @@ impl OmniConnector {
             ))
     }
 
-    async fn get_proof_for_event(
+    pub async fn get_proof_for_event(
         &self,
         tx_hash: TxHash,
         proof_kind: ProofKind,

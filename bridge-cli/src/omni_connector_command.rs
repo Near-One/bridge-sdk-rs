@@ -192,6 +192,11 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Get version of Solana OmniBridge program")]
+    SolanaGetVersion {
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on Solana")]
     SolanaInitTransfer {
         #[clap(short, long, help = "Token to transfer")]
@@ -683,6 +688,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::SolanaGetVersion { config_cli } => {
+            omni_connector(network, config_cli)
+                .solana_get_version()
+                .await
+                .unwrap();
+        }
         OmniConnectorSubCommand::SolanaInitTransfer {
             token,
             amount,
@@ -1032,6 +1043,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .wormhole_core(
             combined_config
                 .solana_wormhole_address
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_program_id(
+            combined_config
+                .solana_wormhole_post_message_shim_program_id
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_event_authority(
+            combined_config
+                .solana_wormhole_post_message_shim_event_authority
                 .map(|addr| addr.parse().unwrap()),
         )
         .keypair(

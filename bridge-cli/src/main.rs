@@ -70,6 +70,10 @@ struct CliConfig {
     #[arg(long)]
     solana_wormhole_address: Option<String>,
     #[arg(long)]
+    solana_wormhole_post_message_shim_program_id: Option<String>,
+    #[arg(long)]
+    solana_wormhole_post_message_shim_event_authority: Option<String>,
+    #[arg(long)]
     solana_keypair: Option<String>,
 
     #[arg(long)]
@@ -148,6 +152,12 @@ impl CliConfig {
             solana_wormhole_address: self
                 .solana_wormhole_address
                 .or(other.solana_wormhole_address),
+            solana_wormhole_post_message_shim_program_id: self
+                .solana_wormhole_post_message_shim_program_id
+                .or(other.solana_wormhole_post_message_shim_program_id),
+            solana_wormhole_post_message_shim_event_authority: self
+                .solana_wormhole_post_message_shim_event_authority
+                .or(other.solana_wormhole_post_message_shim_event_authority),
             solana_keypair: self.solana_keypair.or(other.solana_keypair),
 
             wormhole_api: self.wormhole_api.or(other.wormhole_api),
@@ -211,6 +221,14 @@ fn env_config() -> CliConfig {
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
         solana_wormhole_address: env::var("SOLANA_WORMHOLE_ADDRESS").ok(),
+        solana_wormhole_post_message_shim_program_id: env::var(
+            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
+        )
+        .ok(),
+        solana_wormhole_post_message_shim_event_authority: env::var(
+            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
+        )
+        .ok(),
         solana_keypair: env::var("SOLANA_KEYPAIR").ok(),
 
         wormhole_api: env::var("WORMHOLE_API").ok(),
@@ -276,6 +294,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
@@ -335,6 +359,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
@@ -394,6 +424,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
