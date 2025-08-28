@@ -863,6 +863,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .solana_wormhole_address
                 .map(|addr| addr.parse().unwrap()),
         )
+        .wormhole_post_message_shim_program_id(
+            combined_config
+                .solana_wormhole_post_message_shim_program_id
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_event_authority(
+            combined_config
+                .solana_wormhole_post_message_shim_event_authority
+                .map(|addr| addr.parse().unwrap()),
+        )
         .keypair(
             combined_config
                 .solana_keypair

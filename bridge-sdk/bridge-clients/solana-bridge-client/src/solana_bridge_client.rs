@@ -48,6 +48,8 @@ const INIT_TRANSFER_SOL_EMITTER_INDEX: usize = 2;
 
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
 
+const OLD_WORMHOLE_VERSION: &str = "0.2.4";
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::as_conversions,
@@ -123,6 +125,8 @@ pub struct SolanaBridgeClient {
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
+    wormhole_post_message_shim_program_id: Option<Pubkey>,
+    wormhole_post_message_shim_event_authority: Option<Pubkey>,
     keypair: Option<Keypair>,
 }
 
@@ -458,36 +462,78 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
 
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
+
         let instruction_data = LogMetadata {
             override_name: String::new(),
             override_symbol: String::new(),
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new_readonly(authority, false),
-                AccountMeta::new_readonly(token, false),
-                AccountMeta::new(metadata, false),
-                AccountMeta::new(vault, false),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(token_program_id, false),
-                AccountMeta::new_readonly(spl_associated_token_account::ID, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new_readonly(token, false),
+                    AccountMeta::new(metadata, false),
+                    AccountMeta::new(vault, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                    AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new_readonly(token, false),
+                    AccountMeta::new(metadata, false),
+                    AccountMeta::new(vault, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                    AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
@@ -524,35 +570,77 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
 
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
+
         let instruction_data = DeployToken { data };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new_readonly(authority, false),
-                AccountMeta::new(mint, false),
-                AccountMeta::new(metadata, false),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(spl_token::ID, false),
-                AccountMeta::new_readonly(metadata_program_id, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new(mint, false),
+                    AccountMeta::new(metadata, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(spl_token::ID, false),
+                    AccountMeta::new_readonly(metadata_program_id, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new(mint, false),
+                    AccountMeta::new(metadata, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(spl_token::ID, false),
+                    AccountMeta::new_readonly(metadata_program_id, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn init_transfer(
         &self,
         token: Pubkey,
@@ -590,6 +678,11 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
 
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
+
         let is_bridged_token = match self.get_token_owner(token).await? {
             COption::Some(owner) => owner == authority,
             COption::None => false,
@@ -604,37 +697,80 @@ impl SolanaBridgeClient {
             message,
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new_readonly(authority, false),
-                AccountMeta::new(token, false),
-                AccountMeta::new(from_token_account, false),
-                if is_bridged_token {
-                    AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
-                } else {
-                    let (vault, _) =
-                        Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
-                    AccountMeta::new(vault, false)
-                },
-                AccountMeta::new(sol_vault, false),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(token_program_id, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new(token, false),
+                    AccountMeta::new(from_token_account, false),
+                    if is_bridged_token {
+                        AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
+                    } else {
+                        let (vault, _) =
+                            Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
+                        AccountMeta::new(vault, false)
+                    },
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new_readonly(authority, false),
+                    AccountMeta::new(token, false),
+                    AccountMeta::new(from_token_account, false),
+                    if is_bridged_token {
+                        AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
+                    } else {
+                        let (vault, _) =
+                            Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
+                        AccountMeta::new(vault, false)
+                    },
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
@@ -704,13 +840,16 @@ impl SolanaBridgeClient {
         let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
-        let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
 
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
             self.get_wormhole_accounts()?;
-
         let wormhole_message = Keypair::new();
+
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
 
         let instruction_data = InitTransferSol {
             amount,
@@ -720,30 +859,62 @@ impl SolanaBridgeClient {
             message,
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new_readonly(authority, false),
-                AccountMeta::new(sol_vault, false),
-                AccountMeta::new_readonly(keypair.pubkey(), true),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new_readonly(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new_readonly(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn finalize_transfer(
         &self,
         data: FinalizeDepositData,
@@ -787,6 +958,11 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
 
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
+
         let instruction_data = FinalizeTransfer {
             payload: FinalizeTransferInstructionPayload {
                 destination_nonce: data.payload.destination_nonce,
@@ -802,41 +978,88 @@ impl SolanaBridgeClient {
             COption::None => false,
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new(used_nonces, false),
-                AccountMeta::new(authority, false),
-                AccountMeta::new_readonly(recipient, false),
-                AccountMeta::new(solana_token, false),
-                if is_bridged_token {
-                    AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
-                } else {
-                    let (vault, _) = Pubkey::find_program_address(
-                        &[b"vault", solana_token.as_ref()],
-                        program_id,
-                    );
-                    AccountMeta::new(vault, false)
-                },
-                AccountMeta::new(token_account, false),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(spl_associated_token_account::ID, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(token_program_id, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new(used_nonces, false),
+                    AccountMeta::new(authority, false),
+                    AccountMeta::new_readonly(recipient, false),
+                    AccountMeta::new(solana_token, false),
+                    if is_bridged_token {
+                        AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
+                    } else {
+                        let (vault, _) = Pubkey::find_program_address(
+                            &[b"vault", solana_token.as_ref()],
+                            program_id,
+                        );
+                        AccountMeta::new(vault, false)
+                    },
+                    AccountMeta::new(token_account, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new(used_nonces, false),
+                    AccountMeta::new(authority, false),
+                    AccountMeta::new_readonly(recipient, false),
+                    AccountMeta::new(solana_token, false),
+                    if is_bridged_token {
+                        AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
+                    } else {
+                        let (vault, _) = Pubkey::find_program_address(
+                            &[b"vault", solana_token.as_ref()],
+                            program_id,
+                        );
+                        AccountMeta::new(vault, false)
+                    },
+                    AccountMeta::new(token_account, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                    AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(token_program_id, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
@@ -867,6 +1090,11 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
         let wormhole_message = Keypair::new();
 
+        let version = self
+            .get_version()
+            .await
+            .unwrap_or(OLD_WORMHOLE_VERSION.to_owned());
+
         let instruction_data = FinalizeTransferSol {
             payload: FinalizeTransferInstructionPayload {
                 destination_nonce: data.payload.destination_nonce,
@@ -877,30 +1105,66 @@ impl SolanaBridgeClient {
             signature: data.signature,
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new(config, false),
-                AccountMeta::new(used_nonces, false),
-                AccountMeta::new(authority, false),
-                AccountMeta::new_readonly(recipient, false),
-                AccountMeta::new(sol_vault, false),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(wormhole_message.pubkey(), true),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(program::ID, false),
-            ],
-        );
+        let (data, signers) = if version == OLD_WORMHOLE_VERSION {
+            (
+                vec![
+                    AccountMeta::new(config, false),
+                    AccountMeta::new(used_nonces, false),
+                    AccountMeta::new(authority, false),
+                    AccountMeta::new_readonly(recipient, false),
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(wormhole_message.pubkey(), true),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                ],
+                vec![keypair, &wormhole_message],
+            )
+        } else {
+            let wormhole_post_message_shim_program_id =
+                self.wormhole_post_message_shim_program_id()?;
+            let wormhole_post_message_shim_event_authority =
+                self.wormhole_post_message_shim_event_authority()?;
+            let (shim_message, _) = Pubkey::find_program_address(
+                &[config.as_ref()],
+                wormhole_post_message_shim_program_id,
+            );
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair, &wormhole_message])
+            (
+                vec![
+                    AccountMeta::new(config, false),
+                    AccountMeta::new(used_nonces, false),
+                    AccountMeta::new(authority, false),
+                    AccountMeta::new_readonly(recipient, false),
+                    AccountMeta::new(sol_vault, false),
+                    AccountMeta::new_readonly(config, false),
+                    AccountMeta::new(wormhole_bridge, false),
+                    AccountMeta::new(wormhole_fee_collector, false),
+                    AccountMeta::new(wormhole_sequence, false),
+                    AccountMeta::new(shim_message, false),
+                    AccountMeta::new(keypair.pubkey(), true),
+                    AccountMeta::new_readonly(sysvar::clock::ID, false),
+                    AccountMeta::new_readonly(sysvar::rent::ID, false),
+                    AccountMeta::new_readonly(*wormhole_core, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+                    AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                    AccountMeta::new_readonly(program::ID, false),
+                ],
+                vec![keypair],
+            )
+        };
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, data);
+
+        self.send_and_confirm_transaction(vec![instruction], &signers)
             .await
     }
 
@@ -982,6 +1246,26 @@ impl SolanaBridgeClient {
             .as_ref()
             .ok_or(SolanaBridgeClientError::ConfigError(
                 "Wormhole Core not initialized".to_string(),
+            ))
+    }
+
+    pub fn wormhole_post_message_shim_program_id(
+        &self,
+    ) -> Result<&Pubkey, SolanaBridgeClientError> {
+        self.wormhole_post_message_shim_program_id.as_ref().ok_or(
+            SolanaBridgeClientError::ConfigError(
+                "Wormhole Post Message Shim Program ID not initialized".to_string(),
+            ),
+        )
+    }
+
+    pub fn wormhole_post_message_shim_event_authority(
+        &self,
+    ) -> Result<&Pubkey, SolanaBridgeClientError> {
+        self.wormhole_post_message_shim_event_authority
+            .as_ref()
+            .ok_or(SolanaBridgeClientError::ConfigError(
+                "Wormhole Post Message Shim Event Authority not initialized".to_string(),
             ))
     }
 

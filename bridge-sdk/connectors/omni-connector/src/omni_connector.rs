@@ -1501,7 +1501,7 @@ impl OmniConnector {
             ))
     }
 
-    async fn get_proof_for_event(
+    pub async fn get_proof_for_event(
         &self,
         tx_hash: TxHash,
         proof_kind: ProofKind,
