@@ -295,6 +295,16 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    OmniBridgeSignBtcTransfer {
+        #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
+        chain: UTXOChain,
+        #[clap(short, long, help = "Omni Bridge Transaction Hash")]
+        near_tx_hash: String,
+        #[clap(short, long, help = "Sender ID who init transfer on Near")]
+        sender_id: Option<AccountId>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Finalize Transfer from Bitcoin on Near")]
     NearFinTransferBTC {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -521,6 +531,23 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         native_fee: native_fee.into(),
                     }),
                     TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::OmniBridgeSignBtcTransfer {
+            chain,
+            near_tx_hash,
+            sender_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .omni_bridge_sign_btc_transfer(
+                    chain.to_chain(),
+                    near_tx_hash,
+                    sender_id,
+                    TransactionOptions::default(),
+                    None,
                 )
                 .await
                 .unwrap();

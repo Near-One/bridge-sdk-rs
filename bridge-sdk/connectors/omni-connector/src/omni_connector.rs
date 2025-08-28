@@ -1,10 +1,10 @@
-use std::str::FromStr;
-
+use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use btc_utils::address::Chain;
 use derive_builder::Builder;
 use eth_light_client::EthLightClient;
 use ethers::prelude::*;
+use std::str::FromStr;
 
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
@@ -627,6 +627,36 @@ impl OmniConnector {
                     output: tx_outs,
                 },
                 transaction_options,
+            )
+            .await
+    }
+
+    pub async fn omni_bridge_sign_btc_transfer(
+        &self,
+        chain: Chain,
+        near_tx_hash: String,
+        sender_id: Option<AccountId>,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (recipient, amount, transfer_id) = near_bridge_client
+            .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
+            .await?;
+        let fee = near_bridge_client.get_withdraw_fee(&chain).await?;
+        let (out_points, tx_outs) = self
+            .extract_utxo(chain, recipient.clone(), amount - fee)
+            .await?;
+        near_bridge_client
+            .omni_bridge_sign_btc_transfer(
+                transfer_id,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address: recipient,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
             )
             .await
     }
@@ -1826,5 +1856,39 @@ impl OmniConnector {
         });
 
         Ok(())
+    }
+
+    async fn extract_utxo(
+        &self,
+        chain: Chain,
+        target_btc_address: String,
+        amount: u128,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let fee_rate = if chain.is_zcash() {
+            let zcash_bridge_client = self.zcash_bridge_client()?;
+            zcash_bridge_client.get_fee_rate().await?
+        } else {
+            let btc_bridge_client = self.btc_bridge_client()?;
+            btc_bridge_client.get_fee_rate().await?
+        };
+
+        let utxos = near_bridge_client.get_utxos(&chain).await?;
+        let (out_points, utxos_balance, gas_fee) =
+            btc_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
+
+        let change_address = near_bridge_client.get_change_address(&chain).await?;
+        let tx_outs = btc_utils::get_tx_outs(
+            &target_btc_address,
+            (amount - gas_fee).try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+            })?,
+            &change_address,
+            (utxos_balance - amount).try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+            })?,
+            chain,
+        );
+        Ok((out_points, tx_outs))
     }
 }

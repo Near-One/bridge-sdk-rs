@@ -7,6 +7,7 @@ use btc_utils::UTXO;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use omni_types::{OmniAddress, TransferId};
 use serde_json::{json, Value};
 use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
@@ -20,6 +21,7 @@ const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
+const SIGN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
@@ -28,6 +30,7 @@ const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
+const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
 #[serde_as]
@@ -182,6 +185,42 @@ impl NearBridgeClient {
         .await?;
 
         tracing::info!(tx_hash = tx_hash.to_string(), "Sent sign BTC transaction");
+        Ok(tx_hash)
+    }
+
+    /// Sign BTC transfer on Omni Bridge
+    #[tracing::instrument(skip_all, name = "OMNI BRIDGE SIGN BTC TRANSFER")]
+    pub async fn omni_bridge_sign_btc_transfer(
+        &self,
+        transfer_id: TransferId,
+        msg: TokenReceiverMessage,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge = self.omni_bridge_id()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: omni_bridge,
+                method_name: "submit_transfer_to_btc_connector".to_string(),
+                args: serde_json::json!({
+                    "transfer_id": transfer_id,
+                    "msg": json!(msg).to_string(),
+                })
+                .to_string()
+                .into_bytes(),
+                gas: SIGN_BTC_TRANSFER_GAS,
+                deposit: SIGN_BTC_TRANSFER_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(tx_hash = tx_hash.to_string(), "Sign BTC transfer");
         Ok(tx_hash)
     }
 
@@ -420,7 +459,10 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(&self, chain: &btc_utils::address::Chain) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxos(
+        &self,
+        chain: &btc_utils::address::Chain,
+    ) -> Result<HashMap<String, UTXO>> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -448,7 +490,10 @@ impl NearBridgeClient {
         Ok(config.change_address)
     }
 
-    pub async fn get_active_management_limit(&self, chain: &btc_utils::address::Chain) -> Result<(u32, u32, u8, u8)> {
+    pub async fn get_active_management_limit(
+        &self,
+        chain: &btc_utils::address::Chain,
+    ) -> Result<(u32, u32, u8, u8)> {
         let config = self.get_config(chain).await?;
         Ok((
             config.active_management_lower_limit,
@@ -458,7 +503,11 @@ impl NearBridgeClient {
         ))
     }
 
-    pub async fn get_amount_to_transfer(&self, chain: &btc_utils::address::Chain, amount: u128) -> Result<u128> {
+    pub async fn get_amount_to_transfer(
+        &self,
+        chain: &btc_utils::address::Chain,
+        amount: u128,
+    ) -> Result<u128> {
         let config = self.get_config(chain).await?;
         Ok(max(
             config.deposit_bridge_fee.get_fee(amount) + amount,
@@ -568,8 +617,104 @@ impl NearBridgeClient {
         Ok(bytes)
     }
 
+    pub async fn extract_recipient_and_amount_from_logs(
+        &self,
+        near_tx_hash: String,
+        sender_id: Option<AccountId>,
+    ) -> Result<(String, u128, TransferId)> {
+        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+        })?;
+
+        let log = self
+            .extract_transfer_log(tx_hash, sender_id, "InitTransferEvent")
+            .await?;
+
+        let v: Value = serde_json::from_str(&log)?;
+
+        let amount_str = &v["InitTransferEvent"]["transfer_message"]["amount"];
+        let amount: u128 = amount_str
+            .as_str()
+            .ok_or(BridgeSdkError::BtcClientError(
+                "amount not found in InitTransferEvent".to_string(),
+            ))?
+            .parse()
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on parsing amount {err}"))
+            })?;
+
+        let fee_str = &v["InitTransferEvent"]["transfer_message"]["fee"]["fee"];
+        let fee: u128 = fee_str
+            .as_str()
+            .ok_or(BridgeSdkError::BtcClientError(
+                "amount not found in InitTransferEvent".to_string(),
+            ))?
+            .parse()
+            .map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on parsing amount {err}"))
+            })?;
+
+        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"]
+            .as_str()
+            .ok_or(BridgeSdkError::BtcClientError(
+                "recipient not found in InitTransferEvent".to_string(),
+            ))?;
+        let recipient = recipient_full
+            .strip_prefix("btc:")
+            .unwrap_or(recipient_full);
+
+        let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
+        let origin_id: u64 = origin_id_str
+            .as_u64()
+            .ok_or(BridgeSdkError::BtcClientError(
+                "Error on parsing origin_id".to_string(),
+            ))?;
+
+        let sender_str = &v["InitTransferEvent"]["transfer_message"]["sender"];
+        let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().ok_or(
+            BridgeSdkError::BtcClientError("Error on parsing sender".to_string()),
+        )?)
+        .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing sender {err}")))?;
+        Ok((
+            recipient.to_string(),
+            amount - fee,
+            TransferId {
+                origin_chain: sender_chain.get_chain(),
+                origin_nonce: origin_id,
+            },
+        ))
+    }
+
+    pub async fn extract_transaction_id(
+        &self,
+        transaction_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<TransferId> {
+        let log = self
+            .extract_transfer_log(transaction_hash, sender_id, "InitTransferEvent")
+            .await?;
+        let v: Value = serde_json::from_str(&log)?;
+
+        let origin_nonce = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"]
+            .as_u64()
+            .unwrap();
+        let sender = OmniAddress::from_str(
+            &v["InitTransferEvent"]["transfer_message"]["sender"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        let origin_chain_id = sender.get_chain();
+
+        Ok(TransferId {
+            origin_chain: origin_chain_id,
+            origin_nonce: *origin_nonce,
+        })
+    }
+
     pub fn utxo_chain_connector(&self, chain: &btc_utils::address::Chain) -> Result<AccountId> {
-        self.utxo_bridges.get(chain)
+        self.utxo_bridges
+            .get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?
@@ -584,8 +729,9 @@ impl NearBridgeClient {
             })
     }
 
-    pub fn utxo_chain_token(&self,  chain: &btc_utils::address::Chain) -> Result<AccountId> {
-        self.utxo_bridges.get(chain)
+    pub fn utxo_chain_token(&self, chain: &btc_utils::address::Chain) -> Result<AccountId> {
+        self.utxo_bridges
+            .get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?
@@ -598,8 +744,9 @@ impl NearBridgeClient {
             .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
     }
 
-    pub fn satoshi_relayer(&self,  chain: &btc_utils::address::Chain) -> Result<AccountId> {
-        self.utxo_bridges.get(chain)
+    pub fn satoshi_relayer(&self, chain: &btc_utils::address::Chain) -> Result<AccountId> {
+        self.utxo_bridges
+            .get(chain)
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC accounts id is not set".to_string(),
             ))?
