@@ -143,7 +143,11 @@ impl NearBridgeClient {
                 let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
                 })?;
-                let relayer_id = user_account_id.unwrap_or(self.satoshi_relayer(chain)?);
+                let relayer_id = match user_account_id {
+                    Some(user_account_id) => user_account_id,
+                    None => self.satoshi_relayer(chain)?,
+                };
+
                 let log = self
                     .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
                     .await?;
@@ -151,7 +155,7 @@ impl NearBridgeClient {
                     .strip_prefix("EVENT_JSON:")
                     .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
 
-                let v: Value = serde_json::from_str(&json_str)?;
+                let v: Value = serde_json::from_str(json_str)?;
                 v["data"][0]["btc_pending_id"]
                     .as_str()
                     .ok_or(BtcClientError(
@@ -581,8 +585,11 @@ impl NearBridgeClient {
         let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
             BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
         })?;
+        let relayer_id = match relayer {
+            Some(relayer) => relayer,
+            None => self.satoshi_relayer(chain)?,
+        };
 
-        let relayer_id = relayer.unwrap_or(self.satoshi_relayer(chain)?);
         let log = self
             .extract_transfer_log(tx_hash, Some(relayer_id), "signed_btc_transaction")
             .await?;
@@ -699,7 +706,7 @@ impl NearBridgeClient {
             .as_u64()
             .unwrap();
         let sender = OmniAddress::from_str(
-            &v["InitTransferEvent"]["transfer_message"]["sender"]
+            v["InitTransferEvent"]["transfer_message"]["sender"]
                 .as_str()
                 .unwrap(),
         )

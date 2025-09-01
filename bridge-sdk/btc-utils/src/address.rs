@@ -23,10 +23,7 @@ pub enum Chain {
 
 impl Chain {
     pub fn is_zcash(&self) -> bool {
-        match self {
-            Self::ZcashMainnet | Self::ZcashTestnet => true,
-            _ => false,
-        }
+        matches!(self, Self::ZcashMainnet | Self::ZcashTestnet)
     }
 }
 
@@ -151,14 +148,18 @@ impl Address {
             Address::Unified { address, .. } => {
                 let receiver_list = address.items_as_parsed();
                 for receiver in receiver_list {
-                    return match receiver {
-                        Receiver::P2pkh(data) => bitcoin::ScriptBuf::new_p2pkh(
-                            &PubkeyHash::from_slice(&data[..]).unwrap(),
-                        ),
-                        Receiver::P2sh(data) => bitcoin::ScriptBuf::new_p2sh(
-                            &ScriptHash::from_slice(&data[..]).unwrap(),
-                        ),
-                        _ => panic!("Unsupported receiver type"),
+                    match receiver {
+                        Receiver::P2pkh(data) => {
+                            return bitcoin::ScriptBuf::new_p2pkh(
+                                &PubkeyHash::from_slice(&data[..]).unwrap(),
+                            )
+                        }
+                        Receiver::P2sh(data) => {
+                            return bitcoin::ScriptBuf::new_p2sh(
+                                &ScriptHash::from_slice(&data[..]).unwrap(),
+                            )
+                        }
+                        _ => continue,
                     };
                 }
 

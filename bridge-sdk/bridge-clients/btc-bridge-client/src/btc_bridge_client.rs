@@ -193,7 +193,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
-        let hex_str = hex::encode(&tx_bytes);
+        let hex_str = hex::encode(tx_bytes);
         let response: JsonRpcResponse<String> = self
             .http_client
             .post(&self.endpoint_url)

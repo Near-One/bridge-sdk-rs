@@ -375,6 +375,8 @@ pub enum OmniConnectorSubCommand {
         chain: UTXOChain,
         #[clap(short, long, help = "Near tx hash with signature")]
         near_tx_hash: String,
+        #[clap(short, long, help = "Account which Sign Transfer")]
+        relayer: Option<AccountId>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -888,13 +890,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::BtcFinTransfer {
             chain,
             near_tx_hash,
+            relayer,
             config_cli,
         } => {
             let tx_hash = omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::UTXOChainFinTransfer {
                     chain: chain.to_chain(),
                     near_tx_hash,
-                    relayer: None,
+                    relayer,
                 })
                 .await
                 .unwrap();

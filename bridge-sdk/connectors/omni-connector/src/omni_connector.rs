@@ -4,8 +4,6 @@ use btc_utils::address::Chain;
 use derive_builder::Builder;
 use eth_light_client::EthLightClient;
 use ethers::prelude::*;
-use std::str::FromStr;
-
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 
@@ -30,6 +28,7 @@ use solana_bridge_client::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
+use std::str::FromStr;
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -569,11 +568,13 @@ impl OmniConnector {
             utxos,
             fee_rate,
             change_address,
-            active_management_lower_limit,
-            active_management_upper_limit,
-            max_active_utxo_management_input_number,
-            max_active_utxo_management_output_number,
-            min_deposit_amount,
+            (
+                active_management_lower_limit.try_into().unwrap(),
+                active_management_upper_limit.try_into().unwrap(),
+            ),
+            max_active_utxo_management_input_number.into(),
+            max_active_utxo_management_output_number.into(),
+            min_deposit_amount.try_into().unwrap(),
             chain,
         )?;
 

@@ -88,66 +88,66 @@ pub fn choose_utxos(
 }
 
 #[allow(clippy::implicit_hasher)]
+#[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_for_active_management(
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
     change_address: String,
-    active_management_lower_limit: u32,
-    active_management_upper_limit: u32,
-    max_active_utxo_management_input_number: u8,
-    max_active_utxo_management_output_number: u8,
-    min_deposit_amount: u128,
+    active_management_limit: (usize, usize),
+    max_active_utxo_management_input_number: usize,
+    max_active_utxo_management_output_number: usize,
+    min_deposit_amount: usize,
     chain: address::Chain,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
 
     let mut selected = Vec::new();
-    let mut utxos_balance = 0;
+    let mut utxos_balance: u64 = 0;
 
-    if utxo_list.len() < active_management_lower_limit as usize {
+    if utxo_list.len() < active_management_limit.0 {
         let utxo_amount = 1;
         for i in 0..utxo_amount {
-            utxos_balance += u128::from(utxo_list[utxo_list.len() - 1 - i].1.balance);
+            utxos_balance += utxo_list[utxo_list.len() - 1 - i].1.balance;
             selected.push(utxo_list[i].clone());
         }
 
         let output_amount = std::cmp::min(
-            (active_management_lower_limit as usize - utxo_list.len()) as u128,
+            active_management_limit.0 - utxo_list.len(),
             std::cmp::min(
-                utxos_balance as u128 / min_deposit_amount - 1,
-                max_active_utxo_management_output_number as u128,
+                <u64 as std::convert::TryInto<usize>>::try_into(utxos_balance).unwrap()
+                    / min_deposit_amount
+                    - 1,
+                max_active_utxo_management_output_number,
             ),
-        ) as u64;
+        );
 
-        let gas_fee: u128 = get_gas_fee(&chain, 1, output_amount, fee_rate).into();
+        let gas_fee: u64 = get_gas_fee(&chain, 1, output_amount.try_into().unwrap(), fee_rate);
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs_utxo_management(
             &change_address,
-            output_amount,
+            output_amount.try_into().unwrap(),
             utxos_balance - gas_fee,
             chain,
         );
 
         Ok((out_points, tx_outs))
-    } else if utxo_list.len() > active_management_upper_limit as usize {
+    } else if utxo_list.len() > active_management_limit.1 {
         let utxo_amount = std::cmp::min(
-            utxo_list.len() - active_management_upper_limit as usize,
-            max_active_utxo_management_input_number as usize,
+            utxo_list.len() - active_management_limit.1,
+            max_active_utxo_management_input_number,
         );
-        for i in 0..utxo_amount {
-            utxos_balance += u128::from(utxo_list[i].1.balance);
-            selected.push(utxo_list[i].clone());
+        for utxo_item in utxo_list.iter().take(utxo_amount) {
+            utxos_balance += utxo_item.1.balance;
+            selected.push(utxo_item.clone());
         }
-        let gas_fee: u128 = get_gas_fee(&chain, selected.len() as u64, 1, fee_rate).into();
+        let gas_fee: u64 = get_gas_fee(&chain, selected.len().try_into().unwrap(), 1, fee_rate);
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs(
             &change_address,
-            (utxos_balance - gas_fee).try_into().map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
-            })?,
+            utxos_balance - gas_fee,
             &change_address,
             0,
             chain,
@@ -193,16 +193,16 @@ pub fn get_tx_outs(
 pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
-    amount: u128,
+    amount: u64,
     chain: address::Chain,
 ) -> Vec<TxOut> {
     let change_address =
         Address::parse(change_address, chain).expect("Invalid Bitcoin Change address");
     let change_script_pubkey = change_address.script_pubkey();
 
-    let one_amount = amount as u64 / output_amount;
+    let one_amount = amount / output_amount;
     let mut res = vec![TxOut {
-        value: Amount::from_sat(amount as u64 - one_amount * (output_amount - 1)),
+        value: Amount::from_sat(amount - one_amount * (output_amount - 1)),
         script_pubkey: change_script_pubkey.clone(),
     }];
 
