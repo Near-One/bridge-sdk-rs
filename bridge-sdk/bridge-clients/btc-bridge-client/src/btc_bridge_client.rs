@@ -1,6 +1,6 @@
 use bitcoin::BlockHash;
-use bitcoincore_rpc::{bitcoin, jsonrpc::base64};
 use bitcoincore_rpc::json::EstimateSmartFeeResult;
+use bitcoincore_rpc::{bitcoin, jsonrpc::base64};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
@@ -43,7 +43,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 headers.insert("x-api-key", HeaderValue::from_str(&api_key).unwrap());
             }
             AuthOptions::BasicAuth(username, password) => {
-                let auth_value = format!("Basic {}", base64::encode(format!("{}:{}", username, password)));
+                let auth_value =
+                    format!("Basic {}", base64::encode(format!("{username}:{password}")));
                 headers.insert("Authorization", HeaderValue::from_str(&auth_value).unwrap());
             }
         }
@@ -190,6 +191,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
+        let hex_str = hex::encode(tx_bytes);
         let response: JsonRpcResponse<String> = self
             .http_client
             .post(&self.endpoint_url)
@@ -197,7 +199,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "id": 1,
                 "jsonrpc": "2.0",
                 "method": "sendrawtransaction",
-                "params": [tx_bytes]
+                "params": [hex_str]
             }))
             .send()
             .await

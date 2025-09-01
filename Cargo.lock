@@ -977,9 +977,10 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.5"
+version = "0.3.7"
 dependencies = [
  "btc-bridge-client",
+ "btc-utils",
  "clap",
  "dotenv",
  "eth-light-client",
@@ -1058,6 +1059,7 @@ dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
  "bridge-connector-common",
+ "hex",
  "merkle-tools",
  "minreq",
  "near-crypto",
@@ -1089,9 +1091,13 @@ version = "0.2.0"
 dependencies = [
  "bitcoin",
  "bridge-connector-common",
+ "k256",
+ "near-sdk",
  "serde",
  "serde_json",
  "serde_with",
+ "zcash_address",
+ "zcash_protocol",
 ]
 
 [[package]]
@@ -5016,6 +5022,7 @@ dependencies = [
 name = "omni-connector"
 version = "0.2.11"
 dependencies = [
+ "bitcoin",
  "borsh 1.5.7",
  "bridge-connector-common",
  "btc-bridge-client",
@@ -7144,8 +7151,9 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
+ "base64 0.22.1",
  "bitvec",
  "borsh 1.5.7",
  "derive_builder",

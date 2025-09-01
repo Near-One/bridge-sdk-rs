@@ -29,12 +29,20 @@ pub const BNB_WORMHOLE_ADDRESS_MAINNET: &str = "0x98f3c9e6E3fAce36bAAd05FE09d375
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET: &str =
+    "EtZMZM22ViKMo4r5y4Anovs3wKQ2owUmDpjygnMMcdEX";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET: &str =
+    "HQS31aApX3DDkuXgSpV9XyDUNtFgQ31pUn5BNWHG2PSp";
 
 pub const WORMHOLE_API_MAINNET: &str = "https://api.wormholescan.io";
 pub const BTC_ENDPOINT_MAINNET: &str = "https://bitcoin-rpc.publicnode.com";
 pub const BTC_CONNECTOR_MAINNET: &str = "btc-connector.bridge.near";
-pub const BTC_MAINNET: &str = "btc-client.bridge.near";
+pub const BTC_MAINNET: &str = "nbtc.bridge.near";
 pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
+
+pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
+pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
@@ -67,12 +75,20 @@ pub const BNB_WORMHOLE_ADDRESS_TESTNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
 pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET: &str =
+    "EtZMZM22ViKMo4r5y4Anovs3wKQ2owUmDpjygnMMcdEX";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET: &str =
+    "HQS31aApX3DDkuXgSpV9XyDUNtFgQ31pUn5BNWHG2PSp";
 
 pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
 pub const BTC_ENDPOINT_TESTNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
 pub const BTC_CONNECTOR_TESTNET: &str = "brg-dev.testnet";
 pub const BTC_TESTNET: &str = "nbtc-dev.testnet";
 pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
+
+pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
+pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
@@ -105,9 +121,17 @@ pub const BNB_WORMHOLE_ADDRESS_DEVNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2A
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_DEVNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEpGSS5zeBge28p";
 pub const SOLANA_WORMHOLE_ADDRESS_DEVNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET: &str =
+    "EtZMZM22ViKMo4r5y4Anovs3wKQ2owUmDpjygnMMcdEX";
+pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET: &str =
+    "HQS31aApX3DDkuXgSpV9XyDUNtFgQ31pUn5BNWHG2PSp";
 
 pub const WORMHOLE_API_DEVNET: &str = "https://api.testnet.wormholescan.io";
 pub const BTC_ENDPOINT_DEVNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
 pub const BTC_CONNECTOR_DEVNET: &str = "brg-dev.testnet";
 pub const BTC_DEVNET: &str = "nbtc-dev.testnet";
 pub const SATOSHI_RELAYER_DEVNET: &str = "cosmosfirst.testnet";
+
+pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/";
+pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
+pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";

@@ -70,6 +70,10 @@ struct CliConfig {
     #[arg(long)]
     solana_wormhole_address: Option<String>,
     #[arg(long)]
+    solana_wormhole_post_message_shim_program_id: Option<String>,
+    #[arg(long)]
+    solana_wormhole_post_message_shim_event_authority: Option<String>,
+    #[arg(long)]
     solana_keypair: Option<String>,
 
     #[arg(long)]
@@ -87,6 +91,17 @@ struct CliConfig {
     btc: Option<String>,
     #[arg(long)]
     satoshi_relayer: Option<String>,
+
+    #[arg(long)]
+    zcash_endpoint: Option<String>,
+    #[arg(long)]
+    zcash_api_key: Option<String>,
+    #[arg(long)]
+    zcash_basic_auth: Option<String>,
+    #[arg(long)]
+    zcash_connector: Option<String>,
+    #[arg(long)]
+    zcash: Option<String>,
 
     #[arg(long)]
     config: Option<String>,
@@ -137,6 +152,12 @@ impl CliConfig {
             solana_wormhole_address: self
                 .solana_wormhole_address
                 .or(other.solana_wormhole_address),
+            solana_wormhole_post_message_shim_program_id: self
+                .solana_wormhole_post_message_shim_program_id
+                .or(other.solana_wormhole_post_message_shim_program_id),
+            solana_wormhole_post_message_shim_event_authority: self
+                .solana_wormhole_post_message_shim_event_authority
+                .or(other.solana_wormhole_post_message_shim_event_authority),
             solana_keypair: self.solana_keypair.or(other.solana_keypair),
 
             wormhole_api: self.wormhole_api.or(other.wormhole_api),
@@ -147,6 +168,12 @@ impl CliConfig {
             btc_connector: self.btc_connector.or(other.btc_connector),
             btc: self.btc.or(other.btc),
             satoshi_relayer: self.satoshi_relayer.or(other.satoshi_relayer),
+
+            zcash_endpoint: self.zcash_endpoint.or(other.zcash_endpoint),
+            zcash_api_key: self.zcash_api_key.or(other.zcash_api_key),
+            zcash_basic_auth: self.zcash_basic_auth.or(other.zcash_basic_auth),
+            zcash_connector: self.zcash_connector.or(other.zcash_connector),
+            zcash: self.zcash.or(other.zcash),
 
             config: self.config.or(other.config),
         }
@@ -194,6 +221,14 @@ fn env_config() -> CliConfig {
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
         solana_wormhole_address: env::var("SOLANA_WORMHOLE_ADDRESS").ok(),
+        solana_wormhole_post_message_shim_program_id: env::var(
+            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
+        )
+        .ok(),
+        solana_wormhole_post_message_shim_event_authority: env::var(
+            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
+        )
+        .ok(),
         solana_keypair: env::var("SOLANA_KEYPAIR").ok(),
 
         wormhole_api: env::var("WORMHOLE_API").ok(),
@@ -204,6 +239,12 @@ fn env_config() -> CliConfig {
         btc_connector: env::var("BTC_CONNECTOR").ok(),
         btc: env::var("BTC").ok(),
         satoshi_relayer: env::var("SATOSHI_RELAYER").ok(),
+
+        zcash_endpoint: env::var("ZCASH_ENDPOINT").ok(),
+        zcash_api_key: env::var("ZCASH_API_KEY").ok(),
+        zcash_basic_auth: env::var("ZCASH_BASIC_AUTH").ok(),
+        zcash_connector: env::var("ZCASH_CONNECTOR").ok(),
+        zcash: env::var("ZCASH").ok(),
 
         config: None,
     }
@@ -253,6 +294,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
@@ -262,6 +309,12 @@ fn default_config(network: Network) -> CliConfig {
             btc_connector: Some(defaults::BTC_CONNECTOR_MAINNET.to_owned()),
             btc: Some(defaults::BTC_MAINNET.to_owned()),
             satoshi_relayer: Some(defaults::SATOSHI_RELAYER_MAINNET.to_owned()),
+
+            zcash_endpoint: Some(defaults::ZCASH_ENDPOINT_MAINNET.to_owned()),
+            zcash_api_key: None,
+            zcash_basic_auth: None,
+            zcash_connector: Some(defaults::ZCASH_CONNECTOR_MAINNET.to_owned()),
+            zcash: Some(defaults::ZCASH_MAINNET.to_owned()),
 
             config: None,
         },
@@ -306,6 +359,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
@@ -315,6 +374,12 @@ fn default_config(network: Network) -> CliConfig {
             btc_connector: Some(defaults::BTC_CONNECTOR_TESTNET.to_owned()),
             btc: Some(defaults::BTC_TESTNET.to_owned()),
             satoshi_relayer: Some(defaults::SATOSHI_RELAYER_TESTNET.to_owned()),
+
+            zcash_endpoint: Some(defaults::ZCASH_ENDPOINT_TESTNET.to_owned()),
+            zcash_api_key: None,
+            zcash_basic_auth: None,
+            zcash_connector: Some(defaults::ZCASH_CONNECTOR_TESTNET.to_owned()),
+            zcash: Some(defaults::ZCASH_TESTNET.to_owned()),
 
             config: None,
         },
@@ -359,6 +424,12 @@ fn default_config(network: Network) -> CliConfig {
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+            solana_wormhole_post_message_shim_program_id: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
+            ),
+            solana_wormhole_post_message_shim_event_authority: Some(
+                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
+            ),
             solana_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
@@ -368,6 +439,12 @@ fn default_config(network: Network) -> CliConfig {
             btc_connector: Some(defaults::BTC_CONNECTOR_DEVNET.to_owned()),
             btc: Some(defaults::BTC_DEVNET.to_owned()),
             satoshi_relayer: Some(defaults::SATOSHI_RELAYER_DEVNET.to_owned()),
+
+            zcash_endpoint: Some(defaults::ZCASH_ENDPOINT_DEVNET.to_owned()),
+            zcash_api_key: None,
+            zcash_basic_auth: None,
+            zcash_connector: Some(defaults::ZCASH_CONNECTOR_DEVNET.to_owned()),
+            zcash: Some(defaults::ZCASH_DEVNET.to_owned()),
 
             config: None,
         },

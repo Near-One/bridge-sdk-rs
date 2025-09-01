@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -78,6 +79,16 @@ pub struct FastFinTransferArgs {
     pub relayer: AccountId,
 }
 
+#[derive(Default, Clone)]
+pub struct UTXOChainAccounts {
+    #[doc = r"UTXO Chain Connector account id on Near"]
+    pub utxo_chain_connector: Option<String>,
+    #[doc = r"UTXO Chain Token account id on Near"]
+    pub utxo_chain_token: Option<String>,
+    #[doc = r"Satoshi Relayer Account Id which sign transaction in UTXO Chain Bridge"]
+    pub satoshi_relayer: Option<String>,
+}
+
 /// Bridging NEAR-originated NEP-141 tokens
 #[derive(Builder, Default, Clone)]
 pub struct NearBridgeClient {
@@ -87,14 +98,10 @@ pub struct NearBridgeClient {
     private_key: Option<String>,
     #[doc = r"NEAR account id of the transaction signer"]
     signer: Option<String>,
-    #[doc = r"OmniBridge account id on Near"]
+    #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<String>,
-    #[doc = r"BTC Connector account id on Near"]
-    btc_connector: Option<String>,
-    #[doc = r"Bitcoin account id on Near"]
-    btc: Option<String>,
-    #[doc = r"Satoshi Relayer Account Id which sign transaction in Bitcoin Bridge"]
-    satoshi_relayer: Option<String>,
+    #[doc = r"Accounts Id for UTXO chains Bridges"]
+    utxo_bridges: HashMap<btc_utils::address::Chain, UTXOChainAccounts>,
 }
 
 impl NearBridgeClient {
@@ -322,7 +329,7 @@ impl NearBridgeClient {
             .as_yoctonear())
     }
 
-    /// Performs a storage deposit on behalf of the OmniBridge so that the tokens can be transferred to the bridge contract. To be called once for each NEP-141
+    /// Performs a storage deposit on behalf of the `OmniBridge` so that the tokens can be transferred to the bridge contract. To be called once for each NEP-141
     #[tracing::instrument(skip_all, name = "STORAGE DEPOSIT")]
     pub async fn storage_deposit_for_token(
         &self,
@@ -399,7 +406,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Logs token metadata to OmniBridge contract. The proof from this transaction is then used to deploy a corresponding token on other chains
+    /// Logs token metadata to `OmniBridge` contract. The proof from this transaction is then used to deploy a corresponding token on other chains
     #[tracing::instrument(skip_all, name = "LOG METADATA")]
     pub async fn log_token_metadata(
         &self,
@@ -518,7 +525,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Binds token on NEAR chain using OmniBridge
+    /// Binds token on NEAR chain using `OmniBridge`
     #[tracing::instrument(skip_all, name = "BIND TOKEN")]
     pub async fn bind_token(
         &self,
@@ -551,7 +558,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Signs transfer using OmniBridge
+    /// Signs transfer using `OmniBridge`
     #[tracing::instrument(skip_all, name = "SIGN TRANSFER")]
     pub async fn sign_transfer(
         &self,
@@ -591,7 +598,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Transfers NEP-141 tokens to OmniBridge. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
+    /// Transfers NEP-141 tokens to `OmniBridge`. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -650,7 +657,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Withdraws NEP-141 tokens from OmniBridge. Requires a proof from the burn transaction
+    /// Withdraws NEP-141 tokens from `OmniBridge`. Requires a proof from the burn transaction
     #[tracing::instrument(skip_all, name = "NEAR FIN TRANSFER")]
     pub async fn fin_transfer(
         &self,
