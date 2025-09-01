@@ -92,7 +92,7 @@ pub fn choose_utxos(
 pub fn choose_utxos_for_active_management(
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
-    change_address: String,
+    change_address: &str,
     active_management_limit: (usize, usize),
     max_active_utxo_management_input_number: usize,
     max_active_utxo_management_output_number: usize,
@@ -126,7 +126,7 @@ pub fn choose_utxos_for_active_management(
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs_utxo_management(
-            &change_address,
+            change_address,
             output_amount.try_into().unwrap(),
             utxos_balance - gas_fee,
             chain,
@@ -146,9 +146,9 @@ pub fn choose_utxos_for_active_management(
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs(
-            &change_address,
+            change_address,
             utxos_balance - gas_fee,
-            &change_address,
+            change_address,
             0,
             chain,
         );

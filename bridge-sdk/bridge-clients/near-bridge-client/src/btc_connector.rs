@@ -134,35 +134,34 @@ impl NearBridgeClient {
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let btc_pending_id = match btc_pending_id {
-            Some(btc_pending_id) => btc_pending_id,
-            None => {
-                let near_tx_hash = near_tx_hash.ok_or(BtcClientError(
-                    "btc_pending id and near tx hash not provided".to_string(),
-                ))?;
-                let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-                })?;
-                let relayer_id = match user_account_id {
-                    Some(user_account_id) => user_account_id,
-                    None => self.satoshi_relayer(chain)?,
-                };
+        let btc_pending_id = if let Some(btc_pending_id) = btc_pending_id {
+            btc_pending_id
+        } else {
+            let near_tx_hash = near_tx_hash.ok_or(BtcClientError(
+                "btc_pending id and near tx hash not provided".to_string(),
+            ))?;
+            let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+            })?;
+            let relayer_id = match user_account_id {
+                Some(user_account_id) => user_account_id,
+                None => self.satoshi_relayer(chain)?,
+            };
 
-                let log = self
-                    .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
-                    .await?;
-                let json_str = log
-                    .strip_prefix("EVENT_JSON:")
-                    .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+            let log = self
+                .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
+                .await?;
+            let json_str = log
+                .strip_prefix("EVENT_JSON:")
+                .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
 
-                let v: Value = serde_json::from_str(json_str)?;
-                v["data"][0]["btc_pending_id"]
-                    .as_str()
-                    .ok_or(BtcClientError(
-                        "btc_pending id not found in log".to_string(),
-                    ))?
-                    .to_string()
-            }
+            let v: Value = serde_json::from_str(json_str)?;
+            v["data"][0]["btc_pending_id"]
+                .as_str()
+                .ok_or(BtcClientError(
+                    "btc_pending id not found in log".to_string(),
+                ))?
+                .to_string()
         };
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;

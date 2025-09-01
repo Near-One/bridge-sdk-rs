@@ -949,6 +949,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let combined_config = combined_config(cli_config, network);
 

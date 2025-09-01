@@ -43,10 +43,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 headers.insert("x-api-key", HeaderValue::from_str(&api_key).unwrap());
             }
             AuthOptions::BasicAuth(username, password) => {
-                let auth_value = format!(
-                    "Basic {}",
-                    base64::encode(format!("{}:{}", username, password))
-                );
+                let auth_value =
+                    format!("Basic {}", base64::encode(format!("{username}:{password}")));
                 headers.insert("Authorization", HeaderValue::from_str(&auth_value).unwrap());
             }
         }

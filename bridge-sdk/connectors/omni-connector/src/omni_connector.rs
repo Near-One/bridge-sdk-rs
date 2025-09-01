@@ -567,7 +567,7 @@ impl OmniConnector {
         let (out_points, tx_outs) = btc_utils::choose_utxos_for_active_management(
             utxos,
             fee_rate,
-            change_address,
+            &change_address,
             (
                 active_management_lower_limit.try_into().unwrap(),
                 active_management_upper_limit.try_into().unwrap(),
