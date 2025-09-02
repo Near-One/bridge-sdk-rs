@@ -14,7 +14,7 @@ pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const BASE_WORMHOLE_ADDRESS_MAINNET: &str = "0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6";
 
-pub const ARB_RPC_MAINNET: &str = "https://arbitrum.llamarpc.com";
+pub const ARB_RPC_MAINNET: &str = "https://arbitrum-one-rpc.publicnode.com";
 pub const ARB_CHAIN_ID_MAINNET: u64 = 42_161;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";

@@ -661,6 +661,7 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "NEAR FIN TRANSFER")]
     pub async fn fin_transfer(
         &self,
+        destination_chain: ChainKind,
         args: FinTransferArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -672,6 +673,10 @@ impl NearBridgeClient {
             if let Some(amount) = storage_deposit_action.storage_deposit_amount {
                 required_deposit += amount;
             }
+        }
+
+        if destination_chain != ChainKind::Near {
+            required_deposit += self.get_required_balance_for_init_transfer().await?;
         }
 
         let tx_hash = near_rpc_client::change_and_wait(
