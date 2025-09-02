@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -78,6 +79,16 @@ pub struct FastFinTransferArgs {
     pub relayer: AccountId,
 }
 
+#[derive(Default, Clone)]
+pub struct UTXOChainAccounts {
+    #[doc = r"UTXO Chain Connector account id on Near"]
+    pub utxo_chain_connector: Option<String>,
+    #[doc = r"UTXO Chain Token account id on Near"]
+    pub utxo_chain_token: Option<String>,
+    #[doc = r"Satoshi Relayer Account Id which sign transaction in UTXO Chain Bridge"]
+    pub satoshi_relayer: Option<String>,
+}
+
 /// Bridging NEAR-originated NEP-141 tokens
 #[derive(Builder, Default, Clone)]
 pub struct NearBridgeClient {
@@ -89,12 +100,8 @@ pub struct NearBridgeClient {
     signer: Option<String>,
     #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<String>,
-    #[doc = r"BTC Connector account id on Near"]
-    btc_connector: Option<String>,
-    #[doc = r"Bitcoin account id on Near"]
-    btc: Option<String>,
-    #[doc = r"Satoshi Relayer Account Id which sign transaction in Bitcoin Bridge"]
-    satoshi_relayer: Option<String>,
+    #[doc = r"Accounts Id for UTXO chains Bridges"]
+    utxo_bridges: HashMap<btc_utils::address::Chain, UTXOChainAccounts>,
 }
 
 impl NearBridgeClient {

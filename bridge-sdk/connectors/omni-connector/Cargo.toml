@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sha3.workspace = true
+bitcoin.workspace = true
 borsh.workspace = true
 ethers.workspace = true
 derive_builder.workspace = true
