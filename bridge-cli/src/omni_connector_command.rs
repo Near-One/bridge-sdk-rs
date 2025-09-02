@@ -105,6 +105,8 @@ pub enum OmniConnectorSubCommand {
     NearFinTransfer {
         #[clap(short, long, help = "Origin chain of the transfer to finalize")]
         chain: ChainKind,
+        #[clap(short, long, help = "Destination chain of the transfer")]
+        destination_chain: ChainKind,
         #[clap(
             short,
             long,
@@ -492,6 +494,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         }
         OmniConnectorSubCommand::NearFinTransfer {
             chain,
+            destination_chain,
             tx_hash,
             config_cli,
         } => {
@@ -507,6 +510,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     connector
                         .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
                             chain_kind: chain,
+                            destination_chain,
                             tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                             storage_deposit_actions,
                             transaction_options: TransactionOptions::default(),
@@ -523,6 +527,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     connector
                         .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
                             chain_kind: chain,
+                            destination_chain,
                             storage_deposit_actions,
                             vaa,
                             transaction_options: TransactionOptions::default(),

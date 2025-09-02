@@ -142,12 +142,14 @@ pub enum InitTransferArgs {
 pub enum FinTransferArgs {
     NearFinTransferWithEvmProof {
         chain_kind: ChainKind,
+        destination_chain: ChainKind,
         tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
         transaction_options: TransactionOptions,
     },
     NearFinTransferWithVaa {
         chain_kind: ChainKind,
+        destination_chain: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
         vaa: String,
         transaction_options: TransactionOptions,
@@ -358,6 +360,7 @@ impl OmniConnector {
     pub async fn near_fin_transfer_with_evm_proof(
         &self,
         chain_kind: ChainKind,
+        destination_chain: ChainKind,
         tx_hash: TxHash,
         storage_deposit_actions: Vec<StorageDepositAction>,
         transaction_options: TransactionOptions,
@@ -375,6 +378,7 @@ impl OmniConnector {
 
         near_bridge_client
             .fin_transfer(
+                destination_chain,
                 omni_types::locker_args::FinTransferArgs {
                     chain_kind,
                     storage_deposit_actions,
@@ -533,6 +537,7 @@ impl OmniConnector {
     pub async fn near_fin_transfer_with_vaa(
         &self,
         chain_kind: ChainKind,
+        destination_chain: ChainKind,
         storage_deposit_actions: Vec<StorageDepositAction>,
         vaa: String,
         transaction_options: TransactionOptions,
@@ -546,6 +551,7 @@ impl OmniConnector {
 
         near_bridge_client
             .fin_transfer(
+                destination_chain,
                 omni_types::locker_args::FinTransferArgs {
                     chain_kind,
                     storage_deposit_actions,
@@ -1306,12 +1312,14 @@ impl OmniConnector {
         match fin_transfer_args {
             FinTransferArgs::NearFinTransferWithEvmProof {
                 chain_kind,
+                destination_chain,
                 tx_hash: near_tx_hash,
                 storage_deposit_actions,
                 transaction_options,
             } => self
                 .near_fin_transfer_with_evm_proof(
                     chain_kind,
+                    destination_chain,
                     near_tx_hash,
                     storage_deposit_actions,
                     transaction_options,
@@ -1320,12 +1328,14 @@ impl OmniConnector {
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::NearFinTransferWithVaa {
                 chain_kind,
+                destination_chain,
                 storage_deposit_actions,
                 vaa,
                 transaction_options,
             } => self
                 .near_fin_transfer_with_vaa(
                     chain_kind,
+                    destination_chain,
                     storage_deposit_actions,
                     vaa,
                     transaction_options,
