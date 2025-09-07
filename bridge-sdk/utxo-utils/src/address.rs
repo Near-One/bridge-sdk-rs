@@ -10,7 +10,7 @@ use zcash_protocol::consensus::NetworkType;
 
 #[near(serializers = [borsh, json])]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Chain {
+pub enum UTXOChain {
     BitcoinMainnet,
     BitcoinTestnet,
     LitecoinMainnet,
@@ -21,41 +21,41 @@ pub enum Chain {
     DogecoinTestnet,
 }
 
-impl Chain {
+impl UTXOChain {
     pub fn is_zcash(&self) -> bool {
         matches!(self, Self::ZcashMainnet | Self::ZcashTestnet)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Address {
+pub enum UTXOAddress {
     P2pkh {
         hash: PubkeyHash,
-        chain: Chain,
+        chain: UTXOChain,
     },
     P2sh {
         hash: ScriptHash,
-        chain: Chain,
+        chain: UTXOChain,
     },
     Segwit {
         program: WitnessProgram,
-        chain: Chain,
+        chain: UTXOChain,
     },
     Unified {
         address: zcash_address::unified::Address,
-        chain: Chain,
+        chain: UTXOChain,
     },
 }
 
-impl zcash_address::TryFromAddress for Address {
+impl zcash_address::TryFromAddress for UTXOAddress {
     type Error = &'static str;
     fn try_from_transparent_p2pkh(
         net: NetworkType,
         data: [u8; 20],
     ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
         let chain = match net {
-            NetworkType::Main => Chain::ZcashMainnet,
-            NetworkType::Test => Chain::ZcashTestnet,
+            NetworkType::Main => UTXOChain::ZcashMainnet,
+            NetworkType::Test => UTXOChain::ZcashTestnet,
             NetworkType::Regtest => {
                 return Err("Regtest network not supported".into());
             }
@@ -72,8 +72,8 @@ impl zcash_address::TryFromAddress for Address {
         data: zcash_address::unified::Address,
     ) -> Result<Self, ConversionError<Self::Error>> {
         let chain = match net {
-            NetworkType::Main => Chain::ZcashMainnet,
-            NetworkType::Test => Chain::ZcashTestnet,
+            NetworkType::Main => UTXOChain::ZcashMainnet,
+            NetworkType::Test => UTXOChain::ZcashTestnet,
             NetworkType::Regtest => {
                 return Err("Regtest network not supported".into());
             }
@@ -86,16 +86,16 @@ impl zcash_address::TryFromAddress for Address {
     }
 }
 
-impl Address {
+impl UTXOAddress {
     /// Parse an address string + chain into `AddressInner`
-    pub fn parse(address: &str, chain: Chain) -> Result<Self, String> {
-        if chain == Chain::ZcashMainnet || chain == Chain::ZcashTestnet {
+    pub fn parse(address: &str, chain: UTXOChain) -> Result<Self, String> {
+        if chain == UTXOChain::ZcashMainnet || chain == UTXOChain::ZcashTestnet {
             let addr = ZcashAddress::try_from_encoded(address)
                 .map_err(|e| format!("Error on parsing ZCash Address: {e}"))?;
 
             let network = match chain {
-                Chain::ZcashMainnet => NetworkType::Main,
-                Chain::ZcashTestnet => NetworkType::Test,
+                UTXOChain::ZcashMainnet => NetworkType::Main,
+                UTXOChain::ZcashTestnet => NetworkType::Test,
                 _ => unreachable!(),
             };
 
@@ -115,7 +115,7 @@ impl Address {
                 let program = WitnessProgram::new(version, &data)
                     .expect("bech32 guarantees valid program length for witness");
 
-                return Ok(Address::Segwit { program, chain });
+                return Ok(UTXOAddress::Segwit { program, chain });
             }
         }
 
@@ -126,14 +126,14 @@ impl Address {
         if data.starts_with(&prefix) {
             let hash = PubkeyHash::from_slice(&data[prefix.len()..])
                 .map_err(|e| format!("Invalid pubkey hash: {e}"))?;
-            return Ok(Address::P2pkh { hash, chain });
+            return Ok(UTXOAddress::P2pkh { hash, chain });
         }
 
         let prefix = get_script_address_prefix(chain);
         if data.starts_with(&prefix) {
             let hash = ScriptHash::from_slice(&data[prefix.len()..])
                 .map_err(|e| format!("Invalid script hash: {e}"))?;
-            return Ok(Address::P2sh { hash, chain });
+            return Ok(UTXOAddress::P2sh { hash, chain });
         }
 
         Err("Unknown address format or unsupported chain".to_string())
@@ -142,10 +142,10 @@ impl Address {
     /// Return the scriptPubKey corresponding to this address
     pub fn script_pubkey(&self) -> bitcoin::ScriptBuf {
         match self {
-            Address::P2pkh { hash, .. } => bitcoin::ScriptBuf::new_p2pkh(hash),
-            Address::P2sh { hash, .. } => bitcoin::ScriptBuf::new_p2sh(hash),
-            Address::Segwit { program, .. } => bitcoin::ScriptBuf::new_witness_program(program),
-            Address::Unified { address, .. } => {
+            UTXOAddress::P2pkh { hash, .. } => bitcoin::ScriptBuf::new_p2pkh(hash),
+            UTXOAddress::P2sh { hash, .. } => bitcoin::ScriptBuf::new_p2sh(hash),
+            UTXOAddress::Segwit { program, .. } => bitcoin::ScriptBuf::new_witness_program(program),
+            UTXOAddress::Unified { address, .. } => {
                 let receiver_list = address.items_as_parsed();
                 for receiver in receiver_list {
                     match receiver {
@@ -168,33 +168,33 @@ impl Address {
         }
     }
 
-    pub fn from_pubkey(chain: Chain, pubkey: bitcoin::PublicKey) -> Self {
+    pub fn from_pubkey(chain: UTXOChain, pubkey: bitcoin::PublicKey) -> Self {
         let pubkey_hash = pubkey.pubkey_hash();
 
         if let Some(_hrp) = get_segwit_hrp(&chain) {
             // Chain supports Bech32 SegWit
             let wp = WitnessProgram::p2wpkh(&pubkey.try_into().unwrap());
-            Address::Segwit { program: wp, chain }
+            UTXOAddress::Segwit { program: wp, chain }
         } else {
             // Legacy P2PKH
-            Address::P2pkh {
+            UTXOAddress::P2pkh {
                 hash: pubkey_hash,
                 chain,
             }
         }
     }
 
-    pub fn from_script(script: &bitcoin::Script, chain: Chain) -> Option<Self> {
+    pub fn from_script(script: &bitcoin::Script, chain: UTXOChain) -> Option<Self> {
         // Try P2PKH
         if script.is_p2pkh() {
             let hash = bitcoin::PubkeyHash::from_slice(&script.as_bytes()[3..23]).ok()?;
-            return Some(Address::P2pkh { hash, chain });
+            return Some(UTXOAddress::P2pkh { hash, chain });
         }
 
         // Try P2SH
         if script.is_p2sh() {
             let hash = bitcoin::ScriptHash::from_slice(&script.as_bytes()[2..22]).ok()?;
-            return Some(Address::P2sh { hash, chain });
+            return Some(UTXOAddress::P2sh { hash, chain });
         }
 
         if script.is_witness_program() {
@@ -204,7 +204,7 @@ impl Address {
 
             let version = WitnessVersion::try_from(opcode).ok()?;
             let program = WitnessProgram::new(version, &script.as_bytes()[2..]).ok()?;
-            return Some(Address::Segwit { program, chain });
+            return Some(UTXOAddress::Segwit { program, chain });
         }
 
         None
@@ -212,9 +212,9 @@ impl Address {
 }
 
 /// Formats bech32 as upper case if alternate formatting is chosen (`{:#}`).
-impl fmt::Display for Address {
+impl fmt::Display for UTXOAddress {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        use Address::{P2pkh, P2sh, Segwit, Unified};
+        use UTXOAddress::{P2pkh, P2sh, Segwit, Unified};
         match self {
             P2pkh { hash, chain } => {
                 let prefix = get_pubkey_address_prefix(*chain);
@@ -244,8 +244,8 @@ impl fmt::Display for Address {
             }
             Unified { address, chain } => {
                 let network = match chain {
-                    Chain::ZcashMainnet => NetworkType::Main,
-                    Chain::ZcashTestnet => NetworkType::Test,
+                    UTXOChain::ZcashMainnet => NetworkType::Main,
+                    UTXOChain::ZcashTestnet => NetworkType::Test,
                     _ => unreachable!(),
                 };
 
@@ -256,65 +256,65 @@ impl fmt::Display for Address {
     }
 }
 
-pub fn get_segwit_hrp(chain: &Chain) -> Option<&'static str> {
+pub fn get_segwit_hrp(chain: &UTXOChain) -> Option<&'static str> {
     #[allow(clippy::match_same_arms)]
     match chain {
         // Bitcoin (Bech32 - BIP173)
-        Chain::BitcoinMainnet => Some("bc"),
-        Chain::BitcoinTestnet => Some("tb"),
+        UTXOChain::BitcoinMainnet => Some("bc"),
+        UTXOChain::BitcoinTestnet => Some("tb"),
 
         // Litecoin (Bech32)
-        Chain::LitecoinMainnet => Some("ltc"),
-        Chain::LitecoinTestnet => Some("tltc"),
+        UTXOChain::LitecoinMainnet => Some("ltc"),
+        UTXOChain::LitecoinTestnet => Some("tltc"),
 
         // Zcash (Bech32m) support unified addresses with hrp but not segwit
-        Chain::ZcashMainnet | Chain::ZcashTestnet => None,
+        UTXOChain::ZcashMainnet | UTXOChain::ZcashTestnet => None,
 
         // Dogecoin (no native Bech32 support yet)
-        Chain::DogecoinMainnet | Chain::DogecoinTestnet => None,
+        UTXOChain::DogecoinMainnet | UTXOChain::DogecoinTestnet => None,
     }
 }
 
 /// Returns the P2PKH (pubkey) address prefix as a Vec<u8>
-fn get_pubkey_address_prefix(chain: Chain) -> Vec<u8> {
+fn get_pubkey_address_prefix(chain: UTXOChain) -> Vec<u8> {
     #[allow(clippy::match_same_arms)]
     match chain {
         // Bitcoin
-        Chain::BitcoinMainnet => vec![0x00], // "1"
-        Chain::BitcoinTestnet => vec![0x6F], // "m" or "n"
+        UTXOChain::BitcoinMainnet => vec![0x00], // "1"
+        UTXOChain::BitcoinTestnet => vec![0x6F], // "m" or "n"
 
         // Litecoin
-        Chain::LitecoinMainnet => vec![0x30], // "L"
-        Chain::LitecoinTestnet => vec![0x6F],
+        UTXOChain::LitecoinMainnet => vec![0x30], // "L"
+        UTXOChain::LitecoinTestnet => vec![0x6F],
 
         // Zcash
-        Chain::ZcashMainnet => vec![0x1C, 0xB8], // "t1"
-        Chain::ZcashTestnet => vec![0x1D, 0x25], // "tm"
+        UTXOChain::ZcashMainnet => vec![0x1C, 0xB8], // "t1"
+        UTXOChain::ZcashTestnet => vec![0x1D, 0x25], // "tm"
 
         // Dogecoin
-        Chain::DogecoinMainnet => vec![0x1E], // "D"
-        Chain::DogecoinTestnet => vec![0x71], // "n"
+        UTXOChain::DogecoinMainnet => vec![0x1E], // "D"
+        UTXOChain::DogecoinTestnet => vec![0x71], // "n"
     }
 }
 
 /// Returns the P2SH (script) address prefix as a Vec<u8>
-fn get_script_address_prefix(chain: Chain) -> Vec<u8> {
+fn get_script_address_prefix(chain: UTXOChain) -> Vec<u8> {
     #[allow(clippy::match_same_arms)]
     match chain {
         // Bitcoin
-        Chain::BitcoinMainnet => vec![0x05], // "3"
-        Chain::BitcoinTestnet => vec![0xC4], // "2"
+        UTXOChain::BitcoinMainnet => vec![0x05], // "3"
+        UTXOChain::BitcoinTestnet => vec![0xC4], // "2"
 
         // Litecoin
-        Chain::LitecoinMainnet => vec![0x32], // "M" (was "3")
-        Chain::LitecoinTestnet => vec![0x3A],
+        UTXOChain::LitecoinMainnet => vec![0x32], // "M" (was "3")
+        UTXOChain::LitecoinTestnet => vec![0x3A],
 
         // Zcash
-        Chain::ZcashMainnet => vec![0x1C, 0xBD], // "t3"
-        Chain::ZcashTestnet => vec![0x1C, 0xBA], // "t2"
+        UTXOChain::ZcashMainnet => vec![0x1C, 0xBD], // "t3"
+        UTXOChain::ZcashTestnet => vec![0x1C, 0xBA], // "t2"
 
         // Dogecoin
-        Chain::DogecoinMainnet => vec![0x16], // "9"
-        Chain::DogecoinTestnet => vec![0xC4], // same as Bitcoin testnet
+        UTXOChain::DogecoinMainnet => vec![0x16], // "9"
+        UTXOChain::DogecoinTestnet => vec![0xC4], // same as Bitcoin testnet
     }
 }

@@ -23,7 +23,7 @@ eth-light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 crypto-utils = { path = "../../crypto-utils" }
-btc-utils = { path = "../../btc-utils" }
+utxo-utils = { path = "../../utxo-utils" }
 bridge-connector-common = { path = "../bridge-connector-common" }
 
 near-bridge-client = { path = "../../bridge-clients/near-bridge-client" }

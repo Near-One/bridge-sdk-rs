@@ -19,7 +19,7 @@ serde_with.workspace = true
 tracing.workspace = true
 near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
-btc-utils = { path = "../../btc-utils" }
+utxo-utils = { path = "../../utxo-utils" }
 
 [lib]
 path = "src/near_bridge_client.rs"

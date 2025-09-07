@@ -1,6 +1,6 @@
 pub mod address;
 
-use crate::address::Address;
+use crate::address::UTXOAddress;
 use bitcoin::{Amount, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use serde_with::{serde_as, DisplayFromStr};
@@ -36,7 +36,7 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
 }
 
 pub fn get_gas_fee(
-    chain: &crate::address::Chain,
+    chain: &crate::address::UTXOChain,
     num_input: u64,
     num_output: u64,
     fee_rate: u64,
@@ -51,7 +51,7 @@ pub fn get_gas_fee(
 
 #[allow(clippy::implicit_hasher)]
 pub fn choose_utxos(
-    chain: &crate::address::Chain,
+    chain: &crate::address::UTXOChain,
     amount: u128,
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
@@ -97,7 +97,7 @@ pub fn choose_utxos_for_active_management(
     max_active_utxo_management_input_number: usize,
     max_active_utxo_management_output_number: usize,
     min_deposit_amount: usize,
-    chain: address::Chain,
+    chain: address::UTXOChain,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -166,10 +166,10 @@ pub fn get_tx_outs(
     amount: u64,
     change_address: &str,
     change_amount: u64,
-    chain: address::Chain,
+    chain: address::UTXOChain,
 ) -> Vec<TxOut> {
     let btc_recipient_address =
-        Address::parse(target_btc_address, chain).expect("Invalid Bitcoin address");
+        UTXOAddress::parse(target_btc_address, chain).expect("Invalid Bitcoin address");
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
     let mut res = vec![TxOut {
@@ -179,7 +179,7 @@ pub fn get_tx_outs(
 
     if change_amount > 0 {
         let change_address =
-            Address::parse(change_address, chain).expect("Invalid Bitcoin Change address");
+            UTXOAddress::parse(change_address, chain).expect("Invalid Bitcoin Change address");
         let change_script_pubkey = change_address.script_pubkey();
         res.push(TxOut {
             value: Amount::from_sat(change_amount),
@@ -194,10 +194,10 @@ pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
     amount: u64,
-    chain: address::Chain,
+    chain: address::UTXOChain,
 ) -> Vec<TxOut> {
     let change_address =
-        Address::parse(change_address, chain).expect("Invalid Bitcoin Change address");
+        UTXOAddress::parse(change_address, chain).expect("Invalid Bitcoin Change address");
     let change_script_pubkey = change_address.script_pubkey();
 
     let one_amount = amount / output_amount;

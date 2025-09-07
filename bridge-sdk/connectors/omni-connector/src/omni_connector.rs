@@ -1,6 +1,6 @@
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use btc_utils::address::Chain;
+use utxo_utils::address::UTXOChain;
 use derive_builder::Builder;
 use eth_light_client::EthLightClient;
 use ethers::prelude::*;
@@ -184,7 +184,7 @@ pub enum FinTransferArgs {
         solana_token: Pubkey,
     },
     UTXOChainFinTransfer {
-        chain: Chain,
+        chain: UTXOChain,
         near_tx_hash: String,
         relayer: Option<AccountId>,
     },
@@ -400,7 +400,7 @@ impl OmniConnector {
 
     pub async fn near_sign_btc_transaction(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         btc_pending_id: Option<String>,
         near_tx_hash: Option<String>,
         user_account_id: Option<AccountId>,
@@ -423,7 +423,7 @@ impl OmniConnector {
 
     pub async fn near_fin_transfer_btc(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
@@ -463,7 +463,7 @@ impl OmniConnector {
 
     pub async fn near_btc_verify_withdraw(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -489,7 +489,7 @@ impl OmniConnector {
 
     pub async fn near_btc_cancel_withdraw(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -502,7 +502,7 @@ impl OmniConnector {
 
     pub async fn near_btc_verify_active_utxo_management(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -529,7 +529,7 @@ impl OmniConnector {
 
     pub async fn get_btc_address(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         recipient_id: &str,
         amount: u128,
         fee: u128,
@@ -542,7 +542,7 @@ impl OmniConnector {
 
     pub async fn active_utxo_management(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -568,7 +568,7 @@ impl OmniConnector {
         let change_address = near_bridge_client.get_change_address(&chain).await?;
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(&chain).await?;
 
-        let (out_points, tx_outs) = btc_utils::choose_utxos_for_active_management(
+        let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
             utxos,
             fee_rate,
             &change_address,
@@ -589,7 +589,7 @@ impl OmniConnector {
 
     pub async fn init_near_to_bitcoin_transfer(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
@@ -606,10 +606,10 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos(&chain).await?;
 
         let (out_points, utxos_balance, gas_fee) =
-            btc_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(&chain).await?;
-        let tx_outs = btc_utils::get_tx_outs(
+        let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
             amount.try_into().map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
@@ -643,7 +643,7 @@ impl OmniConnector {
 
     pub async fn omni_bridge_sign_btc_transfer(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         near_tx_hash: String,
         sender_id: Option<AccountId>,
         transaction_options: TransactionOptions,
@@ -673,7 +673,7 @@ impl OmniConnector {
 
     pub async fn btc_fin_transfer(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         near_tx_hash: String,
         relayer: Option<AccountId>,
     ) -> Result<String> {
@@ -693,7 +693,7 @@ impl OmniConnector {
         }
     }
 
-    pub async fn get_amount_to_transfer(&self, chain: Chain, amount: u128) -> Result<u128> {
+    pub async fn get_amount_to_transfer(&self, chain: UTXOChain, amount: u128) -> Result<u128> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
             .get_amount_to_transfer(&chain, amount)
@@ -1314,7 +1314,10 @@ impl OmniConnector {
                 self.solana_log_metadata(token)
                     .await
                     .map(|hash| hash.to_string())
-            }
+            },
+            OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
+                "Log metadata is not supported for this chain".to_string(),
+            )),
         }
     }
 
@@ -1517,7 +1520,7 @@ impl OmniConnector {
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
-                    Chain::BitcoinMainnet,
+                    UTXOChain::BitcoinMainnet,
                     btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
@@ -1594,6 +1597,9 @@ impl OmniConnector {
                     .await
             }
             ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
+                "is_transfer_finalised is not supported for UTXO chains".to_string(),
+            )),
         }
     }
 
@@ -1640,7 +1646,9 @@ impl OmniConnector {
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
-            ChainKind::Near | ChainKind::Sol => unreachable!("Unsupported chain kind"),
+            ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
+                unreachable!("Unsupported chain kind")
+            },
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
@@ -1733,8 +1741,8 @@ impl OmniConnector {
                 self.get_storage_deposit_actions_for_solana_tx(&signature)
                     .await
             }
-            ChainKind::Near => Err(BridgeSdkError::ConfigError(
-                "Storage deposit actions are not supported for NEAR".to_string(),
+            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => Err(BridgeSdkError::ConfigError(
+                "Storage deposit actions are not supported for this chain".to_string(),
             )),
         }
     }
@@ -1891,7 +1899,7 @@ impl OmniConnector {
 
     async fn extract_utxo(
         &self,
-        chain: Chain,
+        chain: UTXOChain,
         target_btc_address: String,
         amount: u128,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
@@ -1906,10 +1914,10 @@ impl OmniConnector {
 
         let utxos = near_bridge_client.get_utxos(&chain).await?;
         let (out_points, utxos_balance, gas_fee) =
-            btc_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(&chain, amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(&chain).await?;
-        let tx_outs = btc_utils::get_tx_outs(
+        let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
             (amount - gas_fee).try_into().map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))

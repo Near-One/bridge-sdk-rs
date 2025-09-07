@@ -29,12 +29,12 @@ pub enum UTXOChain {
 }
 
 impl UTXOChain {
-    pub fn to_chain(&self) -> btc_utils::address::Chain {
+    pub fn to_chain(&self) -> utxo_utils::address::UTXOChain {
         match self {
-            UTXOChain::BitcoinMainnet => btc_utils::address::Chain::BitcoinMainnet,
-            UTXOChain::BitcoinTestnet => btc_utils::address::Chain::BitcoinTestnet,
-            UTXOChain::ZcashMainnet => btc_utils::address::Chain::ZcashMainnet,
-            UTXOChain::ZcashTestnet => btc_utils::address::Chain::ZcashTestnet,
+            UTXOChain::BitcoinMainnet => utxo_utils::address::UTXOChain::BitcoinMainnet,
+            UTXOChain::BitcoinTestnet => utxo_utils::address::UTXOChain::BitcoinTestnet,
+            UTXOChain::ZcashMainnet => utxo_utils::address::UTXOChain::ZcashMainnet,
+            UTXOChain::ZcashTestnet => utxo_utils::address::UTXOChain::ZcashTestnet,
         }
     }
 }
@@ -496,6 +496,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
+            ChainKind::Zcash | ChainKind::Btc => {
+                panic!("DeployToken is not supported for UTXO chains");
+            }
         },
         OmniConnectorSubCommand::IsTransferFinalised {
             origin_chain,
@@ -624,7 +627,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Near => {
+                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
                     panic!("Unsupported chain for NearFinTransfer: {chain:?}");
                 }
             }
@@ -961,7 +964,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let utxo_bridges = match network {
         Network::Mainnet => HashMap::from([
             (
-                btc_utils::address::Chain::ZcashMainnet,
+                utxo_utils::address::UTXOChain::ZcashMainnet,
                 UTXOChainAccounts {
                     utxo_chain_connector: combined_config.zcash_connector,
                     utxo_chain_token: combined_config.zcash,
@@ -969,7 +972,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 },
             ),
             (
-                btc_utils::address::Chain::BitcoinMainnet,
+                utxo_utils::address::UTXOChain::BitcoinMainnet,
                 UTXOChainAccounts {
                     utxo_chain_connector: combined_config.btc_connector,
                     utxo_chain_token: combined_config.btc,
@@ -979,7 +982,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         ]),
         _ => HashMap::from([
             (
-                btc_utils::address::Chain::ZcashTestnet,
+                utxo_utils::address::UTXOChain::ZcashTestnet,
                 UTXOChainAccounts {
                     utxo_chain_connector: combined_config.zcash_connector,
                     utxo_chain_token: combined_config.zcash,
@@ -987,7 +990,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 },
             ),
             (
-                btc_utils::address::Chain::BitcoinTestnet,
+                utxo_utils::address::UTXOChain::BitcoinTestnet,
                 UTXOChainAccounts {
                     utxo_chain_connector: combined_config.btc_connector,
                     utxo_chain_token: combined_config.btc,
