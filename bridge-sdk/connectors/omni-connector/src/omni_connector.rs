@@ -1,11 +1,11 @@
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use utxo_utils::address::UTXOChain;
 use derive_builder::Builder;
 use eth_light_client::EthLightClient;
 use ethers::prelude::*;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
+use utxo_utils::address::UTXOChain;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
@@ -15,8 +15,6 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
-use btc_bridge_client::types::Zcash;
-use btc_bridge_client::{types::Bitcoin, UTXOBridgeClient};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc_connector::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -29,6 +27,10 @@ use solana_bridge_client::{
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use std::str::FromStr;
+use utxo_bridge_client::{
+    types::{Bitcoin, Zcash},
+    UTXOBridgeClient,
+};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -1314,7 +1316,7 @@ impl OmniConnector {
                 self.solana_log_metadata(token)
                     .await
                     .map(|hash| hash.to_string())
-            },
+            }
             OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
                 "Log metadata is not supported for this chain".to_string(),
             )),
@@ -1648,7 +1650,7 @@ impl OmniConnector {
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
             ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
                 unreachable!("Unsupported chain kind")
-            },
+            }
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
@@ -1741,9 +1743,11 @@ impl OmniConnector {
                 self.get_storage_deposit_actions_for_solana_tx(&signature)
                     .await
             }
-            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => Err(BridgeSdkError::ConfigError(
-                "Storage deposit actions are not supported for this chain".to_string(),
-            )),
+            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
+                Err(BridgeSdkError::ConfigError(
+                    "Storage deposit actions are not supported for this chain".to_string(),
+                ))
+            }
         }
     }
 

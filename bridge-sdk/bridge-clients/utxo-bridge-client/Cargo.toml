@@ -1,5 +1,5 @@
 [package]
-name = "btc-bridge-client"
+name = "utxo-bridge-client"
 version = "0.2.0"
 edition = "2021"
 
@@ -22,4 +22,4 @@ reqwest.workspace = true
 zebra-chain = "2.0.0"
 
 [lib]
-path = "src/btc_bridge_client.rs"
+path = "src/utxo_bridge_client.rs"

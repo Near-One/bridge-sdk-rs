@@ -3,8 +3,6 @@ use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
-use utxo_utils::address::UTXOChain;
-use utxo_utils::UTXO;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
@@ -14,6 +12,8 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
+use utxo_utils::address::UTXOChain;
+use utxo_utils::UTXO;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
@@ -463,10 +463,7 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(
-        &self,
-        chain: &UTXOChain,
-    ) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxos(&self, chain: &UTXOChain) -> Result<HashMap<String, UTXO>> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -507,11 +504,7 @@ impl NearBridgeClient {
         ))
     }
 
-    pub async fn get_amount_to_transfer(
-        &self,
-        chain: &UTXOChain,
-        amount: u128,
-    ) -> Result<u128> {
+    pub async fn get_amount_to_transfer(&self, chain: &UTXOChain, amount: u128) -> Result<u128> {
         let config = self.get_config(chain).await?;
         Ok(max(
             config.deposit_bridge_fee.get_fee(amount) + amount,

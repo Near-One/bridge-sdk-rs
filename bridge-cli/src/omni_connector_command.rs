@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 use utxo_utils::address::UTXOChain;
 
-use btc_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
@@ -18,6 +17,7 @@ use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signer::EncodableKey};
+use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
 use crate::{combined_config, CliConfig, Network};
