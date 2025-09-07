@@ -403,9 +403,7 @@ impl OmniConnector {
     pub async fn near_sign_btc_transaction(
         &self,
         chain: UTXOChain,
-        btc_pending_id: Option<String>,
-        near_tx_hash: Option<String>,
-        user_account_id: Option<AccountId>,
+        btc_pending_id: String,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -415,6 +413,25 @@ impl OmniConnector {
             .sign_btc_transaction(
                 &chain,
                 btc_pending_id,
+                sign_index,
+                transaction_options,
+            )
+            .await
+    }
+
+    pub async fn near_sign_btc_transaction_with_tx_hash(
+        &self,
+        chain: UTXOChain,
+        near_tx_hash: String,
+        user_account_id: Option<AccountId>,
+        sign_index: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .sign_btc_transaction_with_tx_hash(
+                &chain,
                 near_tx_hash,
                 user_account_id,
                 sign_index,

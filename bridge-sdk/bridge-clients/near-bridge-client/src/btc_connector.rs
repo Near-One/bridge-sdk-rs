@@ -129,41 +129,10 @@ impl NearBridgeClient {
     pub async fn sign_btc_transaction(
         &self,
         chain: &UTXOChain,
-        btc_pending_id: Option<String>,
-        near_tx_hash: Option<String>,
-        user_account_id: Option<AccountId>,
+        btc_pending_id: String,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let btc_pending_id = if let Some(btc_pending_id) = btc_pending_id {
-            btc_pending_id
-        } else {
-            let near_tx_hash = near_tx_hash.ok_or(BtcClientError(
-                "btc_pending id and near tx hash not provided".to_string(),
-            ))?;
-            let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-            })?;
-            let relayer_id = match user_account_id {
-                Some(user_account_id) => user_account_id,
-                None => self.satoshi_relayer(chain)?,
-            };
-
-            let log = self
-                .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
-                .await?;
-            let json_str = log
-                .strip_prefix("EVENT_JSON:")
-                .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
-
-            let v: Value = serde_json::from_str(json_str)?;
-            v["data"][0]["btc_pending_id"]
-                .as_str()
-                .ok_or(BtcClientError(
-                    "btc_pending id not found in log".to_string(),
-                ))?
-                .to_string()
-        };
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
@@ -191,6 +160,48 @@ impl NearBridgeClient {
         tracing::info!(tx_hash = tx_hash.to_string(), "Sent sign BTC transaction");
         Ok(tx_hash)
     }
+
+    /// Signs a NEAR transfer to BTC by providing Near transaction hash
+    #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
+    pub async fn sign_btc_transaction_with_tx_hash(
+        &self,
+        chain: &UTXOChain,
+        near_tx_hash: String,
+        user_account_id: Option<AccountId>,
+        sign_index: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+            let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
+            })?;
+            let relayer_id = match user_account_id {
+                Some(user_account_id) => user_account_id,
+                None => self.satoshi_relayer(chain)?,
+            };
+
+            let log = self
+                .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
+                .await?;
+            let json_str = log
+                .strip_prefix("EVENT_JSON:")
+                .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+
+            let v: Value = serde_json::from_str(json_str)?;
+            let btc_pending_id = v["data"][0]["btc_pending_id"]
+                .as_str()
+                .ok_or(BtcClientError(
+                    "btc_pending id not found in log".to_string(),
+                ))?
+                .to_string();
+
+        self.sign_btc_transaction(
+            chain,
+            btc_pending_id,
+            sign_index,
+            transaction_options,
+        ).await
+    }
+
 
     /// Sign BTC transfer on Omni Bridge
     #[tracing::instrument(skip_all, name = "OMNI BRIDGE SIGN BTC TRANSFER")]

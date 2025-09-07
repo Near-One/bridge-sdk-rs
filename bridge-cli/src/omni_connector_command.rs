@@ -820,17 +820,28 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             sign_index,
             config_cli,
         } => {
-            omni_connector(network, config_cli)
-                .near_sign_btc_transaction(
-                    chain.to_chain(network),
-                    btc_pending_id,
-                    near_tx_hash,
-                    user_account,
-                    sign_index,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
+            if let Some(btc_pending_id) = btc_pending_id {
+                omni_connector(network, config_cli)
+                    .near_sign_btc_transaction(
+                        chain.to_chain(network),
+                        btc_pending_id,
+                        sign_index,
+                        TransactionOptions::default(),
+                    )
+                    .await
+                    .unwrap();
+            } else {
+                omni_connector(network, config_cli)
+                    .near_sign_btc_transaction_with_tx_hash(
+                        chain.to_chain(network),
+                        near_tx_hash.expect("btc_near_tx_hash is required"),
+                        user_account,
+                        sign_index,
+                        TransactionOptions::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
         }
         OmniConnectorSubCommand::NearFinTransferBTC {
             chain,
