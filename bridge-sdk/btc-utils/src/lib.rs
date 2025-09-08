@@ -78,16 +78,21 @@ pub fn get_tx_outs(
     amount: u64,
     change_address: &str,
     change_amount: u64,
-) -> Vec<TxOut> {
-    let btc_recipient_address =
-        Address::from_str(target_btc_address).expect("Invalid Bitcoin address");
+) -> Result<Vec<TxOut>> {
+    let btc_recipient_address = Address::from_str(target_btc_address)
+        .map_err(|e| BridgeSdkError::BtcClientError(
+            format!("Invalid target Bitcoin address '{}': {}", target_btc_address, e)
+        ))?;
     let btc_recipient_address = btc_recipient_address.assume_checked();
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
-    let change_address = Address::from_str(change_address).expect("Invalid Bitcoin Change address");
+    let change_address = Address::from_str(change_address)
+        .map_err(|e| BridgeSdkError::BtcClientError(
+            format!("Invalid change Bitcoin address '{}': {}", change_address, e)
+        ))?;
     let change_address = change_address.assume_checked();
     let change_script_pubkey = change_address.script_pubkey();
-    vec![
+    Ok(vec![
         TxOut {
             value: Amount::from_sat(amount),
             script_pubkey: btc_recipient_script_pubkey,
@@ -96,5 +101,6 @@ pub fn get_tx_outs(
             value: Amount::from_sat(change_amount),
             script_pubkey: change_script_pubkey,
         },
-    ]
+    ])
 }
+
