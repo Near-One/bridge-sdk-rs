@@ -657,6 +657,7 @@ impl NearBridgeClient {
             ))?;
         let recipient = recipient_full
             .strip_prefix("btc:")
+            .or_else(|| recipient_full.strip_prefix("zcash:"))
             .unwrap_or(recipient_full);
 
         let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
