@@ -305,7 +305,7 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    OmniBridgeSignBtcTransfer {
+    NearSignBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
         #[clap(short, long, help = "Omni Bridge Transaction Hash")]
@@ -550,16 +550,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::OmniBridgeSignBtcTransfer {
+        OmniConnectorSubCommand::NearSignBtcTransfer {
             chain,
             near_tx_hash,
             sender_id,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .omni_bridge_sign_btc_transfer(
+                .near_sign_btc_transfer(
                     chain.to_chain(network),
-                    near_tx_hash,
+                    CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
                     TransactionOptions::default(),
                     None,
@@ -834,7 +834,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 omni_connector(network, config_cli)
                     .near_sign_btc_transaction_with_tx_hash(
                         chain.to_chain(network),
-                        near_tx_hash.expect("btc_near_tx_hash is required"),
+                        CryptoHash::from_str(&near_tx_hash.expect("btc_near_tx_hash is required"))
+                            .expect("Invalid near_tx_hash"),
                         user_account,
                         sign_index,
                         TransactionOptions::default(),
@@ -918,7 +919,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             let tx_hash = omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::UTXOChainFinTransfer {
                     chain: chain.to_chain(network),
-                    near_tx_hash,
+                    near_tx_hash: CryptoHash::from_str(&near_tx_hash)
+                        .expect("Invalid near_tx_hash"),
                     relayer,
                 })
                 .await

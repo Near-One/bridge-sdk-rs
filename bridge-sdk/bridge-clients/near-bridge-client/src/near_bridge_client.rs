@@ -15,7 +15,7 @@ use omni_types::{
 use serde_json::json;
 use utxo_utils::address::UTXOChain;
 
-pub mod btc_connector;
+pub mod btc;
 
 const STORAGE_DEPOSIT_GAS: u64 = 10_000_000_000_000;
 

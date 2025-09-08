@@ -16,7 +16,7 @@ use omni_types::{
 };
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
-use near_bridge_client::btc_connector::{
+use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
@@ -187,7 +187,7 @@ pub enum FinTransferArgs {
     },
     UTXOChainFinTransfer {
         chain: UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     },
 }
@@ -410,19 +410,14 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         near_bridge_client
-            .sign_btc_transaction(
-                &chain,
-                btc_pending_id,
-                sign_index,
-                transaction_options,
-            )
+            .sign_btc_transaction(&chain, btc_pending_id, sign_index, transaction_options)
             .await
     }
 
     pub async fn near_sign_btc_transaction_with_tx_hash(
         &self,
         chain: UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         user_account_id: Option<AccountId>,
         sign_index: u64,
         transaction_options: TransactionOptions,
@@ -660,10 +655,10 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn omni_bridge_sign_btc_transfer(
+    pub async fn near_sign_btc_transfer(
         &self,
         chain: UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         transaction_options: TransactionOptions,
         wait_final_outcome_timeout_sec: Option<u64>,
@@ -677,7 +672,7 @@ impl OmniConnector {
             .extract_utxo(chain, recipient.clone(), amount - fee)
             .await?;
         near_bridge_client
-            .omni_bridge_sign_btc_transfer(
+            .sign_btc_transfer(
                 transfer_id,
                 TokenReceiverMessage::Withdraw {
                     target_btc_address: recipient,
@@ -693,7 +688,7 @@ impl OmniConnector {
     pub async fn btc_fin_transfer(
         &self,
         chain: UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;

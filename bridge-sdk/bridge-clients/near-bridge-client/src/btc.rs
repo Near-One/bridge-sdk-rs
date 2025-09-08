@@ -166,46 +166,38 @@ impl NearBridgeClient {
     pub async fn sign_btc_transaction_with_tx_hash(
         &self,
         chain: &UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         user_account_id: Option<AccountId>,
         sign_index: u64,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-            let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-            })?;
-            let relayer_id = match user_account_id {
-                Some(user_account_id) => user_account_id,
-                None => self.satoshi_relayer(chain)?,
-            };
+        let relayer_id = match user_account_id {
+            Some(user_account_id) => user_account_id,
+            None => self.satoshi_relayer(chain)?,
+        };
 
-            let log = self
-                .extract_transfer_log(tx_hash, Some(relayer_id), "generate_btc_pending_info")
-                .await?;
-            let json_str = log
-                .strip_prefix("EVENT_JSON:")
-                .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+        let log = self
+            .extract_transfer_log(near_tx_hash, Some(relayer_id), "generate_btc_pending_info")
+            .await?;
+        let json_str = log
+            .strip_prefix("EVENT_JSON:")
+            .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
 
-            let v: Value = serde_json::from_str(json_str)?;
-            let btc_pending_id = v["data"][0]["btc_pending_id"]
-                .as_str()
-                .ok_or(BtcClientError(
-                    "btc_pending id not found in log".to_string(),
-                ))?
-                .to_string();
+        let v: Value = serde_json::from_str(json_str)?;
+        let btc_pending_id = v["data"][0]["btc_pending_id"]
+            .as_str()
+            .ok_or(BtcClientError(
+                "btc_pending id not found in log".to_string(),
+            ))?
+            .to_string();
 
-        self.sign_btc_transaction(
-            chain,
-            btc_pending_id,
-            sign_index,
-            transaction_options,
-        ).await
+        self.sign_btc_transaction(chain, btc_pending_id, sign_index, transaction_options)
+            .await
     }
-
 
     /// Sign BTC transfer on Omni Bridge
     #[tracing::instrument(skip_all, name = "OMNI BRIDGE SIGN BTC TRANSFER")]
-    pub async fn omni_bridge_sign_btc_transfer(
+    pub async fn sign_btc_transfer(
         &self,
         transfer_id: TransferId,
         msg: TokenReceiverMessage,
@@ -583,19 +575,16 @@ impl NearBridgeClient {
     pub async fn get_btc_tx_data(
         &self,
         chain: &UTXOChain,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     ) -> Result<Vec<u8>> {
-        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-        })?;
         let relayer_id = match relayer {
             Some(relayer) => relayer,
             None => self.satoshi_relayer(chain)?,
         };
 
         let log = self
-            .extract_transfer_log(tx_hash, Some(relayer_id), "signed_btc_transaction")
+            .extract_transfer_log(near_tx_hash, Some(relayer_id), "signed_btc_transaction")
             .await?;
 
         let json_str = log
@@ -630,15 +619,11 @@ impl NearBridgeClient {
 
     pub async fn extract_recipient_and_amount_from_logs(
         &self,
-        near_tx_hash: String,
+        near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     ) -> Result<(String, u128, TransferId)> {
-        let tx_hash = CryptoHash::from_str(&near_tx_hash).map_err(|err| {
-            BridgeSdkError::BtcClientError(format!("Error on parsing Near Tx Hash: {err}"))
-        })?;
-
         let log = self
-            .extract_transfer_log(tx_hash, sender_id, "InitTransferEvent")
+            .extract_transfer_log(near_tx_hash, sender_id, "InitTransferEvent")
             .await?;
 
         let v: Value = serde_json::from_str(&log)?;
