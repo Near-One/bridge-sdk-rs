@@ -33,13 +33,9 @@ impl UTXOChainArg {
     pub fn to_chain(&self, network: Network) -> UTXOChain {
         match (self, network) {
             (UTXOChainArg::Btc, Network::Mainnet) => UTXOChain::BitcoinMainnet,
-            (UTXOChainArg::Btc, Network::Testnet) | (UTXOChainArg::Btc, Network::Devnet) => {
-                UTXOChain::BitcoinTestnet
-            }
+            (UTXOChainArg::Btc, Network::Testnet | Network::Devnet) => UTXOChain::BitcoinTestnet,
             (UTXOChainArg::Zcash, Network::Mainnet) => UTXOChain::ZcashMainnet,
-            (UTXOChainArg::Zcash, Network::Testnet) | (UTXOChainArg::Zcash, Network::Devnet) => {
-                UTXOChain::ZcashTestnet
-            }
+            (UTXOChainArg::Zcash, Network::Testnet | Network::Devnet) => UTXOChain::ZcashTestnet,
         }
     }
 }
