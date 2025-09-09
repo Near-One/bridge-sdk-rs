@@ -655,7 +655,35 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn near_sign_btc_transfer(
+    pub async fn near_submit_btc_transfer(
+        &self,
+        chain: UTXOChain,
+        recipient: String,
+        amount: u128,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        wait_final_outcome_timeout_sec: Option<u64>,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let fee = near_bridge_client.get_withdraw_fee(&chain).await?;
+        let (out_points, tx_outs) = self
+            .extract_utxo(chain, recipient.clone(), amount - fee)
+            .await?;
+        near_bridge_client
+            .submit_btc_transfer(
+                transfer_id,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address: recipient,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+                wait_final_outcome_timeout_sec,
+            )
+            .await
+    }
+
+    pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: UTXOChain,
         near_tx_hash: CryptoHash,
@@ -667,22 +695,16 @@ impl OmniConnector {
         let (recipient, amount, transfer_id) = near_bridge_client
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
-        let fee = near_bridge_client.get_withdraw_fee(&chain).await?;
-        let (out_points, tx_outs) = self
-            .extract_utxo(chain, recipient.clone(), amount - fee)
-            .await?;
-        near_bridge_client
-            .sign_btc_transfer(
-                transfer_id,
-                TokenReceiverMessage::Withdraw {
-                    target_btc_address: recipient,
-                    input: out_points,
-                    output: tx_outs,
-                },
-                transaction_options,
-                wait_final_outcome_timeout_sec,
-            )
-            .await
+
+        self.near_submit_btc_transfer(
+            chain,
+            recipient,
+            amount,
+            transfer_id,
+            transaction_options,
+            wait_final_outcome_timeout_sec,
+        )
+        .await
     }
 
     pub async fn btc_fin_transfer(

@@ -197,7 +197,7 @@ impl NearBridgeClient {
 
     /// Sign BTC transfer on Omni Bridge
     #[tracing::instrument(skip_all, name = "OMNI BRIDGE SIGN BTC TRANSFER")]
-    pub async fn sign_btc_transfer(
+    pub async fn submit_btc_transfer(
         &self,
         transfer_id: TransferId,
         msg: TokenReceiverMessage,
