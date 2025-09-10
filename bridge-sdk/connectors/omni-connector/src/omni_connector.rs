@@ -637,7 +637,7 @@ impl OmniConnector {
                     ))
                 })?,
             chain,
-        );
+        )?;
 
         let fee = near_bridge_client.get_withdraw_fee(&chain).await? + gas_fee;
 
@@ -1973,7 +1973,7 @@ impl OmniConnector {
                     ))
                 })?,
             chain,
-        );
+        )?;
         Ok((out_points, tx_outs))
     }
 }

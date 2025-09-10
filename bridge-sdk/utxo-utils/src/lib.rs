@@ -151,7 +151,7 @@ pub fn choose_utxos_for_active_management(
             change_address,
             0,
             chain,
-        );
+        )?;
 
         Ok((out_points, tx_outs))
     } else {
@@ -167,9 +167,12 @@ pub fn get_tx_outs(
     change_address: &str,
     change_amount: u64,
     chain: address::UTXOChain,
-) -> Vec<TxOut> {
-    let btc_recipient_address =
-        UTXOAddress::parse(target_btc_address, chain).expect("Invalid Bitcoin address");
+) -> Result<Vec<TxOut>> {
+    let btc_recipient_address = UTXOAddress::parse(target_btc_address, chain).map_err(|e| {
+        BridgeSdkError::BtcClientError(format!(
+            "Invalid target UTXO address '{target_btc_address}': {e}"
+        ))
+    })?;
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
     let mut res = vec![TxOut {
@@ -178,8 +181,11 @@ pub fn get_tx_outs(
     }];
 
     if change_amount > 0 {
-        let change_address =
-            UTXOAddress::parse(change_address, chain).expect("Invalid Bitcoin Change address");
+        let change_address = UTXOAddress::parse(change_address, chain).map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Invalid change UTXO address '{change_address}': {e}"
+            ))
+        })?;
         let change_script_pubkey = change_address.script_pubkey();
         res.push(TxOut {
             value: Amount::from_sat(change_amount),
@@ -187,7 +193,7 @@ pub fn get_tx_outs(
         });
     }
 
-    res
+    Ok(res)
 }
 
 pub fn get_tx_outs_utxo_management(
