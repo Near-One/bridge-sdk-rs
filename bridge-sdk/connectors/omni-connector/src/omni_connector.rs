@@ -497,7 +497,7 @@ impl OmniConnector {
                         "Error on change amount conversion: {err}"
                     ))
                 })?,
-        );
+        )?;
 
         let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
 
