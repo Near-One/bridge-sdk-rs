@@ -62,7 +62,8 @@ impl zcash_address::TryFromAddress for Address {
         };
 
         Ok(Self::P2pkh {
-            hash: PubkeyHash::from_slice(&data[..]).unwrap(),
+            hash: PubkeyHash::from_slice(&data[..])
+                .map_err(|_e| "Invalid pubkey hash for Zcash address")?,
             chain,
         })
     }
@@ -99,7 +100,8 @@ impl Address {
                 _ => unreachable!(),
             };
 
-            return Ok(addr.convert_if_network::<Self>(network).unwrap());
+            return Ok(addr.convert_if_network::<Self>(network)
+                .map_err(|_e| "Failed to convert Zcash address network")?);
         }
 
         if let Some(hrp) = get_segwit_hrp(&chain) {
@@ -152,12 +154,12 @@ impl Address {
                         Receiver::P2pkh(data) => {
                             return bitcoin::ScriptBuf::new_p2pkh(
                                 &PubkeyHash::from_slice(&data[..]).unwrap(),
-                            )
+                            );
                         }
                         Receiver::P2sh(data) => {
                             return bitcoin::ScriptBuf::new_p2sh(
                                 &ScriptHash::from_slice(&data[..]).unwrap(),
-                            )
+                            );
                         }
                         _ => {}
                     }
