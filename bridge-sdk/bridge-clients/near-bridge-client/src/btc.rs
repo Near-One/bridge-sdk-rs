@@ -654,13 +654,14 @@ impl NearBridgeClient {
             .ok_or(BridgeSdkError::BtcClientError(
                 "'recipient' not found in InitTransferEvent".to_string(),
             ))?;
-        
+
         let recipient = match OmniAddress::from_str(recipient_full) {
-            Ok(OmniAddress::Zcash(addr)) => addr,
-            Ok(OmniAddress::Btc(addr)) => addr,
-            Ok(_) => return Err(BridgeSdkError::BtcClientError(
-                "Unsupported recipient chain".to_string(),
-            )),
+            Ok(OmniAddress::Btc(addr) | OmniAddress::Zcash(addr)) => addr,
+            Ok(_) => {
+                return Err(BridgeSdkError::BtcClientError(
+                    "Unsupported recipient chain".to_string(),
+                ))
+            }
             Err(_) => recipient_full.to_owned(),
         };
 
