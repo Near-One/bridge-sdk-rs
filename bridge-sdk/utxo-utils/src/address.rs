@@ -103,7 +103,7 @@ impl zcash_address::TryFromAddress for UTXOAddress {
 impl UTXOAddress {
     /// Parse an address string + chain into `AddressInner`
     pub fn parse(address: &str, chain: ChainKind, network: Network) -> Result<Self, String> {
-        if chain.is_utxo_chain() {
+        if chain == ChainKind::Zcash {
             let addr = ZcashAddress::try_from_encoded(address)
                 .map_err(|e| format!("Error on parsing ZCash Address: {e}"))?;
 
@@ -375,7 +375,7 @@ fn get_script_address_prefix(chain: ChainKind, network: Network) -> Vec<u8> {
         (ChainKind::Btc, Network::Mainnet) => vec![0x05], // "3"
         (ChainKind::Btc, Network::Testnet) => vec![0xC4], // "2"
 
-        // TODO: Uncomment when Litecoin suppo
+        // TODO: Uncomment when Litecoin support is added
         // Litecoin
         // (ChainKind::Ltc, Network::Mainnet) => vec![0x32], // "M" (was "3")
         // (ChainKind::Ltc, Network::Testnet) => vec![0x3A],
@@ -384,7 +384,7 @@ fn get_script_address_prefix(chain: ChainKind, network: Network) -> Vec<u8> {
         (ChainKind::Zcash, Network::Mainnet) => vec![0x1C, 0xBD], // "t3"
         (ChainKind::Zcash, Network::Testnet) => vec![0x1C, 0xBA], // "t2"
 
-        // TODO: Uncomment when Dogecoin suppo
+        // TODO: Uncomment when Dogecoin support is added
         // Dogecoin
         // (ChainKind::Doge, Network::Mainnet) => vec![0x16], // "9"
         // (ChainKind::Doge, Network::Testnet) => vec![0xC4], // same as Bitcoin testnet
