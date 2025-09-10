@@ -100,7 +100,8 @@ impl UTXOAddress {
                 _ => unreachable!(),
             };
 
-            return Ok(addr.convert_if_network::<Self>(network)
+            return Ok(addr
+                .convert_if_network::<Self>(network)
                 .map_err(|_e| "Failed to convert Zcash address network")?);
         }
 
@@ -142,47 +143,55 @@ impl UTXOAddress {
     }
 
     /// Return the scriptPubKey corresponding to this address
-    pub fn script_pubkey(&self) -> bitcoin::ScriptBuf {
+    pub fn script_pubkey(&self) -> Result<bitcoin::ScriptBuf, String> {
         match self {
-            UTXOAddress::P2pkh { hash, .. } => bitcoin::ScriptBuf::new_p2pkh(hash),
-            UTXOAddress::P2sh { hash, .. } => bitcoin::ScriptBuf::new_p2sh(hash),
-            UTXOAddress::Segwit { program, .. } => bitcoin::ScriptBuf::new_witness_program(program),
+            UTXOAddress::P2pkh { hash, .. } => Ok(bitcoin::ScriptBuf::new_p2pkh(hash)),
+            UTXOAddress::P2sh { hash, .. } => Ok(bitcoin::ScriptBuf::new_p2sh(hash)),
+            UTXOAddress::Segwit { program, .. } => {
+                Ok(bitcoin::ScriptBuf::new_witness_program(program))
+            }
             UTXOAddress::Unified { address, .. } => {
                 let receiver_list = address.items_as_parsed();
                 for receiver in receiver_list {
                     match receiver {
                         Receiver::P2pkh(data) => {
-                            return bitcoin::ScriptBuf::new_p2pkh(
-                                &PubkeyHash::from_slice(&data[..]).unwrap(),
-                            )
+                            return Ok(bitcoin::ScriptBuf::new_p2pkh(
+                                &PubkeyHash::from_slice(&data[..])
+                                    .map_err(|e| format!("Failed to create pubkey hash: {e}"))?,
+                            ));
                         }
                         Receiver::P2sh(data) => {
-                            return bitcoin::ScriptBuf::new_p2sh(
-                                &ScriptHash::from_slice(&data[..]).unwrap(),
-                            )
+                            return Ok(bitcoin::ScriptBuf::new_p2sh(
+                                &ScriptHash::from_slice(&data[..])
+                                    .map_err(|e| format!("Failed to create script hash: {e}"))?,
+                            ));
                         }
                         _ => {}
                     }
                 }
 
-                panic!("No receiver found in address")
+                Err("No receiver found in address".to_string())
             }
         }
     }
 
-    pub fn from_pubkey(chain: UTXOChain, pubkey: bitcoin::PublicKey) -> Self {
+    pub fn from_pubkey(chain: UTXOChain, pubkey: bitcoin::PublicKey) -> Result<Self, String> {
         let pubkey_hash = pubkey.pubkey_hash();
 
         if let Some(_hrp) = get_segwit_hrp(&chain) {
             // Chain supports Bech32 SegWit
-            let wp = WitnessProgram::p2wpkh(&pubkey.try_into().unwrap());
-            UTXOAddress::Segwit { program: wp, chain }
+            let wp = WitnessProgram::p2wpkh(
+                &pubkey
+                    .try_into()
+                    .map_err(|e| format!("Failed to convert pubkey: {e}"))?,
+            );
+            Ok(UTXOAddress::Segwit { program: wp, chain })
         } else {
             // Legacy P2PKH
-            UTXOAddress::P2pkh {
+            Ok(UTXOAddress::P2pkh {
                 hash: pubkey_hash,
                 chain,
-            }
+            })
         }
     }
 
