@@ -202,7 +202,6 @@ impl NearBridgeClient {
         transfer_id: TransferId,
         msg: TokenReceiverMessage,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let omni_bridge = self.omni_bridge_id()?;
@@ -223,7 +222,7 @@ impl NearBridgeClient {
                 deposit: SIGN_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
-            wait_final_outcome_timeout_sec,
+            transaction_options.wait_final_outcome_timeout_sec,
         )
         .await?;
 

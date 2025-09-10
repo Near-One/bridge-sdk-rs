@@ -560,7 +560,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
                     TransactionOptions::default(),
-                    None,
                 )
                 .await
                 .unwrap();

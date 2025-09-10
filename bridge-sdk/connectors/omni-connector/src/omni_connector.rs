@@ -662,7 +662,6 @@ impl OmniConnector {
         amount: u128,
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(&chain).await?;
@@ -678,7 +677,6 @@ impl OmniConnector {
                     output: tx_outs,
                 },
                 transaction_options,
-                wait_final_outcome_timeout_sec,
             )
             .await
     }
@@ -689,22 +687,14 @@ impl OmniConnector {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         transaction_options: TransactionOptions,
-        wait_final_outcome_timeout_sec: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let (recipient, amount, transfer_id) = near_bridge_client
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
 
-        self.near_submit_btc_transfer(
-            chain,
-            recipient,
-            amount,
-            transfer_id,
-            transaction_options,
-            wait_final_outcome_timeout_sec,
-        )
-        .await
+        self.near_submit_btc_transfer(chain, recipient, amount, transfer_id, transaction_options)
+            .await
     }
 
     pub async fn btc_fin_transfer(
