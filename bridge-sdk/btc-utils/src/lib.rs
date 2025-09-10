@@ -81,14 +81,14 @@ pub fn get_tx_outs(
 ) -> Result<Vec<TxOut>> {
     let btc_recipient_address = Address::from_str(target_btc_address)
         .map_err(|e| BridgeSdkError::BtcClientError(
-            format!("Invalid target Bitcoin address '{}': {}", target_btc_address, e)
+            format!("Invalid target Bitcoin address '{target_btc_address}': {e}")
         ))?;
     let btc_recipient_address = btc_recipient_address.assume_checked();
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey();
 
     let change_address = Address::from_str(change_address)
         .map_err(|e| BridgeSdkError::BtcClientError(
-            format!("Invalid change Bitcoin address '{}': {}", change_address, e)
+            format!("Invalid change Bitcoin address '{change_address}': {e}")
         ))?;
     let change_address = change_address.assume_checked();
     let change_script_pubkey = change_address.script_pubkey();
