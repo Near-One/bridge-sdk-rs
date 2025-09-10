@@ -37,6 +37,15 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
+impl From<Network> for utxo_utils::address::Network {
+    fn from(value: Network) -> Self {
+        match value {
+            Network::Mainnet => utxo_utils::address::Network::Mainnet,
+            Network::Testnet | Network::Devnet => utxo_utils::address::Network::Testnet,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum OmniConnectorSubCommand {
     #[clap(about = "Log metadata for a token")]
@@ -1094,6 +1103,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     OmniConnectorBuilder::default()
+        .network(Some(network.into()))
         .near_bridge_client(Some(near_bridge_client))
         .eth_bridge_client(Some(eth_bridge_client))
         .base_bridge_client(Some(base_bridge_client))
