@@ -892,7 +892,13 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
-    let btc_bridge_client = BtcBridgeClient::new(&combined_config.btc_endpoint.unwrap());
+    // TODO: Add builder for btc_bridge_client
+    let btc_bridge_client = BtcBridgeClient::new(
+        &combined_config.btc_endpoint.unwrap(),
+        combined_config.btc_node_user,
+        combined_config.btc_node_password,
+        combined_config.btc_node_headers,
+    );
 
     let eth_light_client = EthLightClientBuilder::default()
         .endpoint(combined_config.near_rpc)
