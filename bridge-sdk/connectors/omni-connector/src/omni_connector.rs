@@ -466,26 +466,8 @@ impl OmniConnector {
         deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let proof_data = match chain {
-            ChainKind::Btc => {
-                let btc_bridge = self.btc_bridge_client()?;
-                btc_bridge.extract_btc_proof(&tx_hash).await?
-            }
-            ChainKind::Zcash => {
-                let btc_bridge = self.zcash_bridge_client()?;
-                btc_bridge.extract_btc_proof(&tx_hash).await?
-            }
-            ChainKind::Near
-            | ChainKind::Eth
-            | ChainKind::Base
-            | ChainKind::Arb
-            | ChainKind::Bnb
-            | ChainKind::Sol => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Invalid chain for BTC transfer: {chain:?}"
-                )));
-            }
-        };
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
         let near_bridge_client = self.near_bridge_client()?;
         let deposit_msg = match deposit_args {
@@ -517,26 +499,8 @@ impl OmniConnector {
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let proof_data = match chain {
-            ChainKind::Btc => {
-                let btc_bridge = self.btc_bridge_client()?;
-                btc_bridge.extract_btc_proof(&tx_hash).await?
-            }
-            ChainKind::Zcash => {
-                let btc_bridge = self.zcash_bridge_client()?;
-                btc_bridge.extract_btc_proof(&tx_hash).await?
-            }
-            ChainKind::Near
-            | ChainKind::Eth
-            | ChainKind::Base
-            | ChainKind::Arb
-            | ChainKind::Bnb
-            | ChainKind::Sol => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Invalid chain for BTC transfer: {chain:?}"
-                )));
-            }
-        };
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
         let near_bridge_client = self.near_bridge_client()?;
         let args = BtcVerifyWithdrawArgs {
