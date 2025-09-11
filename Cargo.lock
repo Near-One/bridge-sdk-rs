@@ -10253,6 +10253,7 @@ dependencies = [
  "bridge-connector-common",
  "k256",
  "near-sdk",
+ "omni-types",
  "serde",
  "serde_json",
  "serde_with",

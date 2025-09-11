@@ -13,7 +13,6 @@ use omni_types::{
     ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use serde_json::json;
-use utxo_utils::address::UTXOChain;
 
 pub mod btc;
 
@@ -102,7 +101,7 @@ pub struct NearBridgeClient {
     #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<String>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
-    utxo_bridges: HashMap<UTXOChain, UTXOChainAccounts>,
+    utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
 }
 
 impl NearBridgeClient {
