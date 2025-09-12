@@ -16,14 +16,15 @@ struct UtxoLastHeaderResponse {
     block_height: u64,
 }
 
-/// Ethereum light client NEAR
+/// Light client NEAR
+#[allow(clippy::struct_field_names)]
 #[derive(Builder, Default, Clone)]
 pub struct LightClient {
     #[doc = r"NEAR RPC endpoint"]
     endpoint: Option<String>,
     #[doc = r"Chain kind"]
     chain: Option<ChainKind>,
-    #[doc = r"Eth light client account id on Near"]
+    #[doc = r"Light client account id on Near"]
     light_client_id: Option<AccountId>,
 }
 
