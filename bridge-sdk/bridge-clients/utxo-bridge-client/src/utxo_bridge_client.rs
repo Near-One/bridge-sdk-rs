@@ -104,7 +104,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     pub async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
         let block_hash = self.get_block_hash_by_tx_hash(tx_hash).await?;
 
-        let response: JsonRpcResponse<String> = self
+        let response_str: JsonRpcResponse<String> = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -123,8 +123,12 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
             })?;
+        let response_value = serde_json::from_str::<Value>(&response_str.result)?;
 
-        let block = T::Block::from_str(&response.result)?;
+        let block = T::Block::from_str(&response_str.result)?;
+        let block_height = response_value["height"]
+            .as_u64()
+            .ok_or_else(|| BridgeSdkError::BtcClientError("Block height not found".to_string()))?;
         let transactions = block.transactions();
 
         let tx_index = transactions
@@ -141,6 +145,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .collect();
 
         Ok(TxProof {
+            block_height,
             tx_bytes: block.tx_data(tx_index),
             tx_block_blockhash: block.hash(),
             tx_index: tx_index

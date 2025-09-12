@@ -1,8 +1,8 @@
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
-use eth_light_client::EthLightClient;
 use ethers::prelude::*;
+use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 use utxo_utils::address::Network;
@@ -47,7 +47,9 @@ pub struct OmniConnector {
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
     zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
-    eth_light_client: Option<EthLightClient>,
+    eth_light_client: Option<LightClient>,
+    btc_light_client: Option<LightClient>,
+    zcash_light_client: Option<LightClient>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -469,6 +471,15 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height < light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
         let near_bridge_client = self.near_bridge_client()?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
@@ -501,6 +512,15 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height < light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
 
         let near_bridge_client = self.near_bridge_client()?;
         let args = BtcVerifyWithdrawArgs {
@@ -536,6 +556,15 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height < light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
 
         let near_bridge_client = self.near_bridge_client()?;
         let args = BtcVerifyWithdrawArgs {
@@ -1657,7 +1686,7 @@ impl OmniConnector {
 
     pub fn network(&self) -> Result<Network> {
         self.network.ok_or(BridgeSdkError::ConfigError(
-            "Network not configured".to_string(),
+            "Network is not configured".to_string(),
         ))
     }
 
@@ -1665,7 +1694,7 @@ impl OmniConnector {
         self.near_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "NEAR bridge client not configured".to_string(),
+                "NEAR bridge client is not configured".to_string(),
             ))
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!("Failed to denormalize amount: {e}",))
@@ -1684,18 +1713,24 @@ impl OmniConnector {
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
-            "EVM bridge client not configured".to_string(),
+            "EVM bridge client is not configured".to_string(),
         ))
     }
 
-    pub fn evm_light_client(&self, chain_kind: ChainKind) -> Result<&EthLightClient> {
-        let light_client = match chain_kind {
+    pub fn light_client(&self, chain: ChainKind) -> Result<&LightClient> {
+        let light_client = match chain {
             ChainKind::Eth => self.eth_light_client.as_ref(),
-            _ => unreachable!("Unsupported chain kind"),
+            ChainKind::Btc => self.btc_light_client.as_ref(),
+            ChainKind::Zcash => self.zcash_light_client.as_ref(),
+            _ => {
+                return Err(BridgeSdkError::ConfigError(format!(
+                    "Light client is not supported for {chain:?} chain"
+                )))
+            }
         };
 
         light_client.ok_or(BridgeSdkError::ConfigError(
-            "EVM light client not configured".to_string(),
+            "Light client is not configured".to_string(),
         ))
     }
 
@@ -1703,7 +1738,7 @@ impl OmniConnector {
         self.solana_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "SOLANA bridge client not configured".to_string(),
+                "SOLANA bridge client is not configured".to_string(),
             ))
     }
 
@@ -1711,7 +1746,7 @@ impl OmniConnector {
         self.wormhole_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "Wormhole bridge client not configured".to_string(),
+                "Wormhole bridge client is not configured".to_string(),
             ))
     }
 
@@ -1719,7 +1754,7 @@ impl OmniConnector {
         self.btc_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "BTC bridge client not configured".to_string(),
+                "BTC bridge client is not configured".to_string(),
             ))
     }
 
@@ -1727,7 +1762,7 @@ impl OmniConnector {
         self.zcash_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "ZCash bridge client not configured".to_string(),
+                "ZCash bridge client is not configured".to_string(),
             ))
     }
 
@@ -1741,7 +1776,7 @@ impl OmniConnector {
             | ChainKind::Arb
             | ChainKind::Bnb
             | ChainKind::Sol => Err(BridgeSdkError::ConfigError(
-                "UTXO bridge client not configured".to_string(),
+                "UTXO bridge client is not configured".to_string(),
             )),
         }
     }
@@ -1753,8 +1788,8 @@ impl OmniConnector {
         chain_kind: ChainKind,
     ) -> Result<EvmProof> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        let evm_light_client = self.evm_light_client(chain_kind)?;
-        let last_eth_block_number_on_near = evm_light_client.get_last_block_number().await?;
+        let light_client = self.light_client(chain_kind)?;
+        let last_eth_block_number_on_near = light_client.get_last_block_number().await?;
         let tx_block_number = evm_bridge_client.get_tx_block_number(tx_hash).await?;
 
         if last_eth_block_number_on_near < tx_block_number {
@@ -1824,7 +1859,7 @@ impl OmniConnector {
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
-                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
 
         self.get_storage_deposit_actions(
@@ -1867,7 +1902,7 @@ impl OmniConnector {
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
-                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
 
         self.get_storage_deposit_actions(

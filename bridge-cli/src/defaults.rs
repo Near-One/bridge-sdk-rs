@@ -2,6 +2,8 @@
 pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
 pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
+pub const BTC_LIGHT_CLIENT_ID_MAINNET: &str = "btc-client.bridge.near";
+pub const ZCASH_LIGHT_CLIENT_ID_MAINNET: &str = "zcash-client.bridge.near";
 
 pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
@@ -48,6 +50,8 @@ pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
 pub const ETH_LIGHT_CLIENT_ID_TESTNET: &str = "client-eth2.sepolia.testnet";
+pub const BTC_LIGHT_CLIENT_ID_TESTNET: &str = "btc-client-v4.testnet";
+pub const ZCASH_LIGHT_CLIENT_ID_TESTNET: &str = "zcash-client.n-bridge.testnet";
 
 pub const ETH_RPC_TESTNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_TESTNET: u64 = 11_155_111;
@@ -94,6 +98,8 @@ pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_DEVNET: &str = "omni-locker.testnet";
 pub const ETH_LIGHT_CLIENT_ID_DEVNET: &str = "client-eth2.sepolia.testnet";
+pub const BTC_LIGHT_CLIENT_ID_DEVNET: &str = "btc-client-v4.testnet";
+pub const ZCASH_LIGHT_CLIENT_ID_DEVNET: &str = "zcash-client.n-bridge.testnet";
 
 pub const ETH_RPC_DEVNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_DEVNET: u64 = 11_155_111;
