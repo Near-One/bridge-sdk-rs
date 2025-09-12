@@ -624,33 +624,31 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let utxos = near_bridge_client.get_utxos(chain).await?;
 
+        let withdraw_fee = near_bridge_client.get_withdraw_fee(chain).await?;
+
         let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, amount - withdraw_fee, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
-            amount.try_into().map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
-            })?,
-            &change_address,
-            (utxos_balance - amount - gas_fee)
+            (amount - withdraw_fee - gas_fee)
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!(
-                        "Error on change amount conversion: {err}"
-                    ))
+                    BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
                 })?,
+            &change_address,
+            (utxos_balance - amount).try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on change amount conversion: {err}"))
+            })?,
             chain,
             self.network()?,
         )?;
 
-        let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
-
         near_bridge_client
             .init_btc_transfer_near_to_btc(
                 chain,
-                amount + fee,
+                amount,
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
