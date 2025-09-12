@@ -79,6 +79,7 @@ pub enum TokenReceiverMessage {
         target_btc_address: String,
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
+        orchard_bundle_bytes: Option<String>,
     },
 }
 

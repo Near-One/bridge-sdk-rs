@@ -20,6 +20,14 @@ use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
+use pczt::{
+    roles::{
+        combiner::Combiner, creator::Creator, io_finalizer::IoFinalizer, prover::Prover,
+        signer::Signer, spend_finalizer::SpendFinalizer, tx_extractor::TransactionExtractor,
+        updater::Updater,
+    },
+    Pczt,
+};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
     TransferId,
@@ -27,11 +35,34 @@ use solana_bridge_client::{
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use std::str::FromStr;
+use std::sync::OnceLock;
 use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
 };
 use wormhole_bridge_client::WormholeBridgeClient;
+use zcash_address::unified::{self, Container, Encoding};
+use zcash_primitives::{
+    legacy::TransparentAddress,
+    transaction::{
+        fees::{transparent::OutputView, zip317},
+        TransactionData, TxVersion,
+    },
+};
+use zcash_protocol::{
+    consensus::{BranchId, MAIN_NETWORK, TEST_NETWORK},
+    memo::MemoBytes,
+};
+use zcash_transparent::{
+    keys::{IncomingViewingKey, NonHardenedChildIndex},
+    pczt::*,
+};
+
+static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
+
+fn orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
+    ORCHARD_PROVING_KEY.get_or_init(orchard::circuit::ProvingKey::build)
+}
 
 #[allow(clippy::struct_field_names)]
 #[derive(Builder, Default)]
@@ -647,6 +678,8 @@ impl OmniConnector {
 
         let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
 
+        let orchard = Self::get_orchard_raw(tx_outs[0].clone(), target_btc_address.clone());
+
         near_bridge_client
             .init_btc_transfer_near_to_btc(
                 chain,
@@ -655,10 +688,97 @@ impl OmniConnector {
                     target_btc_address,
                     input: out_points,
                     output: tx_outs,
+                    orchard_bundle_bytes: Some(orchard),
                 },
                 transaction_options,
             )
             .await
+    }
+
+    pub fn get_orchard_raw(tx_out: TxOut, recipient: String) -> String {
+        let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
+        let mut recipient = None;
+        // Loop through receivers
+        for receiver in ua.items() {
+            match receiver {
+                unified::Receiver::Orchard(orchard_receiver) => {
+                    println!("Found Orchard receiver:");
+                    recipient = Some(orchard_receiver);
+                }
+                _ => {
+                    // Skip other types like Sapling, Transparent, etc.
+                }
+            }
+        }
+        let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
+        let params = zcash_protocol::consensus::TestNetwork;
+        let mut builder = zcash_primitives::transaction::builder::Builder::new(
+            params,
+            3577749.into(),
+            zcash_primitives::transaction::builder::BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: Some(orchard::Anchor::empty_tree()),
+            },
+        );
+        builder
+            .add_orchard_output::<zip317::FeeRule>(
+                None,
+                recipient.unwrap(),
+                tx_out.value.to_sat(),
+                MemoBytes::empty(),
+            )
+            .unwrap();
+
+        let rng = k256::elliptic_curve::rand_core::OsRng;
+
+        let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
+            .build_for_pczt(
+                rng,
+                &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
+            )
+            .unwrap();
+
+        // Create the base PCZT.
+        let pczt = Creator::build_from_parts(pczt_parts).unwrap();
+
+        // Finalize the I/O.
+        let pczt = IoFinalizer::new(pczt).finalize_io().unwrap();
+
+        // Create proofs.
+        let pczt = Prover::new(pczt)
+            .create_orchard_proof(orchard_proving_key())
+            .unwrap()
+            .finish();
+
+        // Finalize spends.
+        let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
+
+        // We should now be able to extract the fully authorized transaction.
+        let tx: zcash_primitives::transaction::Transaction =
+            TransactionExtractor::new(pczt).extract().unwrap();
+        println!("Transaction: {:?}", tx);
+
+        //assert_eq!(u32::from(tx.expiry_height()), 10_000_040);
+        assert_eq!(tx.version(), zcash_primitives::transaction::TxVersion::V5);
+        assert_eq!(tx.lock_time(), 0);
+        println!("expire: {}", tx.expiry_height());
+
+        let mut buf = Vec::new();
+        tx.write(&mut buf).unwrap();
+        println!("transaction bytes: {}", hex::encode(buf));
+
+        let tx_orchard = tx.orchard_bundle();
+        let mut writer = Vec::new();
+        zcash_primitives::transaction::components::orchard::write_v5_bundle(
+            tx_orchard,
+            &mut writer,
+        )
+        .unwrap();
+
+        let bytes_str = hex::encode(writer.clone());
+        println!("orchard bytes: {}", bytes_str);
+
+        return bytes_str;
     }
 
     pub async fn near_submit_btc_transfer(
@@ -681,6 +801,7 @@ impl OmniConnector {
                     target_btc_address: recipient,
                     input: out_points,
                     output: tx_outs,
+                    orchard_bundle_bytes: None,
                 },
                 transaction_options,
             )
