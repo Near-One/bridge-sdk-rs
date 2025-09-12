@@ -474,7 +474,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height < light_client_last_block {
+        if proof_data.block_height > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -516,7 +516,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height < light_client_last_block {
+        if proof_data.block_height > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -560,7 +560,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height < light_client_last_block {
+        if proof_data.block_height > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
