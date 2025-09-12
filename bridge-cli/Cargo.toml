@@ -1,6 +1,6 @@
 [package]
 name = "bridge-cli"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 repository = "https://github.com/Near-One/bridge-sdk-rs"
 
@@ -23,4 +23,5 @@ near-bridge-client = { path = "../bridge-sdk/bridge-clients/near-bridge-client" 
 evm-bridge-client = { path = "../bridge-sdk/bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../bridge-sdk/bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../bridge-sdk/bridge-clients/wormhole-bridge-client" }
-btc-bridge-client = { path = "../bridge-sdk/bridge-clients/btc-bridge-client" }
+utxo-bridge-client = { path = "../bridge-sdk/bridge-clients/utxo-bridge-client" }
+utxo-utils = { path = "../bridge-sdk/utxo-utils" }

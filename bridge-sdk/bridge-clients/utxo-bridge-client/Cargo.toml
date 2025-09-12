@@ -1,5 +1,5 @@
 [package]
-name = "btc-bridge-client"
+name = "utxo-bridge-client"
 version = "0.2.0"
 edition = "2021"
 
@@ -9,6 +9,7 @@ edition = "2021"
 bitcoincore-rpc.workspace = true
 bitcoin.workspace = true
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
+hex.workspace = true
 merkle-tools.workspace = true
 minreq.workspace = true
 near-crypto.workspace = true
@@ -17,6 +18,8 @@ near-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+reqwest.workspace = true
+zebra-chain = "2.0.0"
 
 [lib]
-path = "src/btc_bridge_client.rs"
+path = "src/utxo_bridge_client.rs"
