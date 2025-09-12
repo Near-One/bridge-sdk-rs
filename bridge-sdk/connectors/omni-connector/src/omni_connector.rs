@@ -1,4 +1,4 @@
-use bitcoin::{OutPoint, TxOut};
+use bitcoin::{secp256k1, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use eth_light_client::EthLightClient;
@@ -15,11 +15,13 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
+use bitcoin::hashes::Hash;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
+use pczt::roles::tx_extractor::{Error, OrchardError};
 use pczt::{
     roles::{
         combiner::Combiner, creator::Creator, io_finalizer::IoFinalizer, prover::Prover,
@@ -28,6 +30,8 @@ use pczt::{
     },
     Pczt,
 };
+use ripemd::Ripemd160;
+use sha2::{Digest, Sha256};
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
     TransferId,
@@ -53,6 +57,7 @@ use zcash_protocol::{
     consensus::{BranchId, MAIN_NETWORK, TEST_NETWORK},
     memo::MemoBytes,
 };
+use zcash_transparent::address::Script;
 use zcash_transparent::{
     keys::{IncomingViewingKey, NonHardenedChildIndex},
     pczt::*,
@@ -256,7 +261,6 @@ pub enum BtcDepositArgs {
         msg: DepositMsg,
     },
 }
-
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
@@ -678,7 +682,11 @@ impl OmniConnector {
 
         let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
 
-        let orchard = Self::get_orchard_raw(tx_outs[0].clone(), target_btc_address.clone());
+        let orchard = Self::get_orchard_raw(
+            tx_outs[0].clone(),
+            target_btc_address.clone(),
+            out_points.clone(),
+        );
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
@@ -695,7 +703,7 @@ impl OmniConnector {
             .await
     }
 
-    pub fn get_orchard_raw(tx_out: TxOut, recipient: String) -> String {
+    pub fn get_orchard_raw(tx_out: TxOut, recipient: String, out_point: Vec<OutPoint>) -> String {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
         // Loop through receivers
@@ -720,6 +728,33 @@ impl OmniConnector {
                 orchard_anchor: Some(orchard::Anchor::empty_tree()),
             },
         );
+        println!("Value: {:?}", tx_out.value.to_sat());
+
+        let secp = secp256k1::Secp256k1::new();
+        let secret_key =
+            secp256k1::SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
+        let transparent_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+
+        let utxo = zcash_primitives::transaction::components::transparent::OutPoint::new(
+            out_point[0].txid.to_byte_array(),
+            out_point[0].vout,
+        );
+
+        let pk_bytes = transparent_pubkey.serialize();
+        let sha = sha2::Sha256::digest(&pk_bytes);
+        let rip = ripemd::Ripemd160::digest(&sha);
+
+        let mut h160 = [0u8; 20];
+        h160.copy_from_slice(&rip);
+
+        let coin = zcash_primitives::transaction::components::transparent::TxOut {
+            value: zcash_protocol::value::Zatoshis::const_from_u64(18000),
+            script_pubkey: TransparentAddress::PublicKeyHash(h160).script(),
+        };
+        builder
+            .add_transparent_input(transparent_pubkey, utxo, coin)
+            .unwrap();
+
         builder
             .add_orchard_output::<zip317::FeeRule>(
                 None,
@@ -750,6 +785,19 @@ impl OmniConnector {
             .unwrap()
             .finish();
 
+        let mut signer = Signer::new(pczt).unwrap();
+        signer.sign_transparent(0, &secret_key).unwrap();
+        // println!("Sighash: {}", hex::encode(sighash));
+        // println!("Signature: {}", hex::encode(sig_bytes));
+
+        let pczt = signer.finish();
+        println!(
+            "PARTIAL LEN: {:?}",
+            pczt.transparent().inputs()[0].partial_signatures.len()
+        );
+
+        let mut iter = pczt.transparent().inputs()[0].partial_signatures.iter();
+        println!("next next {:?}, {:?}", iter.next(), iter.next());
         // Finalize spends.
         let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
 
