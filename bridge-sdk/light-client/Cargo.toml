@@ -1,16 +1,18 @@
 [package]
-name = "eth-light-client"
+name = "light-client"
 version = "0.2.1"
 edition = "2021"
 
 [dependencies]
 borsh.workspace = true
+serde.workspace = true
 derive_builder.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
 serde_json.workspace = true
 near-rpc-client = { path = "../near-rpc-client" }
 bridge-connector-common = { path = "../connectors/bridge-connector-common" }
+omni-types.workspace = true
 
 [lib]
-path = "src/eth_light_client.rs"
+path = "src/light_client.rs"

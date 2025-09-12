@@ -19,7 +19,7 @@ omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 solana-sdk.workspace = true
-eth-light-client.workspace = true
+light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 crypto-utils = { path = "../../crypto-utils" }

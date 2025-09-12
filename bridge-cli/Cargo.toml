@@ -17,7 +17,7 @@ tracing.workspace = true
 omni-types.workspace = true
 solana-client.workspace = true
 solana-sdk.workspace = true
-eth-light-client.workspace = true
+light-client.workspace = true
 omni-connector = { path = "../bridge-sdk/connectors/omni-connector" }
 near-bridge-client = { path = "../bridge-sdk/bridge-clients/near-bridge-client" }
 evm-bridge-client = { path = "../bridge-sdk/bridge-clients/evm-bridge-client" }

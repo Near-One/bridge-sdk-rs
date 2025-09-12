@@ -3,9 +3,9 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use eth_light_client::EthLightClientBuilder;
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
+use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
@@ -1096,9 +1096,36 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let zcash_bridge_client =
         UTXOBridgeClient::<Zcash>::new(combined_config.zcash_endpoint.unwrap(), zcash_client_auth);
 
-    let eth_light_client = EthLightClientBuilder::default()
-        .endpoint(combined_config.near_rpc)
-        .eth_light_client_id(combined_config.eth_light_client_id)
+    let eth_light_client = LightClientBuilder::default()
+        .endpoint(combined_config.near_rpc.clone())
+        .chain(Some(ChainKind::Eth))
+        .light_client_id(
+            combined_config
+                .eth_light_client_id
+                .map(|light_client| light_client.parse().unwrap()),
+        )
+        .build()
+        .unwrap();
+
+    let btc_light_client = LightClientBuilder::default()
+        .endpoint(combined_config.near_rpc.clone())
+        .chain(Some(ChainKind::Btc))
+        .light_client_id(
+            combined_config
+                .btc_light_client_id
+                .map(|light_client| light_client.parse().unwrap()),
+        )
+        .build()
+        .unwrap();
+
+    let zcash_light_client = LightClientBuilder::default()
+        .endpoint(combined_config.near_rpc.clone())
+        .chain(Some(ChainKind::Zcash))
+        .light_client_id(
+            combined_config
+                .zcash_light_client_id
+                .map(|light_client| light_client.parse().unwrap()),
+        )
         .build()
         .unwrap();
 
@@ -1114,6 +1141,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .btc_bridge_client(Some(btc_bridge_client))
         .zcash_bridge_client(Some(zcash_bridge_client))
         .eth_light_client(Some(eth_light_client))
+        .btc_light_client(Some(btc_light_client))
+        .zcash_light_client(Some(zcash_light_client))
         .build()
         .unwrap()
 }
