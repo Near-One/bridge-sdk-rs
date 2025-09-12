@@ -73,7 +73,7 @@ impl LightClient {
         self.light_client_id
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "Eth light client account id is not set".to_string(),
+                "Light client account id is not set".to_string(),
             ))
     }
 
