@@ -695,7 +695,7 @@ impl OmniConnector {
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
-                    output: tx_outs,
+                    output: vec![tx_outs[1].clone()],
                     orchard_bundle_bytes: Some(orchard),
                 },
                 transaction_options,
