@@ -101,8 +101,39 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         Ok(receipt)
     }
 
+    pub async fn get_block_height_by_block_hash(&self, block_hash: &str) -> Result<u64> {
+        let response: JsonRpcResponse<Value> = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "getblockheader",
+                "params": [block_hash.to_string(), true],
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to send getblock request: {e}"))
+            })?
+            .json()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
+            })?;
+
+        let block_height = response.result["height"]
+            .as_u64()
+            .ok_or_else(|| BridgeSdkError::BtcClientError("Block height not found".to_string()))?;
+
+        Ok(block_height)
+    }
+
     pub async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
         let block_hash = self.get_block_hash_by_tx_hash(tx_hash).await?;
+        let block_height = self
+            .get_block_height_by_block_hash(&block_hash.to_string())
+            .await?;
 
         let response: JsonRpcResponse<String> = self
             .http_client
@@ -123,12 +154,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
             })?;
-        let response_value = serde_json::from_str::<Value>(&response.result)?;
 
         let block = T::Block::from_str(&response.result)?;
-        let block_height = response_value["height"]
-            .as_u64()
-            .ok_or_else(|| BridgeSdkError::BtcClientError("Block height not found".to_string()))?;
         let transactions = block.transactions();
 
         let tx_index = transactions
