@@ -4,15 +4,14 @@ members = [
     "bridge-cli",
     "bridge-sdk/eth-proof",
     "bridge-sdk/near-rpc-client",
-    "bridge-sdk/near-light-client-on-eth",
     "bridge-sdk/bridge-clients/solana-bridge-client",
     "bridge-sdk/bridge-clients/near-bridge-client",
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
-    "bridge-sdk/bridge-clients/btc-bridge-client",
+    "bridge-sdk/bridge-clients/utxo-bridge-client",
     "bridge-sdk/crypto-utils",
-    "bridge-sdk/btc-utils",
-    "bridge-sdk/eth-light-client"
+    "bridge-sdk/utxo-utils",
+    "bridge-sdk/light-client"
 ]
 
 [workspace.dependencies]
@@ -48,7 +47,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "1ff51b59fc0b10b7ed8ff47f0dcf20fe0fbb5735" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "4434a85b1c938e7d0a8ffa8d86170025d2052852" }
 serde_with = "3.12.0"
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
@@ -60,7 +59,7 @@ spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"]
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }
-eth-light-client =  { path = "bridge-sdk/eth-light-client" }
+light-client =  { path = "bridge-sdk/light-client" }
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"

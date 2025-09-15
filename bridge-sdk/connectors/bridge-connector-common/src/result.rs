@@ -5,7 +5,6 @@ use ethers::{
     providers::{Http, Provider, ProviderError},
     signers::LocalWallet,
 };
-use near_light_client_on_eth::NearLightClientOnEthError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
@@ -37,6 +36,8 @@ pub enum BridgeSdkError {
     WormholeClientError(String),
     #[error("BTC Client Error: {0}")]
     BtcClientError(String),
+    #[error("Insufficient UTXO balance to cover amount and fees")]
+    InsufficientUTXOBalance,
     #[error("Insufficient balance for transaction: {0}")]
     InsufficientBalance(String),
     #[error("Invalid argument provided: {0}")]
@@ -76,17 +77,6 @@ impl From<EthProofError> for BridgeSdkError {
             EthProofError::TrieError(e) => Self::EthProofError(e.to_string()),
             EthProofError::EthClientError(e) => Self::EthRpcError(EthRpcError::EthClientError(e)),
             EthProofError::Other(e) => Self::EthProofError(e),
-        }
-    }
-}
-
-impl From<NearLightClientOnEthError> for BridgeSdkError {
-    fn from(error: NearLightClientOnEthError) -> Self {
-        match error {
-            NearLightClientOnEthError::ConfigError(e) => Self::ConfigError(e),
-            NearLightClientOnEthError::EthRpcError(e) => {
-                Self::EthRpcError(EthRpcError::ProviderContractError(e))
-            }
         }
     }
 }

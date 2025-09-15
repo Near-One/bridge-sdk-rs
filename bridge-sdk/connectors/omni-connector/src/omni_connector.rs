@@ -1,12 +1,11 @@
-use std::str::FromStr;
-
+use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
-use eth_light_client::EthLightClient;
 use ethers::prelude::*;
-
+use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
+use utxo_utils::address::Network;
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
@@ -16,9 +15,8 @@ use omni_types::{
     EvmAddress, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferMessage, H160,
 };
 
-use btc_bridge_client::BtcBridgeClient;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
-use near_bridge_client::btc_connector::{
+use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
@@ -28,12 +26,18 @@ use solana_bridge_client::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
+use std::str::FromStr;
+use utxo_bridge_client::{
+    types::{Bitcoin, Zcash},
+    UTXOBridgeClient,
+};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
 #[derive(Builder, Default)]
 #[builder(pattern = "owned")]
 pub struct OmniConnector {
+    network: Option<Network>,
     near_bridge_client: Option<NearBridgeClient>,
     eth_bridge_client: Option<EvmBridgeClient>,
     base_bridge_client: Option<EvmBridgeClient>,
@@ -41,8 +45,33 @@ pub struct OmniConnector {
     bnb_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
-    btc_bridge_client: Option<BtcBridgeClient>,
-    eth_light_client: Option<EthLightClient>,
+    btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
+    zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
+    eth_light_client: Option<LightClient>,
+    btc_light_client: Option<LightClient>,
+    zcash_light_client: Option<LightClient>,
+}
+
+macro_rules! forward_common_utxo_method {
+    ($name:ident ( $($arg:ident : $ty:ty),* ) -> $ret:ty) => {
+        pub async fn $name(&self, $($arg:$ty),*) -> $ret {
+            match self {
+                AnyUtxoClient::Btc(c)   => c.$name($($arg),*).await,
+                AnyUtxoClient::Zcash(c) => c.$name($($arg),*).await,
+            }
+        }
+    };
+}
+
+pub enum AnyUtxoClient<'a> {
+    Btc(&'a UTXOBridgeClient<Bitcoin>),
+    Zcash(&'a UTXOBridgeClient<Zcash>),
+}
+
+impl AnyUtxoClient<'_> {
+    forward_common_utxo_method!(get_fee_rate() -> Result<u64>);
+    forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> Result<utxo_bridge_client::types::TxProof>);
+    forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> Result<String>);
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -180,6 +209,11 @@ pub enum FinTransferArgs {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         solana_token: Pubkey,
+    },
+    UTXOChainFinTransfer {
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        relayer: Option<AccountId>,
     },
 }
 
@@ -393,6 +427,7 @@ impl OmniConnector {
 
     pub async fn near_sign_btc_transaction(
         &self,
+        chain: ChainKind,
         btc_pending_id: String,
         sign_index: u64,
         transaction_options: TransactionOptions,
@@ -400,20 +435,52 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         near_bridge_client
-            .sign_btc_transaction(btc_pending_id, sign_index, transaction_options)
+            .sign_btc_transaction(chain, btc_pending_id, sign_index, transaction_options)
+            .await
+    }
+
+    pub async fn near_sign_btc_transaction_with_tx_hash(
+        &self,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        user_account_id: Option<AccountId>,
+        sign_index: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .sign_btc_transaction_with_tx_hash(
+                chain,
+                near_tx_hash,
+                user_account_id,
+                sign_index,
+                transaction_options,
+            )
             .await
     }
 
     pub async fn near_fin_transfer_btc(
         &self,
+        chain: ChainKind,
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let btc_bridge = self.btc_bridge_client()?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height > light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
@@ -433,18 +500,29 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .fin_btc_transfer(args, transaction_options)
+            .fin_btc_transfer(chain, args, transaction_options)
             .await
     }
 
     pub async fn near_btc_verify_withdraw(
         &self,
+        chain: ChainKind,
         tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let btc_bridge = self.btc_bridge_client()?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height > light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
         let near_bridge_client = self.near_bridge_client()?;
-        let proof_data = btc_bridge.extract_btc_proof(&tx_hash)?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
             tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -453,57 +531,165 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_withdraw(args, transaction_options)
+            .btc_verify_withdraw(chain, args, transaction_options)
+            .await
+    }
+
+    pub async fn near_btc_cancel_withdraw(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .btc_cancel_withdraw(chain, tx_hash, transaction_options)
+            .await
+    }
+
+    pub async fn near_btc_verify_active_utxo_management(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        if proof_data.block_height > light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
+        let near_bridge_client = self.near_bridge_client()?;
+        let args = BtcVerifyWithdrawArgs {
+            tx_id: tx_hash,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
+
+        near_bridge_client
+            .btc_verify_active_utxo_management(chain, args, transaction_options)
             .await
     }
 
     pub async fn get_btc_address(
         &self,
+        chain: ChainKind,
         recipient_id: &str,
         amount: u128,
         fee: u128,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(recipient_id, amount, fee)
+            .get_btc_address(chain, recipient_id, amount, fee)
+            .await
+    }
+
+    pub async fn active_utxo_management(
+        &self,
+        chain: ChainKind,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let fee_rate = if chain == ChainKind::Zcash {
+            let zcash_bridge_client = self.zcash_bridge_client()?;
+            zcash_bridge_client.get_fee_rate().await?
+        } else {
+            let btc_bridge_client = self.btc_bridge_client()?;
+            btc_bridge_client.get_fee_rate().await?
+        };
+
+        let utxos = near_bridge_client.get_utxos(chain).await?;
+        let (
+            active_management_lower_limit,
+            active_management_upper_limit,
+            max_active_utxo_management_input_number,
+            max_active_utxo_management_output_number,
+        ) = near_bridge_client
+            .get_active_management_limit(chain)
+            .await?;
+
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+        let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
+
+        let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
+            utxos,
+            fee_rate,
+            &change_address,
+            (
+                active_management_lower_limit.try_into().unwrap(),
+                active_management_upper_limit.try_into().unwrap(),
+            ),
+            max_active_utxo_management_input_number.into(),
+            max_active_utxo_management_output_number.into(),
+            min_deposit_amount.try_into().unwrap(),
+            chain,
+            self.network()?,
+        )?;
+
+        near_bridge_client
+            .active_utxo_management(chain, out_points, tx_outs, transaction_options)
             .await
     }
 
     pub async fn init_near_to_bitcoin_transfer(
         &self,
+        chain: ChainKind,
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+
         let near_bridge_client = self.near_bridge_client()?;
-        let btc_bridge_client = self.btc_bridge_client()?;
-        let utxos = near_bridge_client.get_utxos().await?;
+        let utxos = near_bridge_client.get_utxos(chain).await?;
 
-        let fee_rate = btc_bridge_client.get_fee_rate()?;
+        let withdraw_fee = near_bridge_client.get_withdraw_fee(chain).await?;
+
         let (out_points, utxos_balance, gas_fee) =
-            btc_utils::choose_utxos(amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, amount - withdraw_fee, utxos, fee_rate)?;
 
-        let change_address = near_bridge_client.get_change_address().await?;
-        let tx_outs = btc_utils::get_tx_outs(
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+        let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
-            amount.try_into().map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
-            })?,
+            amount
+                .checked_sub(withdraw_fee.checked_sub(gas_fee).ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Withdraw fee is too small".to_string())
+                })?)
+                .ok_or_else(|| BridgeSdkError::InvalidArgument("Amount is too small".to_string()))?
+                .try_into()
+                .map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+                })?,
             &change_address,
-            (utxos_balance - amount - gas_fee)
+            utxos_balance
+                .checked_sub(amount)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
+                })?
                 .try_into()
                 .map_err(|err| {
                     BridgeSdkError::BtcClientError(format!(
                         "Error on change amount conversion: {err}"
                     ))
                 })?,
+            chain,
+            self.network()?,
         )?;
-
-        let fee = near_bridge_client.get_withdraw_fee().await? + gas_fee;
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
-                amount + fee,
+                chain,
+                amount,
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
@@ -514,24 +700,69 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_submit_btc_transfer(
+        &self,
+        chain: ChainKind,
+        recipient: String,
+        amount: u128,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let fee = near_bridge_client.get_withdraw_fee(chain).await?;
+        let (out_points, tx_outs) = self
+            .extract_utxo(chain, recipient.clone(), amount - fee)
+            .await?;
+        near_bridge_client
+            .submit_btc_transfer(
+                transfer_id,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address: recipient,
+                    input: out_points,
+                    output: tx_outs,
+                },
+                transaction_options,
+            )
+            .await
+    }
+
+    pub async fn near_submit_btc_transfer_with_tx_hash(
+        &self,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let (recipient, amount, transfer_id) = near_bridge_client
+            .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
+            .await?;
+
+        self.near_submit_btc_transfer(chain, recipient, amount, transfer_id, transaction_options)
+            .await
+    }
+
     pub async fn btc_fin_transfer(
         &self,
-        near_tx_hash: String,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         let btc_tx_data = near_bridge_client
-            .get_btc_tx_data(near_tx_hash, relayer)
+            .get_btc_tx_data(chain, near_tx_hash, relayer)
             .await?;
 
-        let btc_bridge_client = self.btc_bridge_client()?;
-        let tx_hash = btc_bridge_client.send_tx(&btc_tx_data)?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await?;
         Ok(tx_hash)
     }
 
-    pub async fn get_amount_to_transfer(&self, amount: u128) -> Result<u128> {
+    pub async fn get_amount_to_transfer(&self, chain: ChainKind, amount: u128) -> Result<u128> {
         let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client.get_amount_to_transfer(amount).await
+        near_bridge_client
+            .get_amount_to_transfer(chain, amount)
+            .await
     }
 
     pub async fn near_fin_transfer_with_vaa(
@@ -1149,6 +1380,9 @@ impl OmniConnector {
                     .await
                     .map(|hash| hash.to_string())
             }
+            OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
+                "Log metadata is not supported for this chain".to_string(),
+            )),
         }
     }
 
@@ -1351,6 +1585,7 @@ impl OmniConnector {
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
+                    ChainKind::Btc,
                     btc_tx_hash,
                     vout,
                     BtcDepositArgs::OmniDepositArgs {
@@ -1393,6 +1628,11 @@ impl OmniConnector {
                 .solana_finalize_transfer_with_tx_hash(near_tx_hash, sender_id, solana_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
+            FinTransferArgs::UTXOChainFinTransfer {
+                chain,
+                near_tx_hash,
+                relayer,
+            } => self.btc_fin_transfer(chain, near_tx_hash, relayer).await,
         }
     }
 
@@ -1422,6 +1662,9 @@ impl OmniConnector {
                     .await
             }
             ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
+                "is_transfer_finalised is not supported for UTXO chains".to_string(),
+            )),
         }
     }
 
@@ -1451,11 +1694,17 @@ impl OmniConnector {
             .ok_or_else(|| BridgeSdkError::UnknownError("Denormalization overflow".to_string()))
     }
 
+    pub fn network(&self) -> Result<Network> {
+        self.network.ok_or(BridgeSdkError::ConfigError(
+            "Network is not configured".to_string(),
+        ))
+    }
+
     pub fn near_bridge_client(&self) -> Result<&NearBridgeClient> {
         self.near_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "NEAR bridge client not configured".to_string(),
+                "NEAR bridge client is not configured".to_string(),
             ))
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!("Failed to denormalize amount: {e}",))
@@ -1468,22 +1717,30 @@ impl OmniConnector {
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
-            ChainKind::Near | ChainKind::Sol => unreachable!("Unsupported chain kind"),
+            ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
+                unreachable!("Unsupported chain kind")
+            }
         };
 
         bridge_client.ok_or(BridgeSdkError::ConfigError(
-            "EVM bridge client not configured".to_string(),
+            "EVM bridge client is not configured".to_string(),
         ))
     }
 
-    pub fn evm_light_client(&self, chain_kind: ChainKind) -> Result<&EthLightClient> {
-        let light_client = match chain_kind {
+    pub fn light_client(&self, chain: ChainKind) -> Result<&LightClient> {
+        let light_client = match chain {
             ChainKind::Eth => self.eth_light_client.as_ref(),
-            _ => unreachable!("Unsupported chain kind"),
+            ChainKind::Btc => self.btc_light_client.as_ref(),
+            ChainKind::Zcash => self.zcash_light_client.as_ref(),
+            _ => {
+                return Err(BridgeSdkError::ConfigError(format!(
+                    "Light client is not supported for {chain:?} chain"
+                )))
+            }
         };
 
         light_client.ok_or(BridgeSdkError::ConfigError(
-            "EVM light client not configured".to_string(),
+            "Light client is not configured".to_string(),
         ))
     }
 
@@ -1491,7 +1748,7 @@ impl OmniConnector {
         self.solana_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "SOLANA bridge client not configured".to_string(),
+                "SOLANA bridge client is not configured".to_string(),
             ))
     }
 
@@ -1499,16 +1756,39 @@ impl OmniConnector {
         self.wormhole_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "Wormhole bridge client not configured".to_string(),
+                "Wormhole bridge client is not configured".to_string(),
             ))
     }
 
-    pub fn btc_bridge_client(&self) -> Result<&BtcBridgeClient> {
+    pub fn btc_bridge_client(&self) -> Result<&UTXOBridgeClient<Bitcoin>> {
         self.btc_bridge_client
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
-                "BTC bridge client not configured".to_string(),
+                "BTC bridge client is not configured".to_string(),
             ))
+    }
+
+    pub fn zcash_bridge_client(&self) -> Result<&UTXOBridgeClient<Zcash>> {
+        self.zcash_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "ZCash bridge client is not configured".to_string(),
+            ))
+    }
+
+    pub fn utxo_bridge_client(&self, chain: ChainKind) -> Result<AnyUtxoClient<'_>> {
+        match chain {
+            ChainKind::Btc => Ok(AnyUtxoClient::Btc(self.btc_bridge_client()?)),
+            ChainKind::Zcash => Ok(AnyUtxoClient::Zcash(self.zcash_bridge_client()?)),
+            ChainKind::Near
+            | ChainKind::Eth
+            | ChainKind::Base
+            | ChainKind::Arb
+            | ChainKind::Bnb
+            | ChainKind::Sol => Err(BridgeSdkError::ConfigError(
+                "UTXO bridge client is not configured".to_string(),
+            )),
+        }
     }
 
     pub async fn get_proof_for_event(
@@ -1518,8 +1798,8 @@ impl OmniConnector {
         chain_kind: ChainKind,
     ) -> Result<EvmProof> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        let evm_light_client = self.evm_light_client(chain_kind)?;
-        let last_eth_block_number_on_near = evm_light_client.get_last_block_number().await?;
+        let light_client = self.light_client(chain_kind)?;
+        let last_eth_block_number_on_near = light_client.get_last_block_number().await?;
         let tx_block_number = evm_bridge_client.get_tx_block_number(tx_hash).await?;
 
         if last_eth_block_number_on_near < tx_block_number {
@@ -1553,9 +1833,11 @@ impl OmniConnector {
                 self.get_storage_deposit_actions_for_solana_tx(&signature)
                     .await
             }
-            ChainKind::Near => Err(BridgeSdkError::ConfigError(
-                "Storage deposit actions are not supported for NEAR".to_string(),
-            )),
+            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
+                Err(BridgeSdkError::ConfigError(
+                    "Storage deposit actions are not supported for this chain".to_string(),
+                ))
+            }
         }
     }
 
@@ -1587,7 +1869,7 @@ impl OmniConnector {
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
-                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
 
         self.get_storage_deposit_actions(
@@ -1630,7 +1912,7 @@ impl OmniConnector {
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
-                BridgeSdkError::ConfigError("NEAR bridge client not configured".to_string())
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
 
         self.get_storage_deposit_actions(
@@ -1707,5 +1989,50 @@ impl OmniConnector {
         });
 
         Ok(())
+    }
+
+    async fn extract_utxo(
+        &self,
+        chain: ChainKind,
+        target_btc_address: String,
+        amount: u128,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+
+        let utxos = near_bridge_client.get_utxos(chain).await?;
+        let (out_points, utxos_balance, gas_fee) =
+            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
+
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+        let tx_outs = utxo_utils::get_tx_outs(
+            &target_btc_address,
+            amount
+                .checked_sub(gas_fee)
+                .ok_or_else(|| {
+                    BridgeSdkError::BtcClientError(
+                        "Error on change gas_fee calculation: underflow".to_string(),
+                    )
+                })?
+                .try_into()
+                .map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+                })?,
+            &change_address,
+            utxos_balance
+                .checked_sub(amount)
+                .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
+                .try_into()
+                .map_err(|err| {
+                    BridgeSdkError::BtcClientError(format!(
+                        "Error on change amount conversion: {err}"
+                    ))
+                })?,
+            chain,
+            self.network()?,
+        )?;
+        Ok((out_points, tx_outs))
     }
 }

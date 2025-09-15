@@ -284,7 +284,10 @@ impl EvmBridgeClient {
                 | OmniAddress::Base(addr)
                 | OmniAddress::Arb(addr)
                 | OmniAddress::Bnb(addr) => addr.0.into(),
-                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
+                OmniAddress::Near(_)
+                | OmniAddress::Sol(_)
+                | OmniAddress::Btc(_)
+                | OmniAddress::Zcash(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported token address type in SignTransferEvent: {:?}",
                         message_payload.token_address
@@ -297,7 +300,10 @@ impl EvmBridgeClient {
                 | OmniAddress::Base(addr)
                 | OmniAddress::Arb(addr)
                 | OmniAddress::Bnb(addr) => H160(addr.0),
-                OmniAddress::Near(_) | OmniAddress::Sol(_) => {
+                OmniAddress::Near(_)
+                | OmniAddress::Sol(_)
+                | OmniAddress::Btc(_)
+                | OmniAddress::Zcash(_) => {
                     return Err(BridgeSdkError::InvalidArgument(format!(
                         "Unsupported recipient address type in SignTransferEvent: {:?}",
                         message_payload.recipient

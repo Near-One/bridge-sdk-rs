@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 sha3.workspace = true
+bitcoin.workspace = true
 borsh.workspace = true
 ethers.workspace = true
 derive_builder.workspace = true
@@ -18,18 +19,18 @@ omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 solana-sdk.workspace = true
-eth-light-client.workspace = true
+light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 crypto-utils = { path = "../../crypto-utils" }
-btc-utils = { path = "../../btc-utils" }
+utxo-utils = { path = "../../utxo-utils" }
 bridge-connector-common = { path = "../bridge-connector-common" }
 
 near-bridge-client = { path = "../../bridge-clients/near-bridge-client" }
 evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
-btc-bridge-client = { path = "../../bridge-clients/btc-bridge-client" }
+utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 
 [lib]
 path = "src/omni_connector.rs"
