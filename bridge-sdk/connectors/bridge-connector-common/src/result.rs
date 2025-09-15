@@ -36,6 +36,8 @@ pub enum BridgeSdkError {
     WormholeClientError(String),
     #[error("BTC Client Error: {0}")]
     BtcClientError(String),
+    #[error("Insufficient UTXO balance to cover amount and fees")]
+    InsufficientUTXOBalance,
     #[error("Insufficient balance for transaction: {0}")]
     InsufficientBalance(String),
     #[error("Invalid argument provided: {0}")]

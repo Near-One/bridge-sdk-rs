@@ -2023,11 +2023,7 @@ impl OmniConnector {
             &change_address,
             utxos_balance
                 .checked_sub(amount)
-                .ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(
-                        "Error on change amount calculation: underflow".to_string(),
-                    )
-                })?
+                .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
                 .try_into()
                 .map_err(|err| {
                     BridgeSdkError::BtcClientError(format!(
