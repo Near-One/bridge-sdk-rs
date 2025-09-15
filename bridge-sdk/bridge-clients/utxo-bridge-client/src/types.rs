@@ -12,6 +12,7 @@ use zebra_chain::{
 
 #[derive(Debug)]
 pub struct TxProof {
+    pub block_height: u64,
     pub tx_bytes: Vec<u8>,
     pub tx_block_blockhash: String,
     pub tx_index: u64,

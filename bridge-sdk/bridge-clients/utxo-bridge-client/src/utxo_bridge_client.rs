@@ -101,8 +101,39 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         Ok(receipt)
     }
 
+    pub async fn get_block_height_by_block_hash(&self, block_hash: &str) -> Result<u64> {
+        let response: JsonRpcResponse<Value> = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "getblockheader",
+                "params": [block_hash.to_string(), true],
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to send getblock request: {e}"))
+            })?
+            .json()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
+            })?;
+
+        let block_height = response.result["height"]
+            .as_u64()
+            .ok_or_else(|| BridgeSdkError::BtcClientError("Block height not found".to_string()))?;
+
+        Ok(block_height)
+    }
+
     pub async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof> {
         let block_hash = self.get_block_hash_by_tx_hash(tx_hash).await?;
+        let block_height = self
+            .get_block_height_by_block_hash(&block_hash.to_string())
+            .await?;
 
         let response: JsonRpcResponse<String> = self
             .http_client
@@ -141,6 +172,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .collect();
 
         Ok(TxProof {
+            block_height,
             tx_bytes: block.tx_data(tx_index),
             tx_block_blockhash: block.hash(),
             tx_index: tx_index
