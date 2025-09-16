@@ -13,7 +13,6 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
-use tracing::event;
 use utxo_utils::UTXO;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -640,9 +639,9 @@ impl NearBridgeClient {
         let amount_str = &v[event_name]["transfer_message"]["amount"];
         let amount: u128 = amount_str
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(
-                "'amount' not found in InitTransferEvent".to_string(),
-            ))?
+            .ok_or(BridgeSdkError::BtcClientError(format!(
+                "'amount' not found in {event_name}"
+            )))?
             .parse()
             .map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on parsing 'amount' {err}"))
@@ -651,9 +650,9 @@ impl NearBridgeClient {
         let fee_str = &v[event_name]["transfer_message"]["fee"]["fee"];
         let fee: u128 = fee_str
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(
-                "'fee' not found in InitTransferEvent".to_string(),
-            ))?
+            .ok_or(BridgeSdkError::BtcClientError(format!(
+                "'fee' not found in {event_name}"
+            )))?
             .parse()
             .map_err(|err| {
                 BridgeSdkError::BtcClientError(format!("Error on parsing 'fee' {err}"))
@@ -661,9 +660,9 @@ impl NearBridgeClient {
 
         let recipient_full = v[event_name]["transfer_message"]["recipient"]
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(
-                "'recipient' not found in InitTransferEvent".to_string(),
-            ))?;
+            .ok_or(BridgeSdkError::BtcClientError(format!(
+                "'recipient' not found in {event_name}"
+            )))?;
 
         let recipient = match OmniAddress::from_str(recipient_full) {
             Ok(OmniAddress::Btc(addr) | OmniAddress::Zcash(addr)) => addr,
