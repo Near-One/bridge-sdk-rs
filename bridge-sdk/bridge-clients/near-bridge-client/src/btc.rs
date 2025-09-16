@@ -13,6 +13,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
+use tracing::event;
 use utxo_utils::UTXO;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -621,13 +622,22 @@ impl NearBridgeClient {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     ) -> Result<(String, u128, TransferId)> {
-        let log = self
-            .extract_transfer_log(near_tx_hash, sender_id, "InitTransferEvent")
-            .await?;
+        let (log, event_name) = if let Ok(log) = self
+            .extract_transfer_log(near_tx_hash, sender_id.clone(), "InitTransferEvent")
+            .await
+        {
+            (log, "InitTransferEvent")
+        } else {
+            (
+                self.extract_transfer_log(near_tx_hash, sender_id, "FinTransferEvent")
+                    .await?,
+                "FinTransferEvent",
+            )
+        };
 
         let v: Value = serde_json::from_str(&log)?;
 
-        let amount_str = &v["InitTransferEvent"]["transfer_message"]["amount"];
+        let amount_str = &v[event_name]["transfer_message"]["amount"];
         let amount: u128 = amount_str
             .as_str()
             .ok_or(BridgeSdkError::BtcClientError(
@@ -638,7 +648,7 @@ impl NearBridgeClient {
                 BridgeSdkError::BtcClientError(format!("Error on parsing 'amount' {err}"))
             })?;
 
-        let fee_str = &v["InitTransferEvent"]["transfer_message"]["fee"]["fee"];
+        let fee_str = &v[event_name]["transfer_message"]["fee"]["fee"];
         let fee: u128 = fee_str
             .as_str()
             .ok_or(BridgeSdkError::BtcClientError(
@@ -649,7 +659,7 @@ impl NearBridgeClient {
                 BridgeSdkError::BtcClientError(format!("Error on parsing 'fee' {err}"))
             })?;
 
-        let recipient_full = v["InitTransferEvent"]["transfer_message"]["recipient"]
+        let recipient_full = v[event_name]["transfer_message"]["recipient"]
             .as_str()
             .ok_or(BridgeSdkError::BtcClientError(
                 "'recipient' not found in InitTransferEvent".to_string(),
@@ -665,14 +675,14 @@ impl NearBridgeClient {
             Err(_) => recipient_full.to_owned(),
         };
 
-        let origin_id_str = &v["InitTransferEvent"]["transfer_message"]["origin_nonce"];
+        let origin_id_str = &v[event_name]["transfer_message"]["origin_nonce"];
         let origin_id: u64 = origin_id_str
             .as_u64()
             .ok_or(BridgeSdkError::BtcClientError(
                 "Error on parsing origin_id".to_string(),
             ))?;
 
-        let sender_str = &v["InitTransferEvent"]["transfer_message"]["sender"];
+        let sender_str = &v[event_name]["transfer_message"]["sender"];
         let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().ok_or(
             BridgeSdkError::BtcClientError("Error on parsing sender".to_string()),
         )?)
