@@ -316,6 +316,8 @@ pub enum OmniConnectorSubCommand {
         near_tx_hash: String,
         #[clap(short, long, help = "Sender ID who init transfer on Near")]
         sender_id: Option<AccountId>,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -558,6 +560,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             near_tx_hash,
             sender_id,
+            fee_rate,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -565,6 +568,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
+                    fee_rate,
                     TransactionOptions::default(),
                 )
                 .await

@@ -705,13 +705,14 @@ impl OmniConnector {
         chain: ChainKind,
         recipient: String,
         amount: u128,
+        fee_rate: Option<u64>,
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs) = self
-            .extract_utxo(chain, recipient.clone(), amount - fee)
+            .extract_utxo(chain, recipient.clone(), amount - fee, fee_rate)
             .await?;
         near_bridge_client
             .submit_btc_transfer(
@@ -731,6 +732,7 @@ impl OmniConnector {
         chain: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
+        fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -738,8 +740,15 @@ impl OmniConnector {
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
 
-        self.near_submit_btc_transfer(chain, recipient, amount, transfer_id, transaction_options)
-            .await
+        self.near_submit_btc_transfer(
+            chain,
+            recipient,
+            amount,
+            fee_rate,
+            transfer_id,
+            transaction_options,
+        )
+        .await
     }
 
     pub async fn btc_fin_transfer(
@@ -1996,11 +2005,12 @@ impl OmniConnector {
         chain: ChainKind,
         target_btc_address: String,
         amount: u128,
+        fee_rate: Option<u64>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+        let fee_rate = fee_rate.unwrap_or(utxo_bridge_client.get_fee_rate().await?);
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (out_points, utxos_balance, gas_fee) =
