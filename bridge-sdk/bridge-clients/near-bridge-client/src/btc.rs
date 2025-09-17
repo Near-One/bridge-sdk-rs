@@ -37,6 +37,13 @@ const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub enum VUTXO {
+    Current(UTXO),
+}
+
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct BTCPendingInfoPartial {
@@ -53,6 +60,7 @@ pub struct BTCPendingInfoPartial {
     #[serde_as(as = "DisplayFromStr")]
     pub burn_amount: u128,
     pub tx_bytes_with_sign: Option<Vec<u8>>,
+    pub vutxos: Vec<VUTXO>,
 }
 
 #[serde_as]
@@ -279,43 +287,13 @@ impl NearBridgeClient {
         Ok(btc_pending_info)
     }
 
-    pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
-        deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
-    }
-
     #[tracing::instrument(skip_all, name = "NEAR BTC RBF INCREASE GAS FEE")]
     pub async fn btc_rbf_increase_gas_fee(
         &self,
         chain: ChainKind,
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
-        network: Network,
     ) -> Result<CryptoHash> {
-        let btc_pending_info = self
-            .get_btc_pending_info(chain.clone(), btc_tx_hash.clone())
-            .await?;
-        let btc_tx = Self::bytes_to_btc_transaction(&btc_pending_info.tx_bytes_with_sign.unwrap());
-        let change_address = self.get_change_address(chain).await?;
-
-        let change_address = UTXOAddress::parse(&change_address, chain, network).map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
-                "Invalid change UTXO address '{change_address}': {e}"
-            ))
-        })?;
-        let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
-                "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
-            ))
-        })?;
-
-        let target_address_script_pubkey = btc_tx
-            .output
-            .iter()
-            .find(|v| v.script_pubkey != change_script_pubkey)
-            .cloned()
-            .expect("The original tx is not a user withdraw tx.")
-            .script_pubkey;
-
         let endpoint = self.endpoint()?;
         let omni_bridge = self.omni_bridge_id()?;
         let tx_hash = near_rpc_client::change_and_wait(

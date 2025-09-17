@@ -5,7 +5,7 @@ use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
-use utxo_utils::address::Network;
+use utxo_utils::address::{Network, UTXOAddress};
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
@@ -17,7 +17,7 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
+    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -730,8 +730,51 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
+        let btc_pending_info = near_bridge_client
+            .get_btc_pending_info(chain.clone(), btc_tx_hash.clone())
+            .await?;
+        let utxo_balance = btc_pending_info
+            .vutxos
+            .iter()
+            .map(|utxo| match utxo {
+                VUTXO::Current(utxo) => utxo.balance,
+            })
+            .sum::<u64>();
+        println!("btc_pending_info: {:?}", btc_pending_info);
+        println!("utxo_balance: {:?}", utxo_balance);
+
+        let btc_tx = utxo_utils::bytes_to_btc_transaction(
+            &btc_pending_info.clone().tx_bytes_with_sign.unwrap(),
+        );
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+
+        let change_address =
+            UTXOAddress::parse(&change_address, chain, self.network()?).map_err(|e| {
+                BridgeSdkError::BtcClientError(format!(
+                    "Invalid change UTXO address '{change_address}': {e}"
+                ))
+            })?;
+        let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
+            ))
+        })?;
+
+        let target_address_script_pubkey = btc_tx
+            .output
+            .iter()
+            .find(|v| v.script_pubkey != change_script_pubkey)
+            .cloned()
+            .expect("The original tx is not a user withdraw tx.")
+            .script_pubkey;
+
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+
+        //let gas_fee = TODO;
+
         near_bridge_client
-            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options, self.network()?)
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options)
             .await
     }
 
