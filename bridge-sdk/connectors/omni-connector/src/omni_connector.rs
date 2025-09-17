@@ -731,7 +731,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         near_bridge_client
-            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options)
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options, self.network()?)
             .await
     }
 
