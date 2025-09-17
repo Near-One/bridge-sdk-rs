@@ -31,6 +31,7 @@ use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
 };
+use utxo_utils::get_gas_fee;
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -770,8 +771,7 @@ impl OmniConnector {
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
-
-        //let gas_fee = TODO;
+        let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
 
         near_bridge_client
             .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options)
