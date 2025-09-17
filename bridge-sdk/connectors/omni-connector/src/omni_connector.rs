@@ -773,8 +773,18 @@ impl OmniConnector {
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
         let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
 
+        let outs = utxo_utils::get_tx_outs_script_pubkey(
+            target_address_script_pubkey,
+            btc_pending_info.transfer_amount as u64
+                - btc_pending_info.withdraw_fee as u64
+                - gas_fee,
+            change_script_pubkey,
+            utxo_balance
+                - (btc_pending_info.transfer_amount as u64 - btc_pending_info.withdraw_fee as u64),
+        )?;
+
         near_bridge_client
-            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, transaction_options)
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, transaction_options)
             .await
     }
 
