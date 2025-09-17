@@ -597,15 +597,10 @@ impl OmniConnector {
         chain: ChainKind,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let near_bridge_client = self.near_bridge_client()?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
-        let fee_rate = if chain == ChainKind::Zcash {
-            let zcash_bridge_client = self.zcash_bridge_client()?;
-            zcash_bridge_client.get_fee_rate().await?
-        } else {
-            let btc_bridge_client = self.btc_bridge_client()?;
-            btc_bridge_client.get_fee_rate().await?
-        };
+        let near_bridge_client = self.near_bridge_client()?;
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (

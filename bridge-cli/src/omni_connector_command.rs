@@ -309,7 +309,8 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    NearSignBtcTransfer {
+    #[clap(about = "Submit BTC transfer on Near")]
+    NearSubmitBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
         #[clap(short, long, help = "Omni Bridge Transaction Hash")]
@@ -565,7 +566,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearSignBtcTransfer {
+        OmniConnectorSubCommand::NearSubmitBtcTransfer {
             chain,
             near_tx_hash,
             sender_id,
