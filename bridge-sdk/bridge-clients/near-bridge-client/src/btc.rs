@@ -35,6 +35,23 @@ const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct BTCPendingInfoPartial {
+    pub account_id: AccountId,
+    pub btc_pending_id: String,
+    #[serde_as(as = "DisplayFromStr")]
+    pub transfer_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub actual_received_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub withdraw_fee: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub gas_fee: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    pub burn_amount: u128,
+    pub tx_bytes_with_sign: Option<Vec<u8>>,
+}
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -232,6 +249,34 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    pub async fn get_btc_pending_info(
+        &self,
+        chain: ChainKind,
+        btc_tx_hash: String,
+    ) -> Result<BTCPendingInfoPartial> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "list_btc_pending_infos".to_string(),
+                args: serde_json::json!({
+                    "btc_pending_ids": [btc_tx_hash]
+                }),
+            },
+        )
+        .await?;
+
+        let btc_pending_info: HashMap<String, Option<BTCPendingInfoPartial>> =
+            serde_json::from_slice::<HashMap<String, Option<BTCPendingInfoPartial>>>(&response)?;
+
+        let btc_pending_info = btc_pending_info.get(&btc_tx_hash).unwrap().clone().unwrap();
+
+        Ok(btc_pending_info)
+    }
+
     #[tracing::instrument(skip_all, name = "NEAR BTC RBF INCREASE GAS FEE")]
     pub async fn btc_rbf_increase_gas_fee(
         &self,
@@ -239,6 +284,10 @@ impl NearBridgeClient {
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let btc_pending_info = self
+            .get_btc_pending_info(chain.clone(), btc_tx_hash.clone())
+            .await?;
+
         let endpoint = self.endpoint()?;
         let omni_bridge = self.omni_bridge_id()?;
         let tx_hash = near_rpc_client::change_and_wait(
