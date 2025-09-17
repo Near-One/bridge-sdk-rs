@@ -236,7 +236,7 @@ impl NearBridgeClient {
     pub async fn btc_rbf_increase_gas_fee(
         &self,
         chain: ChainKind,
-        tx_hash: String,
+        btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -250,7 +250,7 @@ impl NearBridgeClient {
                 method_name: "rbf_increase_gas_fee".to_string(),
                 args: serde_json::json!({
                     "chain": chain,
-                    "original_btc_pending_verify_id": tx_hash,
+                    "original_btc_pending_verify_id": btc_tx_hash,
                     "output": []
                 })
                 .to_string()
