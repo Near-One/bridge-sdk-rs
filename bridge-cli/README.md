@@ -33,6 +33,9 @@ cargo build --release
 
 # The binary will be available at
 ./target/release/bridge-cli
+
+# Or install globally with
+cargo install --path ./bridge-cli
 ```
 
 
