@@ -21,6 +21,7 @@ const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
+const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 const SIGN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
@@ -30,6 +31,7 @@ const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
+const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
@@ -227,6 +229,44 @@ impl NearBridgeClient {
         .await?;
 
         tracing::info!(tx_hash = tx_hash.to_string(), "Sign BTC transfer");
+        Ok(tx_hash)
+    }
+
+    #[tracing::instrument(skip_all, name = "NEAR BTC RBF INCREASE GAS FEE")]
+    pub async fn btc_rbf_increase_gas_fee(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge = self.omni_bridge_id()?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: omni_bridge,
+                method_name: "rbf_increase_gas_fee".to_string(),
+                args: serde_json::json!({
+                    "chain": chain,
+                    "original_btc_pending_verify_id": tx_hash,
+                    "output": []
+                })
+                .to_string()
+                .into_bytes(),
+                gas: BTC_RBF_INCREASE_GAS_FEE_GAS,
+                deposit: BTC_RBF_INCREASE_GAS_FEE_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC RBF Increase Gas Fee transaction"
+        );
         Ok(tx_hash)
     }
 

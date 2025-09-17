@@ -727,6 +727,19 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_rbf_increase_gas_fee(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .btc_rbf_increase_gas_fee(chain, tx_hash, transaction_options)
+            .await
+    }
+
     pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: ChainKind,
