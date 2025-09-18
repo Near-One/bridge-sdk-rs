@@ -727,6 +727,7 @@ impl OmniConnector {
         &self,
         chain: ChainKind,
         btc_tx_hash: String,
+        fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -780,7 +781,10 @@ impl OmniConnector {
             .script_pubkey;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
         let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
 
         let net_amount = u64::try_from(

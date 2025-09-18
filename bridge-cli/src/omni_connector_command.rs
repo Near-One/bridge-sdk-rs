@@ -369,6 +369,8 @@ pub enum OmniConnectorSubCommand {
         chain: UTXOChainArg,
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -898,10 +900,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::BtcRBFIncreaseGasFee {
             chain,
             btc_tx_hash,
+            fee_rate,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_rbf_increase_gas_fee(chain.into(), btc_tx_hash, TransactionOptions::default())
+                .near_rbf_increase_gas_fee(
+                    chain.into(),
+                    btc_tx_hash,
+                    fee_rate,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }
