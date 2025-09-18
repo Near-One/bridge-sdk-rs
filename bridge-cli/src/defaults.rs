@@ -86,8 +86,8 @@ pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET: &str =
 
 pub const WORMHOLE_API_TESTNET: &str = "https://api.testnet.wormholescan.io";
 pub const BTC_ENDPOINT_TESTNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
-pub const BTC_CONNECTOR_TESTNET: &str = "brg-dev.testnet";
-pub const BTC_TESTNET: &str = "nbtc-dev.testnet";
+pub const BTC_CONNECTOR_TESTNET: &str = "btc-connector.n-bridge.testnet";
+pub const BTC_TESTNET: &str = "nbtc.n-bridge.testnet";
 pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 
 pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
@@ -134,8 +134,8 @@ pub const SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET: &str =
 
 pub const WORMHOLE_API_DEVNET: &str = "https://api.testnet.wormholescan.io";
 pub const BTC_ENDPOINT_DEVNET: &str = "https://bitcoin-testnet-rpc.publicnode.com";
-pub const BTC_CONNECTOR_DEVNET: &str = "brg-dev.testnet";
-pub const BTC_DEVNET: &str = "nbtc-dev.testnet";
+pub const BTC_CONNECTOR_DEVNET: &str = "btc-connector.n-bridge.testnet";
+pub const BTC_DEVNET: &str = "nbtc.n-bridge.testnet";
 pub const SATOSHI_RELAYER_DEVNET: &str = "cosmosfirst.testnet";
 
 pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/";

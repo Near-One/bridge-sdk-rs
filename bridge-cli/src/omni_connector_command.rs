@@ -309,7 +309,8 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    NearSignBtcTransfer {
+    #[clap(about = "Submit BTC transfer on Near")]
+    NearSubmitBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
         #[clap(short, long, help = "Omni Bridge Transaction Hash")]
@@ -359,6 +360,17 @@ pub enum OmniConnectorSubCommand {
         chain: UTXOChainArg,
         #[clap(short, long, help = "Bitcoin tx hash")]
         btc_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Increase Gas Fee for RBF transaction in btc_connector")]
+    BtcRBFIncreaseGasFee {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -556,7 +568,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::NearSignBtcTransfer {
+        OmniConnectorSubCommand::NearSubmitBtcTransfer {
             chain,
             near_tx_hash,
             sender_id,
@@ -882,6 +894,22 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .near_btc_verify_withdraw(chain.into(), btc_tx_hash, TransactionOptions::default())
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcRBFIncreaseGasFee {
+            chain,
+            btc_tx_hash,
+            fee_rate,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_rbf_increase_gas_fee(
+                    chain.into(),
+                    btc_tx_hash,
+                    fee_rate,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

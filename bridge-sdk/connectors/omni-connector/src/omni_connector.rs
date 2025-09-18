@@ -5,7 +5,7 @@ use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
-use utxo_utils::address::Network;
+use utxo_utils::address::{Network, UTXOAddress};
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
 use omni_types::prover_args::{EvmProof, EvmVerifyProofArgs, WormholeVerifyProofArgs};
@@ -17,7 +17,7 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
+    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -31,6 +31,7 @@ use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
 };
+use utxo_utils::get_gas_fee;
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -597,15 +598,10 @@ impl OmniConnector {
         chain: ChainKind,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let near_bridge_client = self.near_bridge_client()?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
-        let fee_rate = if chain == ChainKind::Zcash {
-            let zcash_bridge_client = self.zcash_bridge_client()?;
-            zcash_bridge_client.get_fee_rate().await?
-        } else {
-            let btc_bridge_client = self.btc_bridge_client()?;
-            btc_bridge_client.get_fee_rate().await?
-        };
+        let near_bridge_client = self.near_bridge_client()?;
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (
@@ -724,6 +720,102 @@ impl OmniConnector {
                 },
                 transaction_options,
             )
+            .await
+    }
+
+    pub async fn near_rbf_increase_gas_fee(
+        &self,
+        chain: ChainKind,
+        btc_tx_hash: String,
+        fee_rate: Option<u64>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        if chain == ChainKind::Zcash {
+            return near_bridge_client
+                .btc_rbf_increase_gas_fee(chain, btc_tx_hash, vec![], transaction_options)
+                .await;
+        }
+
+        let btc_pending_info = near_bridge_client
+            .get_btc_pending_info(chain, btc_tx_hash.clone())
+            .await?;
+        let utxo_balance = btc_pending_info
+            .vutxos
+            .iter()
+            .map(|utxo| match utxo {
+                VUTXO::Current(utxo) => utxo.balance,
+            })
+            .sum::<u64>();
+
+        let btc_tx = utxo_utils::bytes_to_btc_transaction(
+            &btc_pending_info.clone().tx_bytes_with_sign.ok_or_else(|| {
+                BridgeSdkError::BtcClientError("BTC transaction is not signed".to_string())
+            })?,
+        );
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+
+        let change_address =
+            UTXOAddress::parse(&change_address, chain, self.network()?).map_err(|e| {
+                BridgeSdkError::BtcClientError(format!(
+                    "Invalid change UTXO address '{change_address}': {e}"
+                ))
+            })?;
+        let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
+            ))
+        })?;
+
+        let target_address_script_pubkey = btc_tx
+            .output
+            .iter()
+            .find(|v| v.script_pubkey != change_script_pubkey)
+            .cloned()
+            .ok_or_else(|| {
+                BridgeSdkError::BtcClientError(
+                    "Failed to find target address in BTC transaction outputs".to_string(),
+                )
+            })?
+            .script_pubkey;
+
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
+        let gas_fee = get_gas_fee(
+            chain,
+            u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("UTXO length conversion error: {e}"))
+            })?,
+            2,
+            fee_rate,
+        );
+
+        let net_amount = u64::try_from(
+            btc_pending_info
+                .transfer_amount
+                .checked_sub(btc_pending_info.withdraw_fee)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Withdraw fee is too large".to_string())
+                })?,
+        )
+        .map_err(|e| BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}")))?;
+        let outs = utxo_utils::get_tx_outs_script_pubkey(
+            target_address_script_pubkey,
+            net_amount.checked_sub(gas_fee).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Amount is too small".to_string())
+            })?,
+            change_script_pubkey,
+            utxo_balance.checked_sub(net_amount).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
+            })?,
+        )?;
+
+        near_bridge_client
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, transaction_options)
             .await
     }
 
@@ -2010,7 +2102,10 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = fee_rate.unwrap_or(utxo_bridge_client.get_fee_rate().await?);
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (out_points, utxos_balance, gas_fee) =

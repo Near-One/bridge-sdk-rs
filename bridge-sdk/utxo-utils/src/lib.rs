@@ -2,7 +2,8 @@ pub mod address;
 
 use crate::address::UTXOAddress;
 use address::Network;
-use bitcoin::{Amount, OutPoint, TxOut};
+use bitcoin::consensus::deserialize;
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
@@ -216,6 +217,29 @@ pub fn get_tx_outs(
     Ok(res)
 }
 
+pub fn get_tx_outs_script_pubkey(
+    btc_recipient_script_pubkey: ScriptBuf,
+    amount: u64,
+    change_script_pubkey: ScriptBuf,
+    change_amount: u64,
+) -> Result<Vec<TxOut>> {
+    let mut res = vec![TxOut {
+        value: Amount::from_sat(amount),
+        script_pubkey: btc_recipient_script_pubkey,
+    }];
+
+    if change_amount > 0 {
+        res.push(TxOut {
+            value: Amount::from_sat(change_amount),
+            script_pubkey: change_script_pubkey,
+        });
+    }
+
+    Ok(res)
+}
+pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
+    deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
+}
 pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
