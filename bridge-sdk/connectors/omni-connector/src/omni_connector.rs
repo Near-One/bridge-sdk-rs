@@ -783,16 +783,24 @@ impl OmniConnector {
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
         let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
 
-        let net_amount =
-            u64::try_from(btc_pending_info.transfer_amount - btc_pending_info.withdraw_fee)
-                .map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}"))
-                })?;
+        let net_amount = u64::try_from(
+            btc_pending_info
+                .transfer_amount
+                .checked_sub(btc_pending_info.withdraw_fee)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Withdraw fee is too large".to_string())
+                })?,
+        )
+        .map_err(|e| BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}")))?;
         let outs = utxo_utils::get_tx_outs_script_pubkey(
             target_address_script_pubkey,
-            net_amount - gas_fee,
+            net_amount.checked_sub(gas_fee).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Amount is too small".to_string())
+            })?,
             change_script_pubkey,
-            utxo_balance - net_amount,
+            utxo_balance.checked_sub(net_amount).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
+            })?,
         )?;
 
         near_bridge_client
@@ -2083,7 +2091,10 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = fee_rate.unwrap_or(utxo_bridge_client.get_fee_rate().await?);
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (out_points, utxos_balance, gas_fee) =
