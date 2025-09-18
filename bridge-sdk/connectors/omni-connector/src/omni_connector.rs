@@ -731,6 +731,12 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
+        if chain == ChainKind::Zcash {
+            return near_bridge_client
+                .btc_rbf_increase_gas_fee(chain, btc_tx_hash, vec![], transaction_options)
+                .await;
+        }
+
         let btc_pending_info = near_bridge_client
             .get_btc_pending_info(chain, btc_tx_hash.clone())
             .await?;
