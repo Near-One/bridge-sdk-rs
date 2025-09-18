@@ -138,6 +138,31 @@ bridge-cli testnet solana-finalize-transfer \
     --solana-token So11111111111111111111111111111111111111112
 ```
 
+### Example 4: Transfer BTC from Bitcoin to NEAR
+
+This example shows how to transfer BTC to NEAR:
+
+```bash
+# 1. Get deterministically calculated deposit address
+bridge-cli testnet get-bitcoin-address \
+    --chain btc \
+    --amount 50000 \
+    --recipient alice.near
+
+# Example output:
+# BTC Address: tb1q.....q4g
+# Amount you need to transfer, including the fee: 52000
+
+# 2. Send the specified amount to the generated address using your Bitcoin wallet.
+# ATTENTION: Transactions with non-zero lock time are not supported. Make sure to set it to 0 in your wallet of choice.
+
+# 3. Finalize and mint tokens on NEAR
+bridge-cli testnet near-fin-transfer-btc \
+    --chain btc \
+    --btc-tx-hash cb9.....36b \
+    --recipient alice.near
+```
+
 > [!NOTE]
 > - You have to wait for around 20 minutes for transaction confirmation after calling any method on EVM chain. Otherwise, you'll get `ERR_INVALID_BLOCK_HASH` meaning that light client or wormhole is not yet synced with the block that transaction was included in
 > - Replace placeholder values (addresses, amounts, hashes) with actual values
