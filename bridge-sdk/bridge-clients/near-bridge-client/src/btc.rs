@@ -6,6 +6,7 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_sdk::json_types::U128;
 use omni_types::ChainKind;
 use omni_types::{OmniAddress, TransferId};
 use serde_json::{json, Value};
@@ -106,6 +107,7 @@ pub enum TokenReceiverMessage {
         target_btc_address: String,
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
+        max_gas_fee: Option<U128>,
     },
 }
 

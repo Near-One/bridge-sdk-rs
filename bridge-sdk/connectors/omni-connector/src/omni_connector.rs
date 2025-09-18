@@ -691,6 +691,7 @@ impl OmniConnector {
                     target_btc_address,
                     input: out_points,
                     output: tx_outs,
+                    max_gas_fee: None,
                 },
                 transaction_options,
             )
@@ -713,13 +714,18 @@ impl OmniConnector {
             .extract_utxo(chain, recipient.clone(), amount - fee, fee_rate)
             .await?;
 
-        if let Some(max_gas_fee) = max_gas_fee {
+        let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {
             if gas_fee > max_gas_fee {
                 return Err(BridgeSdkError::BtcClientError(
                     "Gas fee is too large".to_string(),
                 ));
             }
-        }
+            Some(near_sdk::json_types::U128::from(<u64 as Into<u128>>::into(
+                max_gas_fee,
+            )))
+        } else {
+            None
+        };
 
         near_bridge_client
             .submit_btc_transfer(
@@ -728,6 +734,7 @@ impl OmniConnector {
                     target_btc_address: recipient,
                     input: out_points,
                     output: tx_outs,
+                    max_gas_fee,
                 },
                 transaction_options,
             )

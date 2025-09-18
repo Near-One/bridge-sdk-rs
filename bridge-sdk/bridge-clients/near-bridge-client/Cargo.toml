@@ -12,6 +12,7 @@ near-jsonrpc-client.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
 near-contract-standards.workspace = true
+near-sdk = "5.17.2"
 omni-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
