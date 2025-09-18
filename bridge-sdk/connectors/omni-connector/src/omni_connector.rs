@@ -732,7 +732,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         let btc_pending_info = near_bridge_client
-            .get_btc_pending_info(chain.clone(), btc_tx_hash.clone())
+            .get_btc_pending_info(chain, btc_tx_hash.clone())
             .await?;
         let utxo_balance = btc_pending_info
             .vutxos
@@ -741,11 +741,11 @@ impl OmniConnector {
                 VUTXO::Current(utxo) => utxo.balance,
             })
             .sum::<u64>();
-        println!("btc_pending_info: {:?}", btc_pending_info);
-        println!("utxo_balance: {:?}", utxo_balance);
 
         let btc_tx = utxo_utils::bytes_to_btc_transaction(
-            &btc_pending_info.clone().tx_bytes_with_sign.unwrap(),
+            &btc_pending_info.clone().tx_bytes_with_sign.ok_or_else(|| {
+                BridgeSdkError::BtcClientError("BTC transaction is not signed".to_string())
+            })?,
         );
         let change_address = near_bridge_client.get_change_address(chain).await?;
 
@@ -766,21 +766,27 @@ impl OmniConnector {
             .iter()
             .find(|v| v.script_pubkey != change_script_pubkey)
             .cloned()
-            .expect("The original tx is not a user withdraw tx.")
+            .ok_or_else(|| {
+                BridgeSdkError::BtcClientError(
+                    "Failed to find target address in BTC transaction outputs".to_string(),
+                )
+            })?
             .script_pubkey;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
         let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
 
+        let net_amount =
+            u64::try_from(btc_pending_info.transfer_amount - btc_pending_info.withdraw_fee)
+                .map_err(|e| {
+                    BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}"))
+                })?;
         let outs = utxo_utils::get_tx_outs_script_pubkey(
             target_address_script_pubkey,
-            btc_pending_info.transfer_amount as u64
-                - btc_pending_info.withdraw_fee as u64
-                - gas_fee,
+            net_amount - gas_fee,
             change_script_pubkey,
-            utxo_balance
-                - (btc_pending_info.transfer_amount as u64 - btc_pending_info.withdraw_fee as u64),
+            utxo_balance - net_amount,
         )?;
 
         near_bridge_client

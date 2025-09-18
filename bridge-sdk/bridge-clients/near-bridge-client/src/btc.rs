@@ -1,7 +1,6 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
-use bitcoin::consensus::deserialize;
-use bitcoin::{OutPoint, Transaction as BtcTransaction, TxOut};
+use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
@@ -14,7 +13,6 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
-use utxo_utils::address::{Network, UTXOAddress};
 use utxo_utils::UTXO;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -279,10 +277,16 @@ impl NearBridgeClient {
         )
         .await?;
 
-        let btc_pending_info: HashMap<String, Option<BTCPendingInfoPartial>> =
+        let btc_pending_info =
             serde_json::from_slice::<HashMap<String, Option<BTCPendingInfoPartial>>>(&response)?;
 
-        let btc_pending_info = btc_pending_info.get(&btc_tx_hash).unwrap().clone().unwrap();
+        let btc_pending_info = btc_pending_info
+            .get(&btc_tx_hash)
+            .cloned()
+            .flatten()
+            .ok_or_else(|| {
+                BridgeSdkError::BtcClientError("BTC pending info not found".to_string())
+            })?;
 
         Ok(btc_pending_info)
     }
