@@ -785,7 +785,14 @@ impl OmniConnector {
             Some(rate) => rate,
             None => utxo_bridge_client.get_fee_rate().await?,
         };
-        let gas_fee = get_gas_fee(chain, btc_pending_info.vutxos.len() as u64, 2, fee_rate);
+        let gas_fee = get_gas_fee(
+            chain,
+            u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("UTXO length conversion error: {e}"))
+            })?,
+            2,
+            fee_rate,
+        );
 
         let net_amount = u64::try_from(
             btc_pending_info
