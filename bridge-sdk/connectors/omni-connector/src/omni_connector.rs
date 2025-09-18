@@ -17,7 +17,8 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage, VUTXO,
+    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo,
+    TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -704,12 +705,22 @@ impl OmniConnector {
         fee_rate: Option<u64>,
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
-        let (out_points, tx_outs) = self
+        let (out_points, tx_outs, gas_fee) = self
             .extract_utxo(chain, recipient.clone(), amount - fee, fee_rate)
             .await?;
+
+        if let Some(max_gas_fee) = max_gas_fee {
+            if gas_fee > max_gas_fee {
+                return Err(BridgeSdkError::BtcClientError(
+                    "Gas fee is too large".to_string(),
+                ));
+            }
+        }
+
         near_bridge_client
             .submit_btc_transfer(
                 transfer_id,
@@ -828,7 +839,12 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
-        let (recipient, amount, transfer_id) = near_bridge_client
+        let NearToBtcTransferInfo {
+            recipient,
+            amount,
+            transfer_id,
+            max_gas_fee,
+        } = near_bridge_client
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
 
@@ -839,6 +855,7 @@ impl OmniConnector {
             fee_rate,
             transfer_id,
             transaction_options,
+            max_gas_fee,
         )
         .await
     }
@@ -2098,7 +2115,7 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         fee_rate: Option<u64>,
-    ) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -2138,6 +2155,12 @@ impl OmniConnector {
             chain,
             self.network()?,
         )?;
-        Ok((out_points, tx_outs))
+        Ok((
+            out_points,
+            tx_outs,
+            gas_fee.try_into().map_err(|err| {
+                BridgeSdkError::BtcClientError(format!("Error on gas_fee conversion: {err}"))
+            })?,
+        ))
     }
 }

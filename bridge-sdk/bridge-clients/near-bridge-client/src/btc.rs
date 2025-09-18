@@ -150,6 +150,19 @@ struct PartialConfig {
     active_management_upper_limit: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct NearToBtcTransferInfo {
+    pub recipient: String,
+    pub amount: u128,
+    pub transfer_id: TransferId,
+    pub max_gas_fee: Option<u64>,
+}
+
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+enum UTXOChainMsg {
+    V0 { max_fee: u64 },
+}
+
 impl NearBridgeClient {
     /// Signs a NEAR transfer to BTC by calling `sign_btc_transaction` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
@@ -720,7 +733,7 @@ impl NearBridgeClient {
         &self,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
-    ) -> Result<(String, u128, TransferId)> {
+    ) -> Result<NearToBtcTransferInfo> {
         let (log, event_name) = if let Ok(log) = self
             .extract_transfer_log(near_tx_hash, sender_id.clone(), "InitTransferEvent")
             .await
@@ -786,14 +799,30 @@ impl NearBridgeClient {
             BridgeSdkError::BtcClientError("Error on parsing sender".to_string()),
         )?)
         .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing sender {err}")))?;
-        Ok((
+
+        let msg = v[event_name]["transfer_message"]["msg"].as_str().ok_or(
+            BridgeSdkError::BtcClientError("Error on parsing message".to_string()),
+        )?;
+
+        let max_gas_fee: Option<u64> = if msg.is_empty() {
+            None
+        } else {
+            let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(&msg)?;
+            let max_fee = match utxo_chain_extra_info {
+                UTXOChainMsg::V0 { max_fee } => max_fee,
+            };
+            Some(max_fee)
+        };
+
+        Ok(NearToBtcTransferInfo {
             recipient,
-            amount - fee,
-            TransferId {
+            amount: amount - fee,
+            transfer_id: TransferId {
                 origin_chain: sender_chain.get_chain(),
                 origin_nonce: origin_id,
             },
-        ))
+            max_gas_fee,
+        })
     }
 
     pub async fn extract_transaction_id(
