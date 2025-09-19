@@ -716,9 +716,9 @@ impl OmniConnector {
 
         let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {
             if gas_fee > max_gas_fee {
-                return Err(BridgeSdkError::BtcClientError(
-                    "Gas fee is too large".to_string(),
-                ));
+                return Err(BridgeSdkError::InsufficientUTXOGasFee(format!(
+                    "Estimated gas fee = {gas_fee}, but max gas fee = {max_gas_fee}"
+                )));
             }
             Some(near_sdk::json_types::U128::from(<u64 as Into<u128>>::into(
                 max_gas_fee,
