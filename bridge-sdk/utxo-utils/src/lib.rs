@@ -43,7 +43,7 @@ pub fn get_gas_fee(chain: ChainKind, num_input: u64, num_output: u64, fee_rate: 
         5000 * std::cmp::max(num_input, num_output)
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
-        (fee_rate * tx_size / 1024) + 50
+        (fee_rate * tx_size / 1024) + 141
     }
 }
 
