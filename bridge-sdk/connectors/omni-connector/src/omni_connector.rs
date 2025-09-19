@@ -698,6 +698,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer(
         &self,
         chain: ChainKind,
