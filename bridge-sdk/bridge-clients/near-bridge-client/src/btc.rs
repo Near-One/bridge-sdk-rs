@@ -6,6 +6,7 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_sdk::json_types::U128;
 use omni_types::ChainKind;
 use omni_types::{OmniAddress, TransferId};
 use serde_json::{json, Value};
@@ -106,6 +107,7 @@ pub enum TokenReceiverMessage {
         target_btc_address: String,
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
+        max_gas_fee: Option<U128>,
     },
 }
 
@@ -148,6 +150,19 @@ struct PartialConfig {
     max_active_utxo_management_output_number: u8,
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct NearToBtcTransferInfo {
+    pub recipient: String,
+    pub amount: u128,
+    pub transfer_id: TransferId,
+    pub max_gas_fee: Option<u64>,
+}
+
+#[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+enum UTXOChainMsg {
+    V0 { max_fee: u64 },
 }
 
 impl NearBridgeClient {
@@ -720,7 +735,7 @@ impl NearBridgeClient {
         &self,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
-    ) -> Result<(String, u128, TransferId)> {
+    ) -> Result<NearToBtcTransferInfo> {
         let (log, event_name) = if let Ok(log) = self
             .extract_transfer_log(near_tx_hash, sender_id.clone(), "InitTransferEvent")
             .await
@@ -786,14 +801,30 @@ impl NearBridgeClient {
             BridgeSdkError::BtcClientError("Error on parsing sender".to_string()),
         )?)
         .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing sender {err}")))?;
-        Ok((
+
+        let msg = v[event_name]["transfer_message"]["msg"].as_str().ok_or(
+            BridgeSdkError::BtcClientError("Error on parsing message".to_string()),
+        )?;
+
+        let max_gas_fee: Option<u64> = if msg.is_empty() {
+            None
+        } else {
+            let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(msg)?;
+            let max_fee = match utxo_chain_extra_info {
+                UTXOChainMsg::V0 { max_fee } => max_fee,
+            };
+            Some(max_fee)
+        };
+
+        Ok(NearToBtcTransferInfo {
             recipient,
-            amount - fee,
-            TransferId {
+            amount: amount - fee,
+            transfer_id: TransferId {
                 origin_chain: sender_chain.get_chain(),
                 origin_nonce: origin_id,
             },
-        ))
+            max_gas_fee,
+        })
     }
 
     pub async fn extract_transaction_id(
