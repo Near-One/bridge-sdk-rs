@@ -23,7 +23,7 @@ const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
-const SIGN_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
+const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
@@ -33,7 +33,7 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
-const SIGN_BTC_TRANSFER_DEPOSIT: u128 = 0;
+const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
 #[serde_as]
@@ -245,8 +245,8 @@ impl NearBridgeClient {
                 })
                 .to_string()
                 .into_bytes(),
-                gas: SIGN_BTC_TRANSFER_GAS,
-                deposit: SIGN_BTC_TRANSFER_DEPOSIT,
+                gas: SUBMIT_BTC_TRANSFER_GAS,
+                deposit: SUBMIT_BTC_TRANSFER_DEPOSIT,
             },
             transaction_options.wait_until,
             transaction_options.wait_final_outcome_timeout_sec,
@@ -309,7 +309,7 @@ impl NearBridgeClient {
                 receiver_id: omni_bridge,
                 method_name: "rbf_increase_gas_fee".to_string(),
                 args: serde_json::json!({
-                    "chain": chain,
+                    "chain_kind": chain,
                     "original_btc_pending_verify_id": btc_tx_hash,
                     "output": outs
                 })
