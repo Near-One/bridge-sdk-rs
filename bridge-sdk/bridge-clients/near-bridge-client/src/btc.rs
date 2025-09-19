@@ -809,7 +809,7 @@ impl NearBridgeClient {
         let max_gas_fee: Option<u64> = if msg.is_empty() {
             None
         } else {
-            let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(&msg)?;
+            let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(msg)?;
             let max_fee = match utxo_chain_extra_info {
                 UTXOChainMsg::V0 { max_fee } => max_fee,
             };
