@@ -661,10 +661,14 @@ impl OmniConnector {
             amount
                 .checked_sub(withdraw_fee)
                 .ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Withdraw fee is too small".to_string())
+                    BridgeSdkError::InvalidArgument(
+                        "Amount is smaller than `withdraw_fee".to_string(),
+                    )
                 })?
                 .checked_sub(gas_fee)
-                .ok_or_else(|| BridgeSdkError::InvalidArgument("Amount is too small".to_string()))?
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Amount is smaller than `gas_fee`".to_string())
+                })?
                 .try_into()
                 .map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
