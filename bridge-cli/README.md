@@ -33,6 +33,9 @@ cargo build --release
 
 # The binary will be available at
 ./target/release/bridge-cli
+
+# Or install globally with
+cargo install --path ./bridge-cli
 ```
 
 
@@ -133,6 +136,31 @@ bridge-cli testnet solana-finalize-transfer \
     --tx-hash 8xPxz... \
     --sender-id alice.near \
     --solana-token So11111111111111111111111111111111111111112
+```
+
+### Example 4: Transfer BTC from Bitcoin to NEAR
+
+This example shows how to transfer BTC to NEAR:
+
+```bash
+# 1. Get deterministically calculated deposit address
+bridge-cli testnet get-bitcoin-address \
+    --chain btc \
+    --amount 50000 \
+    --recipient alice.near
+
+# Example output:
+# BTC Address: tb1q.....q4g
+# Amount you need to transfer, including the fee: 52000
+
+# 2. Send the specified amount to the generated address using your Bitcoin wallet.
+# ATTENTION: Transactions with non-zero lock time are not supported. Make sure to set it to 0 in your wallet of choice.
+
+# 3. Finalize and mint tokens on NEAR
+bridge-cli testnet near-fin-transfer-btc \
+    --chain btc \
+    --btc-tx-hash cb9.....36b \
+    --recipient alice.near
 ```
 
 > [!NOTE]

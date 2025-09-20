@@ -419,7 +419,6 @@ pub enum OmniConnectorSubCommand {
             short,
             long,
             help = "The amount to be transferred, in satoshis",
-            default_value = "0"
         )]
         amount: u128,
         #[clap(
@@ -446,7 +445,6 @@ pub enum OmniConnectorSubCommand {
             short,
             long,
             help = "The amount to be transferred, in satoshis",
-            default_value = "0"
         )]
         amount: u128,
         #[command(flatten)]
