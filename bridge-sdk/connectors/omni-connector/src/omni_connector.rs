@@ -652,24 +652,28 @@ impl OmniConnector {
 
         let withdraw_fee = near_bridge_client.get_withdraw_fee(chain).await?;
 
+        let net_amount = amount.checked_sub(withdraw_fee).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
+        })?;
+
         let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount - withdraw_fee, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, net_amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
-            amount
-                .checked_sub(withdraw_fee.checked_sub(gas_fee).ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Withdraw fee is too small".to_string())
-                })?)
-                .ok_or_else(|| BridgeSdkError::InvalidArgument("Amount is too small".to_string()))?
+            net_amount
+                .checked_sub(gas_fee)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Amount is smaller than `gas_fee`".to_string())
+                })?
                 .try_into()
                 .map_err(|err| {
                     BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
                 })?,
             &change_address,
             utxos_balance
-                .checked_sub(amount)
+                .checked_sub(net_amount)
                 .ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
                 })?
