@@ -462,7 +462,7 @@ pub enum OmniConnectorSubCommand {
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
+pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, dev: bool) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
@@ -981,6 +981,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             amount,
             config_cli,
         } => {
+            if !dev {
+                panic!("InitNearToBitcoinTransfer is only allowed in dev environment");
+            }
+
             omni_connector(network, config_cli)
                 .init_near_to_bitcoin_transfer(
                     chain.into(),
