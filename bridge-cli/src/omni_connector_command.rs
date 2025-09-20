@@ -19,7 +19,7 @@ use solana_sdk::{signature::Keypair, signer::EncodableKey};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
-use crate::{combined_config, CliConfig, Mode, Network};
+use crate::{combined_config, CliConfig, Network};
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "chain")]
@@ -432,6 +432,22 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Perform UTXO rebalancing for UTXO Chain Connector")]
+    ActiveUTXOManagement {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Commands for internal usage, not recommended for the public")]
+    Internal {
+        #[command(subcommand)]
+        subcommand: InternalSubCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InternalSubCommand {
     #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
     InitNearToBitcoinTransfer {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -446,23 +462,15 @@ pub enum OmniConnectorSubCommand {
             short,
             long,
             help = "The amount to be transferred, in satoshis",
-            default_value = "0"
         )]
         amount: u128,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Perform UTXO rebalancing for UTXO Chain Connector")]
-    ActiveUTXOManagement {
-        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
-        chain: UTXOChainArg,
         #[command(flatten)]
         config_cli: CliConfig,
     },
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, mode: Mode) {
+pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
@@ -975,32 +983,33 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, mo
             tracing::info!("BTC Address: {btc_address}");
             tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
-        OmniConnectorSubCommand::InitNearToBitcoinTransfer {
-            chain,
-            target_btc_address,
-            amount,
-            config_cli,
-        } => {
-            assert!(
-                mode == Mode::Internal,
-                "InitNearToBitcoinTransfer is only allowed in dev environment, but got mode={mode:?}"
-            );
-
-            omni_connector(network, config_cli)
-                .init_near_to_bitcoin_transfer(
-                    chain.into(),
-                    target_btc_address,
-                    amount,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
-        }
         OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
             omni_connector(network, config_cli)
                 .active_utxo_management(chain.into(), TransactionOptions::default())
                 .await
                 .unwrap();
+        }
+        OmniConnectorSubCommand::Internal  { subcommand } => {
+            match subcommand {
+                InternalSubCommand::InitNearToBitcoinTransfer {
+                    chain,
+                    target_btc_address,
+                    amount,
+                    config_cli
+                } => {
+                    let tx_hash = omni_connector(network, config_cli)
+                        .init_near_to_bitcoin_transfer(
+                            chain.into(),
+                            target_btc_address,
+                            amount,
+                            TransactionOptions::default(),
+                        )
+                        .await
+                        .unwrap();
+
+                    tracing::info!("Near Tx Hash: {tx_hash}");
+                }
+            }
         }
     }
 }

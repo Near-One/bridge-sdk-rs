@@ -498,14 +498,6 @@ struct Arguments {
     network: Network,
     #[command(subcommand)]
     cmd: OmniConnectorSubCommand,
-    #[arg(value_enum, default_value_t = Mode::Regular)]
-    mode: Mode,
-}
-
-#[derive(ValueEnum, Parser, Clone, Debug, PartialEq, Eq)]
-enum Mode {
-    Internal,
-    Regular,
 }
 
 #[tokio::main]
@@ -514,7 +506,7 @@ async fn main() {
     dotenv::dotenv().ok();
 
     let args = Arguments::parse();
-    omni_connector_command::match_subcommand(args.cmd, args.network, args.mode).await;
+    omni_connector_command::match_subcommand(args.cmd, args.network).await;
 }
 
 fn init_logger() {
