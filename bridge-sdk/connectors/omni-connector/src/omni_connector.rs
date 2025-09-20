@@ -659,9 +659,11 @@ impl OmniConnector {
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
             amount
-                .checked_sub(withdraw_fee.checked_sub(gas_fee).ok_or_else(|| {
+                .checked_sub(withdraw_fee)
+                .ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Withdraw fee is too small".to_string())
-                })?)
+                })?
+                .checked_sub(gas_fee)
                 .ok_or_else(|| BridgeSdkError::InvalidArgument("Amount is too small".to_string()))?
                 .try_into()
                 .map_err(|err| {
