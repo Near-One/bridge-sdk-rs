@@ -673,7 +673,7 @@ impl OmniConnector {
                 })?,
             &change_address,
             utxos_balance
-                .checked_sub(amount)
+                .checked_sub(net_amount)
                 .ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
                 })?
