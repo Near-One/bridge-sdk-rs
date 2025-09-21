@@ -981,10 +981,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, de
             amount,
             config_cli,
         } => {
-            assert!(
-                dev,
-                "InitNearToBitcoinTransfer is only allowed in dev environment"
-            );
+            if !dev {
+                panic!("InitNearToBitcoinTransfer is only allowed in dev environment");
+            }
 
             omni_connector(network, config_cli)
                 .init_near_to_bitcoin_transfer(
