@@ -19,7 +19,7 @@ use solana_sdk::{signature::Keypair, signer::EncodableKey};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
-use crate::{combined_config, CliConfig, Mode, Network};
+use crate::{combined_config, CliConfig, Network};
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "chain")]
@@ -462,7 +462,7 @@ pub enum OmniConnectorSubCommand {
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, mode: Mode) {
+pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, dev: bool) {
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
@@ -982,9 +982,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, mo
             config_cli,
         } => {
             assert!(
-                mode == Mode::Internal,
-                "InitNearToBitcoinTransfer is only allowed in dev environment, but got mode={:?}",
-                mode
+                dev,
+                "InitNearToBitcoinTransfer is only allowed in dev environment"
             );
 
             omni_connector(network, config_cli)
