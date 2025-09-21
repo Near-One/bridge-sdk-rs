@@ -983,7 +983,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network, mo
         } => {
             assert!(
                 mode == Mode::Internal,
-                "InitNearToBitcoinTransfer is only allowed in dev environment, but got mode={mode:?}"
+                "InitNearToBitcoinTransfer is only allowed in dev environment, but got mode={:?}",
+                mode
             );
 
             omni_connector(network, config_cli)
