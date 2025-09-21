@@ -498,8 +498,6 @@ struct Arguments {
     network: Network,
     #[command(subcommand)]
     cmd: OmniConnectorSubCommand,
-    #[arg(long, default_value_t = false)]
-    dev: bool,
 }
 
 #[tokio::main]
@@ -508,7 +506,7 @@ async fn main() {
     dotenv::dotenv().ok();
 
     let args = Arguments::parse();
-    omni_connector_command::match_subcommand(args.cmd, args.network, args.dev).await;
+    omni_connector_command::match_subcommand(args.cmd, args.network).await;
 }
 
 fn init_logger() {
