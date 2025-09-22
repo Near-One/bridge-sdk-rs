@@ -135,7 +135,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .get_block_height_by_block_hash(&block_hash.to_string())
             .await?;
 
-        let response: JsonRpcResponse<String> = self
+        let response_text = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -149,13 +149,25 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to send getblock request: {e}"))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
             })?;
 
-        let block = T::Block::from_str(&response.result)?;
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to read getblock response: {response_text}"
+            ))
+        })?;
+
+        let result: String = serde_json::from_value(response["result"].clone()).map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to parse block: {e}. Response: {response_text}"
+            ))
+        })?;
+
+        let block = T::Block::from_str(&result)?;
         let transactions = block.transactions();
 
         let tx_index = transactions
@@ -187,7 +199,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             return Ok(1000);
         }
 
-        let response: JsonRpcResponse<Value> = self
+        let response_text = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -203,7 +215,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                     "Faield to send estimatesmartfee request: {e}"
                 ))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!(
@@ -211,14 +223,25 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 ))
             })?;
 
-        let result: EstimateSmartFeeResult = serde_json::from_value(response.result)
-            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to parse block: {e}")))?;
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to read estimatesmartfee response: {response_text}"
+            ))
+        })?;
+
+        let result: EstimateSmartFeeResult = serde_json::from_value(response["result"].clone())
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!(
+                    "Failed to parse block: {e}. Response: {response_text}"
+                ))
+            })?;
 
         Ok(result
             .fee_rate
-            .ok_or(BridgeSdkError::BtcClientError(
-                "Failed to estimate fee_rate".to_string(),
-            ))?
+            .ok_or(BridgeSdkError::BtcClientError(format!(
+                "Failed to estimate fee_rate: {:?}",
+                result.errors
+            )))?
             .to_sat())
     }
 
@@ -247,5 +270,23 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             })?;
 
         Ok(response.result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::types::Bitcoin;
+    use crate::{AuthOptions, UTXOBridgeClient};
+
+    #[tokio::test]
+    async fn get_fee_test() {
+        let utxo_client: UTXOBridgeClient<Bitcoin> = UTXOBridgeClient::new(
+            "https://bitcoin-testnet.gateway.tatum.io/".to_string(),
+            AuthOptions::None,
+        );
+        utxo_client
+            .extract_btc_proof("946598343627a77ec8865b17743a898df983c4aa7b0c4720d967bd9dbfb61907")
+            .await
+            .unwrap();
     }
 }
