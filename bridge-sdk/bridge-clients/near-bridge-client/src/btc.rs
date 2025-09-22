@@ -656,6 +656,12 @@ impl NearBridgeClient {
         amount: u128,
         fee: u128,
     ) -> Result<DepositMsg> {
+        if recipient_id.is_utxo_chain() {
+            return Err(BridgeSdkError::BtcClientError(
+                "Cannot send directly to UTXO chains".to_string(),
+            ));
+        }
+
         if let OmniAddress::Near(recipient_id) = recipient_id {
             Ok(DepositMsg {
                 recipient_id,
