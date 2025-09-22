@@ -336,7 +336,7 @@ pub enum OmniConnectorSubCommand {
         )]
         vout: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
-        recipient_id: String,
+        recipient_id: OmniAddress,
         #[clap(
             short,
             long,
@@ -412,9 +412,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "The recipient in format <chain_id>:<address> for transferring using OmniBridge"
+            help = "Transfer recipient in format <chain_id>:<address>"
         )]
-        recipient_id: String,
+        recipient_id: OmniAddress,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
         #[clap(
@@ -963,7 +963,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, amount, fee)
+                .get_btc_address(chain.into(), recipient_id, amount, fee)
                 .await
                 .unwrap();
 

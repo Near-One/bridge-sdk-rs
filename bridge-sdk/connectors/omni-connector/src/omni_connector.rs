@@ -188,7 +188,7 @@ pub enum FinTransferArgs {
     NearFinTransferBTC {
         btc_tx_hash: String,
         vout: usize,
-        recipient_id: String,
+        recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
         transaction_options: TransactionOptions,
@@ -221,7 +221,7 @@ pub enum FinTransferArgs {
 
 pub enum BtcDepositArgs {
     OmniDepositArgs {
-        recipient_id: String,
+        recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
     },
@@ -489,7 +489,7 @@ impl OmniConnector {
                 recipient_id,
                 amount,
                 fee,
-            } => near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, amount, fee)?,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?,
         };
 
         let args = FinBtcTransferArgs {
@@ -584,7 +584,7 @@ impl OmniConnector {
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
-        recipient_id: &str,
+        recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
     ) -> Result<String> {

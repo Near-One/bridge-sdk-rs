@@ -556,7 +556,7 @@ impl NearBridgeClient {
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
-        recipient_id: &str,
+        recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
     ) -> Result<String> {
@@ -652,11 +652,17 @@ impl NearBridgeClient {
 
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
-        recipient_id: &str,
+        recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
     ) -> Result<DepositMsg> {
-        if recipient_id.contains(':') {
+        if let OmniAddress::Near(recipient_id) = recipient_id {
+            Ok(DepositMsg {
+                recipient_id,
+                post_actions: None,
+                extra_msg: None,
+            })
+        } else {
             let omni_bridge_id = self.omni_bridge_id()?;
             let account_id = self.account_id()?;
             Ok(DepositMsg {
@@ -673,14 +679,6 @@ impl NearBridgeClient {
                     .to_string(),
                     gas: None,
                 }]),
-                extra_msg: None,
-            })
-        } else {
-            Ok(DepositMsg {
-                recipient_id: recipient_id.parse().map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!("Incorrect recipient_id: {err}"))
-                })?,
-                post_actions: None,
                 extra_msg: None,
             })
         }
