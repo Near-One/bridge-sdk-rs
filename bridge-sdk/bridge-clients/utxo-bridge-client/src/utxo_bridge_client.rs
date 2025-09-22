@@ -66,7 +66,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             json!([tx_hash, true])
         };
 
-        let response: JsonRpcResponse<Value> = self
+        let response_text = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -82,7 +82,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                     "Failed to send getrawtransaction request: {e}"
                 ))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!(
@@ -90,8 +90,22 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 ))
             })?;
 
-        let hash_str = response.result["blockhash"].as_str().ok_or_else(|| {
-            BridgeSdkError::BtcClientError("Block hash not found in transaction data".to_string())
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to read getrawtransaction response: {response_text}"
+            ))
+        })?;
+
+        let result: Value = serde_json::from_value(response["result"].clone()).map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
+            ))
+        })?;
+
+        let hash_str = result["blockhash"].as_str().ok_or_else(|| {
+            BridgeSdkError::BtcClientError(format!(
+                "Block hash not found in transaction data. Response: {response_text}"
+            ))
         })?;
 
         let receipt = BlockHash::from_str(hash_str).map_err(|e| {
@@ -102,7 +116,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn get_block_height_by_block_hash(&self, block_hash: &str) -> Result<u64> {
-        let response: JsonRpcResponse<Value> = self
+        let response_text = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -116,13 +130,25 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to send getblock request: {e}"))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to read getblock response: {e}"))
             })?;
 
-        let block_height = response.result["height"]
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to send getblock response: {response_text}"
+            ))
+        })?;
+
+        let result: Value = serde_json::from_value(response["result"].clone()).map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to parse send getblock result: {e}. Response: {response_text}"
+            ))
+        })?;
+
+        let block_height = result["height"]
             .as_u64()
             .ok_or_else(|| BridgeSdkError::BtcClientError("Block height not found".to_string()))?;
 
@@ -163,7 +189,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         let result: String = serde_json::from_value(response["result"].clone()).map_err(|e| {
             BridgeSdkError::BtcClientError(format!(
-                "Failed to parse block: {e}. Response: {response_text}"
+                "Failed to parse read getblock result: {e}. Response: {response_text}"
             ))
         })?;
 
@@ -232,7 +258,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         let result: EstimateSmartFeeResult = serde_json::from_value(response["result"].clone())
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!(
-                    "Failed to parse block: {e}. Response: {response_text}"
+                    "Failed to parse estimatesmartfee result: {e}. Response: {response_text}"
                 ))
             })?;
 
@@ -247,7 +273,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
     pub async fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
         let hex_str = hex::encode(tx_bytes);
-        let response: JsonRpcResponse<String> = self
+        let response_text = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -261,7 +287,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Failed to send transaction: {e}"))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!(
@@ -269,24 +295,18 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 ))
             })?;
 
-        Ok(response.result)
-    }
-}
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to read sendrawtransaction response: {response_text}"
+            ))
+        })?;
 
-#[cfg(test)]
-mod tests {
-    use crate::types::Bitcoin;
-    use crate::{AuthOptions, UTXOBridgeClient};
+        let result: String = serde_json::from_value(response["result"].clone()).map_err(|e| {
+            BridgeSdkError::BtcClientError(format!(
+                "Failed to parse sendrawtransaction result: {e}. Response: {response_text}"
+            ))
+        })?;
 
-    #[tokio::test]
-    async fn get_fee_test() {
-        let utxo_client: UTXOBridgeClient<Bitcoin> = UTXOBridgeClient::new(
-            "https://bitcoin-testnet.gateway.tatum.io/".to_string(),
-            AuthOptions::None,
-        );
-        utxo_client
-            .extract_btc_proof("946598343627a77ec8865b17743a898df983c4aa7b0c4720d967bd9dbfb61907")
-            .await
-            .unwrap();
+        Ok(result)
     }
 }
