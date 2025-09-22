@@ -415,11 +415,7 @@ pub enum OmniConnectorSubCommand {
             help = "The recipient in format <chain_id>:<address> for transferring using OmniBridge"
         )]
         recipient_id: String,
-        #[clap(
-            short,
-            long,
-            help = "The amount to be transferred, in satoshis",
-        )]
+        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
         #[clap(
             short,
@@ -431,29 +427,34 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
-    InitNearToBitcoinTransfer {
-        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
-        chain: UTXOChainArg,
-        #[clap(
-            short,
-            long,
-            help = "The Bitcoin address to which the BTC will eventually be released"
-        )]
-        target_btc_address: String,
-        #[clap(
-            short,
-            long,
-            help = "The amount to be transferred, in satoshis",
-        )]
-        amount: u128,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     #[clap(about = "Perform UTXO rebalancing for UTXO Chain Connector")]
     ActiveUTXOManagement {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Commands for internal usage, not recommended for the public")]
+    Internal {
+        #[command(subcommand)]
+        subcommand: InternalSubCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum InternalSubCommand {
+    #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
+    InitNearToBitcoinTransfer {
+        #[clap(short, long, help = "Chain to transfer to")]
+        chain: UTXOChainArg,
+        #[clap(
+            short,
+            long,
+            help = "The UTXO chain address to which the tokens will eventually be released"
+        )]
+        target_btc_address: String,
+        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        amount: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -851,7 +852,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 omni_connector(network, config_cli)
                     .near_sign_btc_transaction_with_tx_hash(
                         chain.into(),
-                        CryptoHash::from_str(&near_tx_hash.expect("btc_near_tx_hash is required"))
+                        CryptoHash::from_str(&near_tx_hash.expect("near_tx_hash is required"))
                             .expect("Invalid near_tx_hash"),
                         user_account,
                         sign_index,
@@ -973,28 +974,32 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             tracing::info!("BTC Address: {btc_address}");
             tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
-        OmniConnectorSubCommand::InitNearToBitcoinTransfer {
-            chain,
-            target_btc_address,
-            amount,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .init_near_to_bitcoin_transfer(
-                    chain.into(),
-                    target_btc_address,
-                    amount,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
-        }
         OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
             omni_connector(network, config_cli)
                 .active_utxo_management(chain.into(), TransactionOptions::default())
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::Internal { subcommand } => match subcommand {
+            InternalSubCommand::InitNearToBitcoinTransfer {
+                chain,
+                target_btc_address,
+                amount,
+                config_cli,
+            } => {
+                let tx_hash = omni_connector(network, config_cli)
+                    .init_near_to_bitcoin_transfer(
+                        chain.into(),
+                        target_btc_address,
+                        amount,
+                        TransactionOptions::default(),
+                    )
+                    .await
+                    .unwrap();
+
+                tracing::info!("Near Tx Hash: {tx_hash}");
+            }
+        },
     }
 }
 
