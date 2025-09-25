@@ -152,6 +152,12 @@ struct PartialConfig {
     active_management_upper_limit: u32,
 }
 
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PartialMetadata {
+    pub current_utxos_num: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct NearToBtcTransferInfo {
     pub recipient: String,
@@ -580,7 +586,7 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -588,14 +594,42 @@ impl NearBridgeClient {
             endpoint,
             ViewRequest {
                 contract_account_id: btc_connector,
-                method_name: "get_utxos_paged".to_string(),
+                method_name: "get_metadata".to_string(),
                 args: serde_json::json!({}),
             },
         )
         .await?;
 
-        let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
-        Ok(utxos)
+        let metadata = serde_json::from_slice::<PartialMetadata>(&response)?;
+        Ok(metadata.current_utxos_num)
+    }
+
+    pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
+        let utxo_num = self.get_utxo_num(chain).await?;
+
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let batch_size: u32 = 500;
+        let batch_num = (utxo_num / batch_size) + 1;
+
+        let mut utxos_res: HashMap<String, UTXO> = HashMap::new();
+        for i in 0..batch_num {
+            let response = near_rpc_client::view(
+                endpoint,
+                ViewRequest {
+                    contract_account_id: btc_connector.clone(),
+                    method_name: "get_utxos_paged".to_string(),
+                    args: serde_json::json!({"from_index": i * batch_size, "limit": batch_size}),
+                },
+            )
+            .await?;
+
+            let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
+            utxos_res.extend(utxos);
+        }
+
+        Ok(utxos_res)
     }
 
     pub async fn get_withdraw_fee(&self, chain: ChainKind) -> Result<u128> {
