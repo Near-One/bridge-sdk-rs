@@ -1,6 +1,6 @@
 [package]
 name = "near-bridge-client"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 [dependencies]
@@ -21,6 +21,7 @@ tracing.workspace = true
 near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 utxo-utils = { path = "../../utxo-utils" }
+futures = "0.3.31"
 
 [lib]
 path = "src/near_bridge_client.rs"

@@ -3,6 +3,7 @@ use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use futures::future::join_all;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
@@ -36,6 +37,8 @@ const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
+
+pub const UTXO_BATCH_SIZE: u32 = 500;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -150,6 +153,12 @@ struct PartialConfig {
     max_active_utxo_management_output_number: u8,
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct PartialMetadata {
+    pub current_utxos_num: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -580,7 +589,7 @@ impl NearBridgeClient {
         Ok(btc_address)
     }
 
-    pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
+    pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -588,14 +597,50 @@ impl NearBridgeClient {
             endpoint,
             ViewRequest {
                 contract_account_id: btc_connector,
-                method_name: "get_utxos_paged".to_string(),
+                method_name: "get_metadata".to_string(),
                 args: serde_json::json!({}),
             },
         )
         .await?;
 
-        let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
-        Ok(utxos)
+        let metadata = serde_json::from_slice::<PartialMetadata>(&response)?;
+        Ok(metadata.current_utxos_num)
+    }
+
+    pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
+        let utxo_num = self.get_utxo_num(chain).await?;
+
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        let batch_num = utxo_num.div_ceil(UTXO_BATCH_SIZE);
+
+        let mut futures = Vec::new();
+
+        for i in 0..batch_num {
+            let fut = near_rpc_client::view(
+                endpoint,
+                ViewRequest {
+                    contract_account_id: btc_connector.clone(),
+                    method_name: "get_utxos_paged".to_string(),
+                    args: serde_json::json!({
+                        "from_index": i * UTXO_BATCH_SIZE,
+                        "limit": UTXO_BATCH_SIZE
+                    }),
+                },
+            );
+            futures.push(fut);
+        }
+
+        let responses = join_all(futures).await;
+
+        let mut utxos_res: HashMap<String, UTXO> = HashMap::new();
+
+        for resp in responses {
+            let utxos: HashMap<String, UTXO> = serde_json::from_slice(&resp?)?;
+            utxos_res.extend(utxos);
+        }
+
+        Ok(utxos_res)
     }
 
     pub async fn get_withdraw_fee(&self, chain: ChainKind) -> Result<u128> {
