@@ -38,6 +38,8 @@ const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
+pub const UTXO_BATCH_SIZE: u32 = 500;
+
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub enum VUTXO {
@@ -610,9 +612,7 @@ impl NearBridgeClient {
 
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-
-        let batch_size: u32 = 500;
-        let batch_num = (utxo_num / batch_size) + 1;
+        let batch_num = utxo_num.div_ceil(UTXO_BATCH_SIZE);
 
         let mut futures = Vec::new();
 
@@ -623,8 +623,8 @@ impl NearBridgeClient {
                     contract_account_id: btc_connector.clone(),
                     method_name: "get_utxos_paged".to_string(),
                     args: serde_json::json!({
-                        "from_index": i * batch_size,
-                        "limit": batch_size
+                        "from_index": i * UTXO_BATCH_SIZE,
+                        "limit": UTXO_BATCH_SIZE
                     }),
                 },
             );
