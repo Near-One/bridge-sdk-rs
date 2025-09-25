@@ -3,6 +3,7 @@ use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
+use futures::future::join_all;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
@@ -613,19 +614,29 @@ impl NearBridgeClient {
         let batch_size: u32 = 500;
         let batch_num = (utxo_num / batch_size) + 1;
 
-        let mut utxos_res: HashMap<String, UTXO> = HashMap::new();
+        let mut futures = Vec::new();
+
         for i in 0..batch_num {
-            let response = near_rpc_client::view(
+            let fut = near_rpc_client::view(
                 endpoint,
                 ViewRequest {
                     contract_account_id: btc_connector.clone(),
                     method_name: "get_utxos_paged".to_string(),
-                    args: serde_json::json!({"from_index": i * batch_size, "limit": batch_size}),
+                    args: serde_json::json!({
+                        "from_index": i * batch_size,
+                        "limit": batch_size
+                    }),
                 },
-            )
-            .await?;
+            );
+            futures.push(fut);
+        }
 
-            let utxos = serde_json::from_slice::<HashMap<String, UTXO>>(&response)?;
+        let responses = join_all(futures).await;
+
+        let mut utxos_res: HashMap<String, UTXO> = HashMap::new();
+
+        for resp in responses {
+            let utxos: HashMap<String, UTXO> = serde_json::from_slice(&resp?)?;
             utxos_res.extend(utxos);
         }
 
