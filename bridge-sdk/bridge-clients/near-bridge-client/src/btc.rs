@@ -830,7 +830,7 @@ impl NearBridgeClient {
         let recipient = match OmniAddress::from_str(recipient_full) {
             Ok(OmniAddress::Btc(addr) | OmniAddress::Zcash(addr)) => addr,
             Ok(_) => {
-                return Err(BridgeSdkError::InvalidLog(
+                return Err(BridgeSdkError::InvalidArgument(
                     "Unsupported recipient chain".to_string(),
                 ))
             }

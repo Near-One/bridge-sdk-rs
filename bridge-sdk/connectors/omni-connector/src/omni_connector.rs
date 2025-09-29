@@ -2156,7 +2156,7 @@ impl OmniConnector {
                 })?
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
+                    BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
                 })?,
             &change_address,
             utxos_balance
