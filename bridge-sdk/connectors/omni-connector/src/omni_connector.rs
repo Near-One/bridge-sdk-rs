@@ -5,6 +5,7 @@ use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
+use utxo_bridge_client::error::UtxoClientError;
 use utxo_utils::address::{Network, UTXOAddress};
 
 use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
@@ -71,9 +72,9 @@ pub enum AnyUtxoClient<'a> {
 }
 
 impl AnyUtxoClient<'_> {
-    forward_common_utxo_method!(get_fee_rate() -> Result<u64>);
-    forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> Result<utxo_bridge_client::types::TxProof>);
-    forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> Result<String>);
+    forward_common_utxo_method!(get_fee_rate() -> std::result::Result<u64, UtxoClientError>);
+    forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> std::result::Result<utxo_bridge_client::types::TxProof, UtxoClientError>);
+    forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> std::result::Result<String, UtxoClientError>);
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -630,7 +631,8 @@ impl OmniConnector {
             min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
-        )?;
+        )
+        .map_err(BridgeSdkError::UtxoManagementError)?;
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
@@ -657,8 +659,10 @@ impl OmniConnector {
         })?;
 
         let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, net_amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, net_amount, utxos, fee_rate)
+                .map_err(BridgeSdkError::UtxoManagementError)?;
 
+        // TODO: use extract_utxo method
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
@@ -669,23 +673,22 @@ impl OmniConnector {
                 })?
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+                    BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
                 })?,
             &change_address,
             utxos_balance
                 .checked_sub(net_amount)
-                .ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
-                })?
+                .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!(
+                    BridgeSdkError::InvalidArgument(format!(
                         "Error on change amount conversion: {err}"
                     ))
                 })?,
             chain,
             self.network()?,
-        )?;
+        )
+        .map_err(BridgeSdkError::UtxoManagementError)?;
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
@@ -774,19 +777,19 @@ impl OmniConnector {
 
         let btc_tx = utxo_utils::bytes_to_btc_transaction(
             &btc_pending_info.clone().tx_bytes_with_sign.ok_or_else(|| {
-                BridgeSdkError::BtcClientError("BTC transaction is not signed".to_string())
+                BridgeSdkError::InvalidArgument("BTC transaction is not signed".to_string())
             })?,
         );
         let change_address = near_bridge_client.get_change_address(chain).await?;
 
         let change_address =
             UTXOAddress::parse(&change_address, chain, self.network()?).map_err(|e| {
-                BridgeSdkError::BtcClientError(format!(
+                BridgeSdkError::ContractConfigurationError(format!(
                     "Invalid change UTXO address '{change_address}': {e}"
                 ))
             })?;
         let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
+            BridgeSdkError::ContractConfigurationError(format!(
                 "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
             ))
         })?;
@@ -797,7 +800,7 @@ impl OmniConnector {
             .find(|v| v.script_pubkey != change_script_pubkey)
             .cloned()
             .ok_or_else(|| {
-                BridgeSdkError::BtcClientError(
+                BridgeSdkError::InvalidArgument(
                     "Failed to find target address in BTC transaction outputs".to_string(),
                 )
             })?
@@ -811,7 +814,7 @@ impl OmniConnector {
         let gas_fee = get_gas_fee(
             chain,
             u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
-                BridgeSdkError::BtcClientError(format!("UTXO length conversion error: {e}"))
+                BridgeSdkError::UnknownError(format!("UTXO length unexpectedly large: {e}"))
             })?,
             2,
             fee_rate,
@@ -825,7 +828,9 @@ impl OmniConnector {
                     BridgeSdkError::InvalidArgument("Withdraw fee is too large".to_string())
                 })?,
         )
-        .map_err(|e| BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}")))?;
+        .map_err(|e| {
+            BridgeSdkError::UnknownError(format!("Transaction amount unexpectedly large: {e}"))
+        })?;
         let outs = utxo_utils::get_tx_outs_script_pubkey(
             target_address_script_pubkey,
             net_amount.checked_sub(gas_fee).ok_or_else(|| {
@@ -835,7 +840,7 @@ impl OmniConnector {
             utxo_balance.checked_sub(net_amount).ok_or_else(|| {
                 BridgeSdkError::InvalidArgument("Utxo balance is too small".to_string())
             })?,
-        )?;
+        );
 
         near_bridge_client
             .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, transaction_options)
@@ -2138,7 +2143,8 @@ impl OmniConnector {
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)
+                .map_err(BridgeSdkError::UtxoManagementError)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
@@ -2146,13 +2152,11 @@ impl OmniConnector {
             amount
                 .checked_sub(gas_fee)
                 .ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(
-                        "Error on change gas_fee calculation: underflow".to_string(),
-                    )
+                    BridgeSdkError::InvalidArgument("Amount is smaller than `gas_fee`".to_string())
                 })?
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!("Error on amount conversion: {err}"))
+                    BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
                 })?,
             &change_address,
             utxos_balance
@@ -2160,18 +2164,20 @@ impl OmniConnector {
                 .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
                 .try_into()
                 .map_err(|err| {
-                    BridgeSdkError::BtcClientError(format!(
+                    BridgeSdkError::InvalidArgument(format!(
                         "Error on change amount conversion: {err}"
                     ))
                 })?,
             chain,
             self.network()?,
-        )?;
+        )
+        .map_err(BridgeSdkError::UtxoManagementError)?;
+
         Ok((
             out_points,
             tx_outs,
             gas_fee.try_into().map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on gas_fee conversion: {err}"))
+                BridgeSdkError::UnknownError(format!("gas_fee unexpectedly high: {err}"))
             })?,
         ))
     }

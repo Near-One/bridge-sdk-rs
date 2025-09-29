@@ -4,7 +4,6 @@ use crate::address::UTXOAddress;
 use address::Network;
 use bitcoin::consensus::deserialize;
 use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
-use bridge_connector_common::result::{BridgeSdkError, Result};
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
@@ -19,18 +18,17 @@ pub struct UTXO {
     pub balance: u64,
 }
 
-fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
+fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, String> {
     utxos
         .into_iter()
         .map(|(txid, utxo)| {
-            let txid_str = txid.split('@').next().ok_or_else(|| {
-                BridgeSdkError::BtcClientError(format!("Invalid txid format: {txid}"))
-            })?;
+            let txid_str = txid
+                .split('@')
+                .next()
+                .ok_or_else(|| format!("Invalid txid format: {txid}"))?;
 
             let parsed_txid = txid_str.parse().map_err(|e| {
-                BridgeSdkError::BtcClientError(format!(
-                    "Failed to parse txid '{txid_str}' into bitcoin::Txid: {e}"
-                ))
+                format!("Failed to parse txid '{txid_str}' into bitcoin::Txid: {e}")
             })?;
 
             Ok(OutPoint::new(parsed_txid, utxo.vout))
@@ -53,7 +51,7 @@ pub fn choose_utxos(
     amount: u128,
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
-) -> Result<(Vec<OutPoint>, u128, u128)> {
+) -> Result<(Vec<OutPoint>, u128, u128), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -71,9 +69,10 @@ pub fn choose_utxos(
 
     let gas_fee = get_gas_fee(
         chain,
-        selected.len().try_into().map_err(|e| {
-            BridgeSdkError::BtcClientError(format!("Error on convert usize into u64: {e}"))
-        })?,
+        selected
+            .len()
+            .try_into()
+            .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
         2,
         fee_rate,
     )
@@ -95,7 +94,7 @@ pub fn choose_utxos_for_active_management(
     min_deposit_amount: usize,
     chain: ChainKind,
     network: Network,
-) -> Result<(Vec<OutPoint>, Vec<TxOut>)> {
+) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
 
@@ -112,17 +111,17 @@ pub fn choose_utxos_for_active_management(
         let output_amount = std::cmp::min(
             active_management_limit.0 - utxo_list.len(),
             std::cmp::min(
-                usize::try_from(utxos_balance).map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!("Error on convert u64 into usize: {e}"))
-                })? / min_deposit_amount
+                usize::try_from(utxos_balance)
+                    .map_err(|e| format!("Error on convert u64 into usize: {e}"))?
+                    / min_deposit_amount
                     - 1,
                 max_active_utxo_management_output_number,
             ),
         );
 
-        let output_amount = output_amount.try_into().map_err(|e| {
-            BridgeSdkError::BtcClientError(format!("Error on convert usize into u64: {e}"))
-        })?;
+        let output_amount = output_amount
+            .try_into()
+            .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
 
         let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate);
         let out_points = utxo_to_out_points(selected)?;
@@ -147,9 +146,10 @@ pub fn choose_utxos_for_active_management(
         }
         let gas_fee: u64 = get_gas_fee(
             chain,
-            selected.len().try_into().map_err(|e| {
-                BridgeSdkError::BtcClientError(format!("Error on convert usize into u64: {e}"))
-            })?,
+            selected
+                .len()
+                .try_into()
+                .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
             1,
             fee_rate,
         );
@@ -166,9 +166,7 @@ pub fn choose_utxos_for_active_management(
 
         Ok((out_points, tx_outs))
     } else {
-        Err(BridgeSdkError::BtcClientError(
-            "Incorrect number of UTXOs for active management".to_string(),
-        ))
+        Err("Incorrect number of UTXOs for active management".to_string())
     }
 }
 
@@ -179,17 +177,11 @@ pub fn get_tx_outs(
     change_amount: u64,
     chain: ChainKind,
     network: Network,
-) -> Result<Vec<TxOut>> {
-    let btc_recipient_address =
-        UTXOAddress::parse(target_btc_address, chain, network).map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
-                "Invalid target UTXO address '{target_btc_address}': {e}"
-            ))
-        })?;
+) -> Result<Vec<TxOut>, String> {
+    let btc_recipient_address = UTXOAddress::parse(target_btc_address, chain, network)
+        .map_err(|e| format!("Invalid target UTXO address '{target_btc_address}': {e}"))?;
     let btc_recipient_script_pubkey = btc_recipient_address.script_pubkey().map_err(|e| {
-        BridgeSdkError::BtcClientError(format!(
-            "Failed to get script_pubkey for target UTXO address '{target_btc_address}': {e}"
-        ))
+        format!("Failed to get script_pubkey for target UTXO address '{target_btc_address}': {e}")
     })?;
 
     let mut res = vec![TxOut {
@@ -198,15 +190,10 @@ pub fn get_tx_outs(
     }];
 
     if change_amount > 0 {
-        let change_address = UTXOAddress::parse(change_address, chain, network).map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
-                "Invalid change UTXO address '{change_address}': {e}"
-            ))
-        })?;
+        let change_address = UTXOAddress::parse(change_address, chain, network)
+            .map_err(|e| format!("Invalid change UTXO address '{change_address}': {e}"))?;
         let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
-            BridgeSdkError::BtcClientError(format!(
-                "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
-            ))
+            format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
         })?;
         res.push(TxOut {
             value: Amount::from_sat(change_amount),
@@ -222,7 +209,7 @@ pub fn get_tx_outs_script_pubkey(
     amount: u64,
     change_script_pubkey: ScriptBuf,
     change_amount: u64,
-) -> Result<Vec<TxOut>> {
+) -> Vec<TxOut> {
     let mut res = vec![TxOut {
         value: Amount::from_sat(amount),
         script_pubkey: btc_recipient_script_pubkey,
@@ -235,7 +222,7 @@ pub fn get_tx_outs_script_pubkey(
         });
     }
 
-    Ok(res)
+    res
 }
 pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
     deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
@@ -246,16 +233,11 @@ pub fn get_tx_outs_utxo_management(
     amount: u64,
     chain: ChainKind,
     network: Network,
-) -> Result<Vec<TxOut>> {
-    let change_address = UTXOAddress::parse(change_address, chain, network).map_err(|e| {
-        BridgeSdkError::BtcClientError(format!(
-            "Invalid change UTXO address '{change_address}': {e}"
-        ))
-    })?;
+) -> Result<Vec<TxOut>, String> {
+    let change_address = UTXOAddress::parse(change_address, chain, network)
+        .map_err(|e| format!("Invalid change UTXO address '{change_address}': {e}"))?;
     let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
-        BridgeSdkError::BtcClientError(format!(
-            "Failed to get script_pubkey for change UTXO address '{change_address}': {e}"
-        ))
+        format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
     })?;
 
     let one_amount = amount / output_amount;

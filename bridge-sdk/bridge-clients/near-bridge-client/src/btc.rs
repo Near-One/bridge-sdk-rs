@@ -1,7 +1,6 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use bitcoin::{OutPoint, TxOut};
-use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
 use near_primitives::types::Gas;
@@ -232,13 +231,15 @@ impl NearBridgeClient {
             .await?;
         let json_str = log
             .strip_prefix("EVENT_JSON:")
-            .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+            .ok_or(BridgeSdkError::InvalidLog(
+                "Missing EVENT_JSON prefix".to_string(),
+            ))?;
 
         let v: Value = serde_json::from_str(json_str)?;
         let btc_pending_id = v["data"][0]["btc_pending_id"]
             .as_str()
-            .ok_or(BtcClientError(
-                "btc_pending id not found in log".to_string(),
+            .ok_or(BridgeSdkError::InvalidLog(
+                "btc_pending id not found".to_string(),
             ))?
             .to_string();
 
@@ -309,7 +310,7 @@ impl NearBridgeClient {
             .cloned()
             .flatten()
             .ok_or_else(|| {
-                BridgeSdkError::BtcClientError("BTC pending info not found".to_string())
+                BridgeSdkError::InvalidArgument("BTC pending info not found".to_string())
             })?;
 
         Ok(btc_pending_info)
@@ -702,7 +703,7 @@ impl NearBridgeClient {
         fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
-            return Err(BridgeSdkError::BtcClientError(
+            return Err(BridgeSdkError::InvalidArgument(
                 "Cannot send directly to UTXO chains".to_string(),
             ));
         }
@@ -752,25 +753,25 @@ impl NearBridgeClient {
 
         let json_str = log
             .strip_prefix("EVENT_JSON:")
-            .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
+            .ok_or(BridgeSdkError::InvalidLog(
+                "Missing EVENT_JSON prefix".to_string(),
+            ))?;
         let v: Value = serde_json::from_str(json_str)?;
         let bytes = v["data"][0]["tx_bytes"]
             .as_array()
             .ok_or_else(|| {
-                BridgeSdkError::BtcClientError(
-                    "Expected 'tx_bytes' to be an array in logs".to_string(),
-                )
+                BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
             })?
             .iter()
             .map(|val| {
                 let num = val.as_u64().ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(format!(
+                    BridgeSdkError::InvalidLog(format!(
                         "Expected u64 value in 'tx_bytes', got: {val}"
                     ))
                 })?;
 
                 u8::try_from(num).map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!(
+                    BridgeSdkError::InvalidLog(format!(
                         "Value {num} in 'tx_bytes' is out of range for u8: {e}"
                     ))
                 })
@@ -803,35 +804,33 @@ impl NearBridgeClient {
         let amount_str = &v[event_name]["transfer_message"]["amount"];
         let amount: u128 = amount_str
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(format!(
+            .ok_or(BridgeSdkError::InvalidLog(format!(
                 "'amount' not found in {event_name}"
             )))?
             .parse()
             .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on parsing 'amount' {err}"))
+                BridgeSdkError::InvalidLog(format!("Error on parsing 'amount' {err}"))
             })?;
 
         let fee_str = &v[event_name]["transfer_message"]["fee"]["fee"];
         let fee: u128 = fee_str
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(format!(
+            .ok_or(BridgeSdkError::InvalidLog(format!(
                 "'fee' not found in {event_name}"
             )))?
             .parse()
-            .map_err(|err| {
-                BridgeSdkError::BtcClientError(format!("Error on parsing 'fee' {err}"))
-            })?;
+            .map_err(|err| BridgeSdkError::InvalidLog(format!("Error on parsing 'fee' {err}")))?;
 
         let recipient_full = v[event_name]["transfer_message"]["recipient"]
             .as_str()
-            .ok_or(BridgeSdkError::BtcClientError(format!(
+            .ok_or(BridgeSdkError::InvalidLog(format!(
                 "'recipient' not found in {event_name}"
             )))?;
 
         let recipient = match OmniAddress::from_str(recipient_full) {
             Ok(OmniAddress::Btc(addr) | OmniAddress::Zcash(addr)) => addr,
             Ok(_) => {
-                return Err(BridgeSdkError::BtcClientError(
+                return Err(BridgeSdkError::InvalidLog(
                     "Unsupported recipient chain".to_string(),
                 ))
             }
@@ -839,21 +838,22 @@ impl NearBridgeClient {
         };
 
         let origin_id_str = &v[event_name]["transfer_message"]["origin_nonce"];
-        let origin_id: u64 = origin_id_str
-            .as_u64()
-            .ok_or(BridgeSdkError::BtcClientError(
-                "Error on parsing origin_id".to_string(),
-            ))?;
+        let origin_id: u64 = origin_id_str.as_u64().ok_or(BridgeSdkError::InvalidLog(
+            "Error on parsing origin_id".to_string(),
+        ))?;
 
         let sender_str = &v[event_name]["transfer_message"]["sender"];
         let sender_chain: OmniAddress = OmniAddress::from_str(sender_str.as_str().ok_or(
-            BridgeSdkError::BtcClientError("Error on parsing sender".to_string()),
+            BridgeSdkError::InvalidLog("Error on parsing sender".to_string()),
         )?)
-        .map_err(|err| BridgeSdkError::BtcClientError(format!("Error on parsing sender {err}")))?;
+        .map_err(|err| BridgeSdkError::InvalidLog(format!("Error on parsing sender {err}")))?;
 
-        let msg = v[event_name]["transfer_message"]["msg"].as_str().ok_or(
-            BridgeSdkError::BtcClientError("Error on parsing message".to_string()),
-        )?;
+        let msg =
+            v[event_name]["transfer_message"]["msg"]
+                .as_str()
+                .ok_or(BridgeSdkError::InvalidLog(
+                    "Error on parsing message".to_string(),
+                ))?;
 
         let max_gas_fee: Option<u64> = if msg.is_empty() {
             None
