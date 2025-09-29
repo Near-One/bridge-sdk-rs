@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 bitcoincore-rpc.workspace = true
 bitcoin.workspace = true
-bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 hex.workspace = true
 merkle-tools.workspace = true
 minreq.workspace = true
@@ -17,6 +16,7 @@ near-rpc-client = { path = "../../near-rpc-client" }
 near-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
 zebra-chain = "2.0.0"

@@ -1011,6 +1011,7 @@ dependencies = [
  "solana-bridge-client",
  "solana-client",
  "thiserror 2.0.16",
+ "utxo-bridge-client",
 ]
 
 [[package]]
@@ -10225,7 +10226,6 @@ version = "0.2.1"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
- "bridge-connector-common",
  "hex",
  "merkle-tools",
  "minreq",
@@ -10235,6 +10235,7 @@ dependencies = [
  "reqwest 0.12.23",
  "serde",
  "serde_json",
+ "thiserror 2.0.16",
  "tokio",
  "zebra-chain",
 ]
@@ -10244,7 +10245,6 @@ name = "utxo-utils"
 version = "0.2.0"
 dependencies = [
  "bitcoin",
- "bridge-connector-common",
  "k256",
  "near-sdk",
  "omni-types",
