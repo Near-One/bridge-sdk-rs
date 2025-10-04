@@ -374,6 +374,17 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(
+        about = "Increase Gas Fee for RBF transaction in btc_connector with subsidy (only for BTC)"
+    )]
+    BtcSubsidizeRBF {
+        #[clap(short, long, help = "Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Cancel BTC Withdraw in btc_connector")]
     BtcCancelWithdraw {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -905,6 +916,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             omni_connector(network, config_cli)
                 .near_rbf_increase_gas_fee(
                     chain.into(),
+                    btc_tx_hash,
+                    fee_rate,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcSubsidizeRBF {
+            btc_tx_hash,
+            fee_rate,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_rbf_increase_gas_fee_subsidize(
                     btc_tx_hash,
                     fee_rate,
                     TransactionOptions::default(),

@@ -112,6 +112,10 @@ pub enum TokenReceiverMessage {
         output: Vec<TxOut>,
         max_gas_fee: Option<U128>,
     },
+    Rbf {
+        pending_tx_id: String,
+        output: Vec<TxOut>,
+    },
 }
 
 #[serde_as]
@@ -284,7 +288,7 @@ impl NearBridgeClient {
     pub async fn get_btc_pending_info(
         &self,
         chain: ChainKind,
-        btc_tx_hash: String,
+        btc_tx_hash: &str,
     ) -> Result<BTCPendingInfoPartial> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
@@ -305,7 +309,7 @@ impl NearBridgeClient {
             serde_json::from_slice::<HashMap<String, Option<BTCPendingInfoPartial>>>(&response)?;
 
         let btc_pending_info = btc_pending_info
-            .get(&btc_tx_hash)
+            .get(btc_tx_hash)
             .cloned()
             .flatten()
             .ok_or_else(|| {
@@ -350,6 +354,53 @@ impl NearBridgeClient {
         tracing::info!(
             tx_hash = tx_hash.to_string(),
             "Sent BTC RBF Increase Gas Fee transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    #[tracing::instrument(skip_all, name = "NEAR BTC SUBSIDIZE RBF INCREASE GAS FEE")]
+    pub async fn btc_subsidize_rbf(
+        &self,
+        btc_tx_hash: String,
+        outs: Vec<TxOut>,
+        amount: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let chain = ChainKind::Btc;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        let btc = self.utxo_chain_token(chain)?;
+
+        let msg = TokenReceiverMessage::Rbf {
+            pending_tx_id: btc_tx_hash,
+            output: outs,
+        };
+
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc,
+                method_name: "ft_transfer_call".to_string(),
+                args: serde_json::json!({
+                    "receiver_id": btc_connector,
+                    "amount": amount.to_string(),
+                    "msg": json!(msg).to_string(),
+                })
+                .to_string()
+                .into_bytes(),
+                gas: INIT_BTC_TRANSFER_GAS,
+                deposit: INIT_BTC_TRANSFER_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Subsidize RBF Increase Gas Fee transaction"
         );
         Ok(tx_hash)
     }
