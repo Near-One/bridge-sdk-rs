@@ -466,6 +466,8 @@ pub enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1010,6 +1012,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                fee_rate,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1017,6 +1020,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain.into(),
                         target_btc_address,
                         amount,
+                        fee_rate,
                         TransactionOptions::default(),
                     )
                     .await

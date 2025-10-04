@@ -650,10 +650,11 @@ impl OmniConnector {
         chain: ChainKind,
         target_btc_address: String,
         amount: u128,
+        fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+        let fee_rate = fee_rate.unwrap_or(utxo_bridge_client.get_fee_rate().await?);
 
         let near_bridge_client = self.near_bridge_client()?;
         let utxos = near_bridge_client.get_utxos(chain).await?;
