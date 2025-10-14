@@ -340,13 +340,6 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "The amount to be transferred, in satoshis",
-            default_value = "0"
-        )]
-        amount: u128,
-        #[clap(
-            short,
-            long,
             help = "The Omni Bridge Fee in satoshi",
             default_value = "0"
         )]
@@ -867,7 +860,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             btc_tx_hash,
             vout,
             recipient_id,
-            amount,
             fee,
             config_cli,
         } => {
@@ -876,11 +868,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        amount,
-                        fee,
-                    },
+                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
                     TransactionOptions::default(),
                 )
                 .await
@@ -963,7 +951,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), recipient_id, amount, fee)
+                .get_btc_address(chain.into(), recipient_id, fee)
                 .await
                 .unwrap();
 
