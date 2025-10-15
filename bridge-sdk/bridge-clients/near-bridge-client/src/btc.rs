@@ -574,6 +574,14 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
+        tracing::info!(
+            "{}",
+            serde_json::json!({
+                "deposit_msg": deposit_msg
+            })
+            .to_string()
+        );
+
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
