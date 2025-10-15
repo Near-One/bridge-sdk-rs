@@ -727,12 +727,11 @@ impl NearBridgeClient {
                 extra_msg: None,
                 safe_deposit: Some(SafeDepositMsg {
                     msg: json!({
-                        "InitTransferMsg": json!({
-                            "recipient": recipient_id.to_string(),
-                            "fee": fee.to_string(),
-                            "native_token_fee": "0",
-                        })
-                    }).to_string(),
+                        "recipient": recipient_id.to_string(),
+                        "fee": fee.to_string(),
+                        "native_token_fee": "0",
+                    })
+                    .to_string(),
                 }),
             })
         }
