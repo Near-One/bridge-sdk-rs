@@ -591,6 +591,14 @@ impl NearBridgeClient {
         )
         .await?;
 
+        tracing::info!(
+            "{}",
+            serde_json::json!({
+                "deposit_msg": deposit_msg
+            })
+            .to_string()
+        );
+
         let btc_address = serde_json::from_slice::<String>(&response)?;
         Ok(btc_address)
     }
