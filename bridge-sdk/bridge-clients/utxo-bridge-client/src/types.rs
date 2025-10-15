@@ -3,12 +3,13 @@ use bitcoin::{
     hex::FromHex,
 };
 use bitcoincore_rpc::bitcoin::hashes::Hash;
-use bridge_connector_common::result::{BridgeSdkError, Result};
 use merkle_tools::H256;
 use zebra_chain::{
     self,
     serialization::{ZcashDeserialize, ZcashSerialize},
 };
+
+use crate::error::UtxoClientError;
 
 #[derive(Debug)]
 pub struct TxProof {
@@ -20,7 +21,7 @@ pub struct TxProof {
 }
 
 pub trait UTXOChainBlock {
-    fn from_str(str: &str) -> Result<Self>
+    fn from_str(str: &str) -> Result<Self, UtxoClientError>
     where
         Self: Sized;
     fn hash(&self) -> String;
@@ -29,9 +30,9 @@ pub trait UTXOChainBlock {
 }
 
 impl UTXOChainBlock for bitcoin::Block {
-    fn from_str(str: &str) -> Result<Self> {
+    fn from_str(str: &str) -> Result<Self, UtxoClientError> {
         encode::deserialize_hex(str)
-            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to parse block: {e}")))
+            .map_err(|e| UtxoClientError::Other(format!("Failed to parse block: {e}")))
     }
 
     fn hash(&self) -> String {
@@ -51,11 +52,11 @@ impl UTXOChainBlock for bitcoin::Block {
 }
 
 impl UTXOChainBlock for zebra_chain::block::Block {
-    fn from_str(str: &str) -> Result<Self> {
+    fn from_str(str: &str) -> Result<Self, UtxoClientError> {
         let bytes = Vec::from_hex(str).expect("Invalid hex");
         let mut cursor = std::io::Cursor::new(bytes);
         zebra_chain::block::Block::zcash_deserialize(&mut cursor)
-            .map_err(|e| BridgeSdkError::BtcClientError(format!("Deserialization failed: {e}")))
+            .map_err(|e| UtxoClientError::Other(format!("Deserialization failed: {e}")))
     }
 
     fn hash(&self) -> String {
