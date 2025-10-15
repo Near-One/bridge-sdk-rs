@@ -37,8 +37,8 @@ pub enum BridgeSdkError {
     WormholeClientError(String),
     #[error("Utxo Client Error: {0}")]
     UtxoClientError(String),
-    #[error("Error communicating with Bitcoin RPC: {0}")]
-    BtcRpcError(String),
+    #[error("Error communicating with Utxo chain RPC: {0}")]
+    UtxoRpcError(String),
     #[error("Insufficient UTXO chain Gas Fee: {0}")]
     InsufficientUTXOGasFee(String),
     #[error("Insufficient UTXO balance to cover amount and fees")]
@@ -107,7 +107,7 @@ impl From<ProviderError> for BridgeSdkError {
 impl From<UtxoClientError> for BridgeSdkError {
     fn from(error: UtxoClientError) -> Self {
         match error {
-            UtxoClientError::RpcError(e) => Self::BtcRpcError(e),
+            UtxoClientError::RpcError(e) => Self::UtxoRpcError(e),
             UtxoClientError::Other(e) => Self::UtxoClientError(e),
         }
     }
