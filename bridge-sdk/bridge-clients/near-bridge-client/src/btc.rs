@@ -30,6 +30,7 @@ const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
 const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
+const BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT: u128 = 1_200_000_000_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
@@ -367,12 +368,14 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
-        let method_name = if is_safe {
-            "safe_verify_deposit"
+        let (method_name, deposit) = if is_safe {
+            (
+                "safe_verify_deposit".to_string(),
+                BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
+            )
         } else {
-            "verify_deposit"
-        }
-        .to_string();
+            ("verify_deposit".to_string(), BTC_VERIFY_DEPOSIT_DEPOSIT)
+        };
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -383,7 +386,7 @@ impl NearBridgeClient {
                 method_name,
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_DEPOSIT_GAS,
-                deposit: BTC_VERIFY_DEPOSIT_DEPOSIT,
+                deposit,
             },
             transaction_options.wait_until,
             transaction_options.wait_final_outcome_timeout_sec,
