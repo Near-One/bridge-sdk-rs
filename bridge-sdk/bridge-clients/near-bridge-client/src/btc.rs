@@ -372,7 +372,7 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        let (method_name, deposit) = if let Some(_) = args.deposit_msg.safe_deposit {
+        let (method_name, deposit) = if args.deposit_msg.safe_deposit.is_some() {
             (
                 "safe_verify_deposit".to_string(),
                 BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
