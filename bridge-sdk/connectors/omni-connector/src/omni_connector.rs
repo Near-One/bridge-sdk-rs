@@ -192,6 +192,7 @@ pub enum FinTransferArgs {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
+        is_safe: bool,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -469,6 +470,7 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
+        is_safe: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -503,7 +505,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .fin_btc_transfer(chain, args, transaction_options)
+            .fin_btc_transfer(chain, args, is_safe, transaction_options)
             .await
     }
 
@@ -1717,6 +1719,7 @@ impl OmniConnector {
                 recipient_id,
                 amount,
                 fee,
+                is_safe,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
@@ -1728,6 +1731,7 @@ impl OmniConnector {
                         amount,
                         fee,
                     },
+                    is_safe,
                     transaction_options,
                 )
                 .await

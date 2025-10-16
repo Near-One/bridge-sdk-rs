@@ -361,17 +361,26 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         args: FinBtcTransferArgs,
+        is_safe: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let method_name = if is_safe {
+            "safe_verify_deposit"
+        } else {
+            "verify_deposit"
+        }
+        .to_string();
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_deposit".to_string(),
+                method_name,
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_DEPOSIT_GAS,
                 deposit: BTC_VERIFY_DEPOSIT_DEPOSIT,

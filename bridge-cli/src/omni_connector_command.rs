@@ -351,6 +351,13 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            short,
+            long,
+            help = "Is safe mode for the deposit",
+            default_value = "false"
+        )]
+        is_safe: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -869,6 +876,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             amount,
             fee,
+            is_safe,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -881,6 +889,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         amount,
                         fee,
                     },
+                    is_safe,
                     TransactionOptions::default(),
                 )
                 .await
