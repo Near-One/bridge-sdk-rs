@@ -18,7 +18,7 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo,
+    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo, SafeDepositMsg,
     TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
@@ -192,7 +192,7 @@ pub enum FinTransferArgs {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
-        is_safe: bool,
+        safe_deposit: Option<SafeDepositMsg>,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -470,7 +470,7 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
-        is_safe: bool,
+        safe_deposit: Option<SafeDepositMsg>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -492,7 +492,12 @@ impl OmniConnector {
                 recipient_id,
                 amount,
                 fee,
-            } => near_bridge_client.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(
+                recipient_id,
+                amount,
+                fee,
+                safe_deposit,
+            )?,
         };
 
         let args = FinBtcTransferArgs {
@@ -505,7 +510,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .fin_btc_transfer(chain, args, is_safe, transaction_options)
+            .fin_btc_transfer(chain, args, transaction_options)
             .await
     }
 
@@ -590,10 +595,11 @@ impl OmniConnector {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
+        safe_deposit: Option<SafeDepositMsg>,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain, recipient_id, amount, fee)
+            .get_btc_address(chain, recipient_id, amount, fee, safe_deposit)
             .await
     }
 
@@ -1719,7 +1725,7 @@ impl OmniConnector {
                 recipient_id,
                 amount,
                 fee,
-                is_safe,
+                safe_deposit,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
@@ -1731,7 +1737,7 @@ impl OmniConnector {
                         amount,
                         fee,
                     },
-                    is_safe,
+                    safe_deposit,
                     transaction_options,
                 )
                 .await

@@ -77,12 +77,19 @@ pub struct PostAction {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct SafeDepositMsg {
+    pub msg: String,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DepositMsg {
     pub recipient_id: AccountId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub post_actions: Option<Vec<PostAction>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra_msg: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safe_deposit: Option<SafeDepositMsg>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -362,13 +369,12 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         args: FinBtcTransferArgs,
-        is_safe: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
-        let (method_name, deposit) = if is_safe {
+        let (method_name, deposit) = if args.deposit_msg.safe_deposit.is_some() {
             (
                 "safe_verify_deposit".to_string(),
                 BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
@@ -581,8 +587,10 @@ impl NearBridgeClient {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
+        safe_deposit: Option<SafeDepositMsg>,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee)?;
+        let deposit_msg =
+            self.get_deposit_msg_for_omni_bridge(recipient_id, amount, fee, safe_deposit)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -713,6 +721,7 @@ impl NearBridgeClient {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
+        safe_deposit: Option<SafeDepositMsg>,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
             return Err(BridgeSdkError::InvalidArgument(
@@ -725,6 +734,7 @@ impl NearBridgeClient {
                 recipient_id,
                 post_actions: None,
                 extra_msg: None,
+                safe_deposit,
             })
         } else {
             let omni_bridge_id = self.omni_bridge_id()?;
@@ -744,6 +754,7 @@ impl NearBridgeClient {
                     gas: None,
                 }]),
                 extra_msg: None,
+                safe_deposit,
             })
         }
     }

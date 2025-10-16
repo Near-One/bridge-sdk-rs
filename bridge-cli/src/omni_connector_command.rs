@@ -1,5 +1,6 @@
 use clap::Subcommand;
 use core::panic;
+use near_bridge_client::btc::SafeDepositMsg;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
@@ -354,10 +355,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "Is safe mode for the deposit",
-            default_value = "false"
+            help = "Safe deposit message to perform `safe_verify_deposit` call"
         )]
-        is_safe: bool,
+        safe_deposit_msg: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -431,6 +431,12 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            short,
+            long,
+            help = "Safe deposit message to perform `safe_verify_deposit` call"
+        )]
+        safe_deposit_msg: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -876,7 +882,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             amount,
             fee,
-            is_safe,
+            safe_deposit_msg,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -889,7 +895,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         amount,
                         fee,
                     },
-                    is_safe,
+                    safe_deposit_msg.map(|msg| SafeDepositMsg { msg }),
                     TransactionOptions::default(),
                 )
                 .await
@@ -968,11 +974,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             amount,
             fee,
+            safe_deposit_msg,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), recipient_id, amount, fee)
+                .get_btc_address(
+                    chain.into(),
+                    recipient_id,
+                    amount,
+                    fee,
+                    safe_deposit_msg.map(|msg| SafeDepositMsg { msg }),
+                )
                 .await
                 .unwrap();
 
