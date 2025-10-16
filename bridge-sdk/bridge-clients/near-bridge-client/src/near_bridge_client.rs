@@ -613,7 +613,8 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self.get_required_balance_for_init_transfer().await?;
+        let required_balance = self.get_required_balance_for_init_transfer().await?
+            .saturating_add(native_fee);
 
         let nonce = if self
             .deposit_storage_if_required(required_balance, transaction_options.clone())
