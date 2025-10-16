@@ -226,6 +226,7 @@ pub enum BtcDepositArgs {
         recipient_id: OmniAddress,
         amount: u128,
         fee: u128,
+        safe_deposit: Option<SafeDepositMsg>,
     },
     DepositMsg {
         msg: DepositMsg,
@@ -470,7 +471,6 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
-        safe_deposit: Option<SafeDepositMsg>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -492,6 +492,7 @@ impl OmniConnector {
                 recipient_id,
                 amount,
                 fee,
+                safe_deposit,
             } => near_bridge_client.get_deposit_msg_for_omni_bridge(
                 recipient_id,
                 amount,
@@ -1736,8 +1737,8 @@ impl OmniConnector {
                         recipient_id,
                         amount,
                         fee,
+                        safe_deposit,
                     },
-                    safe_deposit,
                     transaction_options,
                 )
                 .await

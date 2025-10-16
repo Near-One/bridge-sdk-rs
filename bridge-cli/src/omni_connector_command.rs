@@ -894,8 +894,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         recipient_id,
                         amount,
                         fee,
+                        safe_deposit: safe_deposit_msg.map(|msg| SafeDepositMsg { msg }),
                     },
-                    safe_deposit_msg.map(|msg| SafeDepositMsg { msg }),
                     TransactionOptions::default(),
                 )
                 .await
