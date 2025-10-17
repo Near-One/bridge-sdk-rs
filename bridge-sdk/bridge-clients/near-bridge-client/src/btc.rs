@@ -48,6 +48,27 @@ pub enum VUTXO {
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct OriginalStatePartial {
+    #[serde_as(as = "DisplayFromStr")]
+    pub subsidize_amount: u128,
+}
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub enum PendingInfoStatePartial {
+    WithdrawOriginal(OriginalStatePartial),
+}
+
+impl PendingInfoStatePartial {
+    pub fn get_subsidy_amount(&self) -> u128 {
+        match self {
+            PendingInfoStatePartial::WithdrawOriginal(original_state) => {
+                original_state.subsidize_amount
+            }
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct BTCPendingInfoPartial {
     pub account_id: AccountId,
     pub btc_pending_id: String,
@@ -63,6 +84,7 @@ pub struct BTCPendingInfoPartial {
     pub burn_amount: u128,
     pub tx_bytes_with_sign: Option<Vec<u8>>,
     pub vutxos: Vec<VUTXO>,
+    pub state: PendingInfoStatePartial,
 }
 
 #[serde_as]

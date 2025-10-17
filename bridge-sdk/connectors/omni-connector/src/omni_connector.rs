@@ -849,10 +849,17 @@ impl OmniConnector {
         .map_err(|e| BridgeSdkError::BtcClientError(format!("Amount conversion error: {e}")))?;
 
         let old_gas = btc_tx_info.btc_pending_info.gas_fee;
+        let subsidy_amount = btc_tx_info.btc_pending_info.state.get_subsidy_amount();
 
         let gas_diff = gas_fee
             .checked_sub(old_gas.try_into().unwrap())
             .ok_or_else(|| BridgeSdkError::InvalidArgument("New gas is too small".to_string()))?;
+
+        let amount_to_transfer = gas_diff
+            .checked_sub(subsidy_amount.try_into().unwrap())
+            .ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Subsidy amount already cover gas_diff".to_string())
+            })?;
 
         let outs = utxo_utils::get_tx_outs_script_pubkey(
             btc_tx_info.target_address_script_pubkey,
@@ -875,7 +882,7 @@ impl OmniConnector {
         )?;
 
         near_bridge_client
-            .btc_subsidize_rbf(btc_tx_hash, outs, gas_diff, transaction_options)
+            .btc_subsidize_rbf(btc_tx_hash, outs, amount_to_transfer, transaction_options)
             .await
     }
 
