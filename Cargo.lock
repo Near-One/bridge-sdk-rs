@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.15"
+version = "0.3.16"
 dependencies = [
  "clap",
  "dotenv",
@@ -4422,7 +4422,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bitcoin",
  "borsh 1.5.7",

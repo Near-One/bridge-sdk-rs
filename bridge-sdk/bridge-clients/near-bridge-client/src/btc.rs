@@ -178,7 +178,7 @@ pub struct NearToBtcTransferInfo {
 
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 enum UTXOChainMsg {
-    V0 { max_fee: u64 },
+    MaxGasFee(u64),
 }
 
 impl NearBridgeClient {
@@ -870,9 +870,7 @@ impl NearBridgeClient {
             None
         } else {
             let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(msg)?;
-            let max_fee = match utxo_chain_extra_info {
-                UTXOChainMsg::V0 { max_fee } => max_fee,
-            };
+            let UTXOChainMsg::MaxGasFee(max_fee) = utxo_chain_extra_info;
             Some(max_fee)
         };
 
