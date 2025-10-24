@@ -363,7 +363,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling `verify_deposit` on the BTC connector contract.
+    /// Finalizes a BTC transfer by calling `verify_deposit`\`verify_safe_deposit` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
@@ -384,7 +384,7 @@ impl NearBridgeClient {
                 amount if amount > 0 => {
                     self.storage_deposit_for_token(
                         self.utxo_chain_token(chain)?,
-                        self.account_id()?,
+                        args.deposit_msg.recipient_id.clone(),
                         amount,
                         transaction_options.clone(),
                     )
