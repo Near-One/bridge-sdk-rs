@@ -91,9 +91,11 @@ pub enum OmniConnectorSubCommand {
     #[clap(about = "Deposit storage for a token on NEAR")]
     NearStorageDeposit {
         #[clap(short, long, help = "Token to deposit storage for")]
-        token: String,
+        token: AccountId,
         #[clap(short, long, help = "Amount to deposit")]
         amount: u128,
+        #[clap(short, long, help = "Account to deposit storage for")]
+        account_id: AccountId,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -529,10 +531,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::NearStorageDeposit {
             token,
             amount,
+            account_id,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_storage_deposit_for_token(token, amount, TransactionOptions::default())
+                .near_storage_deposit_for_token(
+                    token,
+                    amount,
+                    account_id,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }
@@ -868,10 +876,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        fee,
-                    },
+                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
                     TransactionOptions::default(),
                 )
                 .await
@@ -1002,17 +1007,25 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         (
             ChainKind::Zcash,
             UTXOChainAccounts {
-                utxo_chain_connector: combined_config.zcash_connector,
-                utxo_chain_token: combined_config.zcash,
+                utxo_chain_connector: combined_config
+                    .zcash_connector
+                    .map(|account| account.parse().unwrap()),
+                utxo_chain_token: combined_config
+                    .zcash
+                    .map(|account| account.parse().unwrap()),
                 satoshi_relayer: None,
             },
         ),
         (
             ChainKind::Btc,
             UTXOChainAccounts {
-                utxo_chain_connector: combined_config.btc_connector,
-                utxo_chain_token: combined_config.btc,
-                satoshi_relayer: combined_config.satoshi_relayer,
+                utxo_chain_connector: combined_config
+                    .btc_connector
+                    .map(|account| account.parse().unwrap()),
+                utxo_chain_token: combined_config.btc.map(|account| account.parse().unwrap()),
+                satoshi_relayer: combined_config
+                    .satoshi_relayer
+                    .map(|account| account.parse().unwrap()),
             },
         ),
     ]);
@@ -1020,8 +1033,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let near_bridge_client = NearBridgeClientBuilder::default()
         .endpoint(combined_config.near_rpc.clone())
         .private_key(combined_config.near_private_key)
-        .signer(combined_config.near_signer)
-        .omni_bridge_id(combined_config.near_token_locker_id)
+        .signer(
+            combined_config
+                .near_signer
+                .map(|account| account.parse().unwrap()),
+        )
+        .omni_bridge_id(
+            combined_config
+                .near_token_locker_id
+                .map(|account| account.parse().unwrap()),
+        )
         .utxo_bridges(utxo_bridges)
         .build()
         .unwrap();
