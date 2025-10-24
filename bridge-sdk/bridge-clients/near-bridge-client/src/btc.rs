@@ -393,7 +393,7 @@ impl NearBridgeClient {
                     transaction_options.nonce = transaction_options.nonce.map(|nonce| nonce + 1);
                 }
                 _ => {}
-            };
+            }
 
             (
                 "safe_verify_deposit".to_string(),
