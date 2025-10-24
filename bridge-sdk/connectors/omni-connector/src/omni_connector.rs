@@ -346,13 +346,14 @@ impl OmniConnector {
 
     pub async fn near_storage_deposit_for_token(
         &self,
-        token_id: String,
+        token_id: AccountId,
         amount: u128,
+        account_id: AccountId,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .storage_deposit_for_token(token_id, amount, transaction_options)
+            .storage_deposit_for_token(token_id, account_id, amount, transaction_options)
             .await
     }
 
@@ -484,10 +485,9 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
-            BtcDepositArgs::OmniDepositArgs {
-                recipient_id,
-                fee,
-            } => near_bridge_client.get_deposit_msg_for_omni_bridge(recipient_id, fee)?,
+            BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
+                near_bridge_client.get_deposit_msg_for_omni_bridge(recipient_id, fee)?
+            }
         };
 
         let args = FinBtcTransferArgs {
@@ -1718,10 +1718,7 @@ impl OmniConnector {
                     ChainKind::Btc,
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        fee,
-                    },
+                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
                     transaction_options,
                 )
                 .await

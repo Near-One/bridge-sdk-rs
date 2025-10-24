@@ -363,17 +363,38 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling `verify_deposit` on the BTC connector contract.
+    /// Finalizes a BTC transfer by calling `verify_deposit` or `verify_safe_deposit` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
         chain: ChainKind,
         args: FinBtcTransferArgs,
-        transaction_options: TransactionOptions,
+        mut transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
         let (method_name, deposit) = if args.deposit_msg.safe_deposit.is_some() {
+            match self
+                .get_required_storage_deposit(
+                    self.utxo_chain_token(chain)?,
+                    args.deposit_msg.recipient_id.clone(),
+                )
+                .await?
+            {
+                amount if amount > 0 => {
+                    self.storage_deposit_for_token(
+                        self.utxo_chain_token(chain)?,
+                        args.deposit_msg.recipient_id.clone(),
+                        amount,
+                        transaction_options.clone(),
+                    )
+                    .await?;
+
+                    transaction_options.nonce = transaction_options.nonce.map(|nonce| nonce + 1);
+                }
+                _ => {}
+            }
+
             (
                 "safe_verify_deposit".to_string(),
                 BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
@@ -922,11 +943,11 @@ impl NearBridgeClient {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "BTC Connector account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
+            ))
             .map_err(|_| {
                 BridgeSdkError::ConfigError("Invalid btc connector account id".to_string())
             })
+            .cloned()
     }
 
     pub fn utxo_chain_token(&self, chain: ChainKind) -> Result<AccountId> {
@@ -939,9 +960,9 @@ impl NearBridgeClient {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Bitcoin account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
+            ))
             .map_err(|_| BridgeSdkError::ConfigError("Invalid bitcoin account id".to_string()))
+            .cloned()
     }
 
     pub fn satoshi_relayer(&self, chain: ChainKind) -> Result<AccountId> {
@@ -954,10 +975,10 @@ impl NearBridgeClient {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Satoshi Relayer account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
+            ))
             .map_err(|_| {
                 BridgeSdkError::ConfigError("Invalid Satoshi Relayer account id".to_string())
             })
+            .cloned()
     }
 }
