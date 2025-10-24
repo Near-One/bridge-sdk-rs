@@ -369,7 +369,7 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         args: FinBtcTransferArgs,
-        transaction_options: TransactionOptions,
+        mut transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
@@ -389,6 +389,8 @@ impl NearBridgeClient {
                         transaction_options.clone(),
                     )
                     .await?;
+
+                    transaction_options.nonce = transaction_options.nonce.map(|nonce| nonce + 1);
                 }
                 _ => {}
             };
