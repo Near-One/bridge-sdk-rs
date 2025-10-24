@@ -363,7 +363,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling `verify_deposit`\`verify_safe_deposit` on the BTC connector contract.
+    /// Finalizes a BTC transfer by calling `verify_deposit` or `verify_safe_deposit` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,
