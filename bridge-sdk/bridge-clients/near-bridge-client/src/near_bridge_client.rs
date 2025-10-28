@@ -745,23 +745,11 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self.get_required_balance_for_fast_fin_transfer().await?
-            + args.storage_deposit_amount.unwrap_or(0);
-
-        let nonce = if self
-            .deposit_storage_if_required(required_balance, transaction_options.clone())
-            .await?
-        {
-            transaction_options.nonce.map(|nonce| nonce + 1)
-        } else {
-            transaction_options.nonce
-        };
-
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
-                nonce,
+                nonce: transaction_options.nonce,
                 receiver_id: args.token_id,
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
