@@ -486,7 +486,7 @@ impl OmniConnector {
             .get_total_confirmations(chain, amount)
             .await?;
 
-        if proof_data.block_height > light_client_last_block + u64::from(confirmations) {
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -535,7 +535,7 @@ impl OmniConnector {
             .get_total_confirmations(chain, amount)
             .await?;
 
-        if proof_data.block_height > light_client_last_block + u64::from(confirmations) {
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -588,7 +588,7 @@ impl OmniConnector {
             .get_total_confirmations(chain, amount)
             .await?;
 
-        if proof_data.block_height > light_client_last_block + u64::from(confirmations) {
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
