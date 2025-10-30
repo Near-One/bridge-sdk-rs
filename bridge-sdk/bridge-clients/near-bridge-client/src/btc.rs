@@ -700,14 +700,18 @@ impl NearBridgeClient {
     pub async fn get_total_confirmations(&self, chain: ChainKind, amount: u128) -> Result<u8> {
         let config = self.get_config(chain).await?;
 
-        let mut total_confirmations = 0;
+        let mut total_confirmations = None;
+        let mut max_confirmations = 0;
         for (upper_limit, confirmations) in config.confirmations_strategy {
-            if amount <= upper_limit.parse::<u128>().unwrap_or_default() {
-                total_confirmations = total_confirmations.max(confirmations);
+            if amount < upper_limit.parse::<u128>().unwrap_or_default() {
+                total_confirmations = Some(total_confirmations.unwrap_or(0).max(confirmations));
             }
+            max_confirmations = max(max_confirmations, confirmations);
         }
 
-        Ok(total_confirmations.saturating_add(config.confirmations_delta))
+        Ok(total_confirmations
+            .unwrap_or(max_confirmations)
+            .saturating_add(config.confirmations_delta))
     }
 
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
