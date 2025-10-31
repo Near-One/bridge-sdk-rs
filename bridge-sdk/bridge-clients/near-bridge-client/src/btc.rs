@@ -704,7 +704,7 @@ impl NearBridgeClient {
             .confirmations_strategy
             .values()
             .max()
-            .cloned()
+            .copied()
             .unwrap_or(0)
             + config.confirmations_delta)
     }
