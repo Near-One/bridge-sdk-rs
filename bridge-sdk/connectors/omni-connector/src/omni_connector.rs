@@ -478,13 +478,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let amount = near_bridge_client
-            .get_btc_pending_info(chain, tx_hash.clone())
-            .await?
-            .transfer_amount;
-        let confirmations = near_bridge_client
-            .get_total_confirmations(chain, amount)
-            .await?;
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
 
         if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
@@ -527,13 +521,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let amount = near_bridge_client
-            .get_btc_pending_info(chain, tx_hash.clone())
-            .await?
-            .transfer_amount;
-        let confirmations = near_bridge_client
-            .get_total_confirmations(chain, amount)
-            .await?;
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
 
         if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
@@ -580,13 +568,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let amount = near_bridge_client
-            .get_btc_pending_info(chain, tx_hash.clone())
-            .await?
-            .transfer_amount;
-        let confirmations = near_bridge_client
-            .get_total_confirmations(chain, amount)
-            .await?;
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
 
         if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
