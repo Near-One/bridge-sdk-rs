@@ -724,7 +724,14 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, gas_fee) = self
-            .extract_utxo(chain, recipient.clone(), amount - fee, fee_rate)
+            .extract_utxo(
+                chain,
+                recipient.clone(),
+                amount.checked_sub(fee).ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
+                })?,
+                fee_rate,
+            )
             .await?;
 
         let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {
