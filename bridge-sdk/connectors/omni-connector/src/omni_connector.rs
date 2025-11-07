@@ -471,18 +471,21 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height > light_client_last_block {
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
+
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
         }
 
-        let near_bridge_client = self.near_bridge_client()?;
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
@@ -511,18 +514,21 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height > light_client_last_block {
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
+
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
         }
 
-        let near_bridge_client = self.near_bridge_client()?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
             tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -555,18 +561,21 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        if proof_data.block_height > light_client_last_block {
+        let confirmations = near_bridge_client.get_confirmations(chain).await?;
+
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
         }
 
-        let near_bridge_client = self.near_bridge_client()?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
             tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -715,7 +724,14 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, gas_fee) = self
-            .extract_utxo(chain, recipient.clone(), amount - fee, fee_rate)
+            .extract_utxo(
+                chain,
+                recipient.clone(),
+                amount.checked_sub(fee).ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
+                })?,
+                fee_rate,
+            )
             .await?;
 
         let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {

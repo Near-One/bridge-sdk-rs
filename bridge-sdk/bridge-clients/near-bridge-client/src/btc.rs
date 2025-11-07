@@ -160,6 +160,8 @@ struct PartialConfig {
     max_active_utxo_management_output_number: u8,
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
+    confirmations_strategy: HashMap<String, u8>,
+    confirmations_delta: u8,
 }
 
 #[serde_as]
@@ -693,6 +695,18 @@ impl NearBridgeClient {
     pub async fn get_min_deposit_amount(&self, chain: ChainKind) -> Result<u128> {
         let config = self.get_config(chain).await?;
         Ok(config.min_deposit_amount)
+    }
+
+    pub async fn get_confirmations(&self, chain: ChainKind) -> Result<u8> {
+        let config = self.get_config(chain).await?;
+
+        Ok(config
+            .confirmations_strategy
+            .values()
+            .max()
+            .copied()
+            .unwrap_or(0)
+            + config.confirmations_delta)
     }
 
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
