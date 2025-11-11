@@ -1,6 +1,6 @@
 [package]
 name = "bridge-cli"
-version = "0.3.21"
+version = "0.3.22"
 edition = "2021"
 repository = "https://github.com/Near-One/bridge-sdk-rs"
 
