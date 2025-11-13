@@ -7,6 +7,7 @@ use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_sdk::json_types::U128;
+use near_sdk::json_types::U64;
 use omni_types::ChainKind;
 use omni_types::{OmniAddress, TransferId};
 use serde_json::{json, Value};
@@ -180,7 +181,7 @@ pub struct NearToBtcTransferInfo {
 
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 enum UTXOChainMsg {
-    MaxGasFee(u64),
+    MaxGasFee(U64),
 }
 
 impl NearBridgeClient {
@@ -885,7 +886,7 @@ impl NearBridgeClient {
         } else {
             let utxo_chain_extra_info: UTXOChainMsg = serde_json::from_str(msg)?;
             let UTXOChainMsg::MaxGasFee(max_fee) = utxo_chain_extra_info;
-            Some(max_fee)
+            Some(max_fee.0)
         };
 
         Ok(NearToBtcTransferInfo {
