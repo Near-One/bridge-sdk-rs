@@ -755,7 +755,7 @@ impl NearBridgeClient {
                             "utxo_id": "{{UTXO_TX_ID}}",
                             "recipient": recipient_id.to_string(),
                             "relayer_fee": fee.to_string(),
-                            "msg": "0",
+                            "msg": "",
                         }
                     })
                     .to_string(),
