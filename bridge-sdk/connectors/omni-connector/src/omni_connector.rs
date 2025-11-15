@@ -740,9 +740,7 @@ impl OmniConnector {
                     "Estimated gas fee = {gas_fee}, but max gas fee = {max_gas_fee}"
                 )));
             }
-            Some(near_sdk::json_types::U128::from(<u64 as Into<u128>>::into(
-                max_gas_fee,
-            )))
+            Some(near_sdk::json_types::U128::from(u128::from(max_gas_fee)))
         } else {
             None
         };
