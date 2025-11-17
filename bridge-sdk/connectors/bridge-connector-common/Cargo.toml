@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 thiserror.workspace = true
-ethers.workspace = true
+alloy.workspace = true
 serde_json.workspace = true
 solana-client.workspace = true
 eth-proof = { path = "../../eth-proof" }

@@ -1,9 +1,7 @@
 use eth_proof::{EthClientError, EthProofError};
-use ethers::{
-    contract::ContractError,
-    middleware::SignerMiddleware,
-    providers::{Http, Provider, ProviderError},
-    signers::LocalWallet,
+use alloy::{
+    contract::Error as ContractError,
+    transports::{TransportError, RpcError},
 };
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
@@ -76,10 +74,10 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
 #[derive(thiserror::Error, Debug)]
 #[error("{0}")]
 pub enum EthRpcError {
-    SignerContractError(#[source] ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>),
-    ProviderContractError(#[source] ContractError<Provider<Http>>),
+    ContractError(#[source] ContractError),
     EthClientError(#[source] EthClientError),
-    ProviderError(#[source] ProviderError),
+    RpcError(#[source] RpcError<TransportError>),
+    TransportError(#[source] TransportError),
 }
 
 impl From<EthProofError> for BridgeSdkError {
@@ -92,15 +90,21 @@ impl From<EthProofError> for BridgeSdkError {
     }
 }
 
-impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for BridgeSdkError {
-    fn from(error: ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>) -> Self {
-        Self::EthRpcError(EthRpcError::SignerContractError(error))
+impl From<ContractError> for BridgeSdkError {
+    fn from(error: ContractError) -> Self {
+        Self::EthRpcError(EthRpcError::ContractError(error))
     }
 }
 
-impl From<ProviderError> for BridgeSdkError {
-    fn from(error: ProviderError) -> Self {
-        Self::EthRpcError(EthRpcError::ProviderError(error))
+impl From<RpcError<TransportError>> for BridgeSdkError {
+    fn from(error: RpcError<TransportError>) -> Self {
+        Self::EthRpcError(EthRpcError::RpcError(error))
+    }
+}
+
+impl From<TransportError> for BridgeSdkError {
+    fn from(error: TransportError) -> Self {
+        Self::EthRpcError(EthRpcError::TransportError(error))
     }
 }
 

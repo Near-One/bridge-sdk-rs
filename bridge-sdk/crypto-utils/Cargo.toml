@@ -6,5 +6,5 @@ edition = "2021"
 [dependencies]
 near-crypto.workspace = true
 crypto-shared.workspace = true
-ethers.workspace = true
+k256.workspace = true
 near-primitives.workspace = true
