@@ -4,9 +4,8 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use alloy::{
     primitives::{Address, TxHash, U256, Bytes},
-    providers::{Provider, ProviderBuilder, RootProvider},
-    network::EthereumWallet,
-    transports::http::{Client, Http},
+    providers::{Provider, ProviderBuilder},
+    network::{EthereumWallet, Ethereum},
     sol,
     signers::local::PrivateKeySigner,
     sol_types::SolEvent,
@@ -68,9 +67,6 @@ sol! {
     }
 }
 
-// Type alias for simple provider
-type SimpleProvider = RootProvider<Http<Client>>;
-
 /// Bridging NEAR-originated NEP-141 tokens to EVM and back
 #[derive(Builder, Default, Clone)]
 pub struct EvmBridgeClient {
@@ -130,7 +126,7 @@ impl EvmBridgeClient {
         let provider = self.provider()?;
 
         let block = provider
-            .get_block_by_number(alloy::eips::BlockNumberOrTag::Latest, alloy::rpc::types::BlockTransactionsKind::Hashes)
+            .get_block_by_number(alloy::eips::BlockNumberOrTag::Latest)
             .await
             .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get block: {e}")))?
             .ok_or_else(|| {
@@ -149,7 +145,7 @@ impl EvmBridgeClient {
         let is_finalised = omni_bridge.completedTransfers(nonce).call().await
             .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
 
-        Ok(is_finalised._0)
+        Ok(is_finalised)
     }
 
     /// Logs an ERC-20 token metadata
@@ -268,7 +264,7 @@ impl EvmBridgeClient {
                 .call().await?;
 
             let amount_u256 = U256::from(amount);
-            if allowance_result.remaining < amount_u256 {
+            if allowance_result < amount_u256 {
                 let mut approval_call = erc20.approve(omni_bridge_address, amount_u256);
                 if let Some(nonce) = tx_nonce {
                     approval_call = approval_call.nonce(nonce.to::<u64>());
@@ -474,7 +470,7 @@ impl EvmBridgeClient {
             ),
         };
 
-        let decoded = OmniBridge::InitTransfer::decode_log(&log_data, true)
+        let decoded = OmniBridge::InitTransfer::decode_log(&log_data)
             .map_err(|err| {
                 BridgeSdkError::UnknownError(format!("Failed to decode event log: {err}"))
             })?;
@@ -527,15 +523,16 @@ impl EvmBridgeClient {
             })
     }
 
-    fn provider(&self) -> Result<SimpleProvider> {
+    fn provider(&self) -> Result<impl Provider<Ethereum>> {
         let endpoint = self.endpoint()?;
+        let url = endpoint.parse()
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
         let provider = ProviderBuilder::new()
-            .on_http(endpoint.parse()
-                .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?);
+            .on_http(url);
         Ok(provider)
     }
 
-    async fn signer_provider(&self) -> Result<impl Provider<Http<Client>>> {
+    async fn signer_provider(&self) -> Result<impl Provider<Ethereum>> {
         let endpoint = self.endpoint()?;
         let private_key = self.private_key.as_ref()
             .ok_or(BridgeSdkError::ConfigError("EVM private key is not set".to_string()))?;
@@ -543,11 +540,11 @@ impl EvmBridgeClient {
         let signer = PrivateKeySigner::from_str(private_key)
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM private key".to_string()))?;
         
+        let url = endpoint.parse()
+            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
         let provider = ProviderBuilder::new()
-            .with_recommended_fillers()
             .wallet(EthereumWallet::from(signer))
-            .on_http(endpoint.parse()
-                .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?);
+            .on_http(url);
         
         Ok(provider)
     }
@@ -564,11 +561,11 @@ impl EvmBridgeClient {
 
     async fn get_wormhole_fee<P>(&self, provider: &P) -> Result<U256> 
     where
-        P: Provider<Http<Client>>
+        P: Provider<Ethereum>
     {
         let wormhole_address = self.wormhole_core_address()?;
         let wormhole = WormholeCore::new(wormhole_address, provider);
         let fee = wormhole.messageFee().call().await?;
-        Ok(fee._0)
+        Ok(fee)
     }
 }
