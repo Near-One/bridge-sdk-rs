@@ -1,15 +1,14 @@
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr};
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use alloy::{
-    primitives::{Address, TxHash, U256, Bytes, B256, FixedBytes},
-    providers::{Provider, ProviderBuilder, PendingTransactionError},
+    primitives::{Address, TxHash, U256, Bytes},
+    providers::{Provider, ProviderBuilder, RootProvider},
     network::EthereumWallet,
     transports::http::{Client, Http},
     sol,
     signers::local::PrivateKeySigner,
-    contract::Error as ContractError,
     sol_types::SolEvent,
 };
 use ethereum_types::H256 as EthH256;
@@ -68,6 +67,9 @@ sol! {
         function messageFee() external view returns (uint256);
     }
 }
+
+// Type alias for simple provider
+type SimpleProvider = RootProvider<Http<Client>>;
 
 /// Bridging NEAR-originated NEP-141 tokens to EVM and back
 #[derive(Builder, Default, Clone)]
@@ -160,7 +162,7 @@ impl EvmBridgeClient {
         let provider = self.signer_provider().await?;
         let omni_bridge_address = self.omni_bridge_address()?;
         
-        let omni_bridge = OmniBridge::new(omni_bridge_address, provider.clone());
+        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
         let token_address = Address::from_slice(&address.0);
         
         let mut call_builder = omni_bridge.logMetadata(token_address);
@@ -216,7 +218,7 @@ impl EvmBridgeClient {
         let serialized_signature = signature.to_bytes();
         assert!(serialized_signature.len() == 65);
         
-        let omni_bridge = OmniBridge::new(omni_bridge_address, provider.clone());
+        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
         let mut call_builder = omni_bridge.deployToken(
             Bytes::from(serialized_signature.to_vec()), 
             payload
@@ -260,7 +262,7 @@ impl EvmBridgeClient {
         
         // Handle token approval if not native token
         if !token.is_zero() {
-            let erc20 = ERC20::new(token, provider.clone());
+            let erc20 = ERC20::new(token, &provider);
             
             let allowance_result = erc20.allowance(signer_address, omni_bridge_address)
                 .call().await?;
@@ -383,7 +385,7 @@ impl EvmBridgeClient {
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let omni_bridge = OmniBridge::new(omni_bridge_address, provider.clone());
+        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
         let mut call_builder = omni_bridge.finTransfer(
             Bytes::from(signature.to_bytes().to_vec()), 
             bridge_deposit
@@ -444,7 +446,7 @@ impl EvmBridgeClient {
             .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get receipt: {e}")))?
             .ok_or(BridgeSdkError::InvalidArgument("Transaction receipt not found".to_string()))?;
 
-        let event_signature = OmniBridge::InitTransfer::SIGNATURE;
+        let _event_signature = OmniBridge::InitTransfer::SIGNATURE;
         
         let rpc_log = receipt
             .inner
@@ -452,7 +454,9 @@ impl EvmBridgeClient {
             .iter()
             .find(|log| {
                 if let Some(topic) = log.topics().first() {
-                    topic == &event_signature
+                    // SIGNATURE is a &str constant, need to compare topics properly
+                    let sig_hash = alloy::primitives::keccak256(OmniBridge::InitTransfer::SIGNATURE.as_bytes());
+                    topic.0 == sig_hash.0
                 } else {
                     false
                 }
@@ -523,7 +527,7 @@ impl EvmBridgeClient {
             })
     }
 
-    fn provider(&self) -> Result<impl alloy::providers::Provider + Clone> {
+    fn provider(&self) -> Result<SimpleProvider> {
         let endpoint = self.endpoint()?;
         let provider = ProviderBuilder::new()
             .on_http(endpoint.parse()
@@ -531,7 +535,7 @@ impl EvmBridgeClient {
         Ok(provider)
     }
 
-    async fn signer_provider(&self) -> Result<impl alloy::providers::Provider + Clone> {
+    async fn signer_provider(&self) -> Result<impl Provider<Http<Client>>> {
         let endpoint = self.endpoint()?;
         let private_key = self.private_key.as_ref()
             .ok_or(BridgeSdkError::ConfigError("EVM private key is not set".to_string()))?;
@@ -558,7 +562,10 @@ impl EvmBridgeClient {
         Ok(signer.address())
     }
 
-    async fn get_wormhole_fee(&self, provider: &impl alloy::providers::Provider) -> Result<U256> {
+    async fn get_wormhole_fee<P>(&self, provider: &P) -> Result<U256> 
+    where
+        P: Provider<Http<Client>>
+    {
         let wormhole_address = self.wormhole_core_address()?;
         let wormhole = WormholeCore::new(wormhole_address, provider);
         let fee = wormhole.messageFee().call().await?;

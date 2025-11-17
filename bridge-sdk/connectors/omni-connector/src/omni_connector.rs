@@ -1039,7 +1039,7 @@ impl OmniConnector {
             ))
         })?;
         let token_address =
-            OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
+            OmniAddress::new_from_evm_address(chain_kind, H160(*transfer_event.token_address.0))
                 .map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Failed to parse token address: {}",
@@ -1511,7 +1511,7 @@ impl OmniConnector {
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
-                    transaction_options.nonce.map(std::convert::Into::into),
+                    transaction_options.nonce.map(U256::from),
                 )
                 .await
                 .map(|hash| hash.to_string()),
@@ -1990,7 +1990,7 @@ impl OmniConnector {
         let transfer_event = self.evm_get_transfer_event(chain, tx_hash).await?;
 
         let token_address =
-            OmniAddress::new_from_evm_address(chain, H160(transfer_event.token_address.0))
+            OmniAddress::new_from_evm_address(chain, H160(*transfer_event.token_address.0))
                 .map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Failed to parse token address: {}",
