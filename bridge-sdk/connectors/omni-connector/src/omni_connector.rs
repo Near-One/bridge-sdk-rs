@@ -1,6 +1,7 @@
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
+use ethers::abi::AbiEncode;
 use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
@@ -1018,81 +1019,81 @@ impl OmniConnector {
         storage_deposit_amount: Option<u128>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        if let ChainKind::Sol | ChainKind::Near = chain_kind {
+        let near_bridge_client = self.near_bridge_client()?;
+        let relayer = near_bridge_client.account_id()?;
+
+        let fast_fin_tf_args = if chain_kind.is_evm_chain() {
+            let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {e}"))
+            })?;
+            let transfer_event = self.evm_get_transfer_event(chain_kind, tx_hash).await?;
+
+            let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to parse recipient: {}",
+                    transfer_event.recipient
+                ))
+            })?;
+            let token_address =
+                OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
+                    .map_err(|_| {
+                        BridgeSdkError::InvalidArgument(format!(
+                            "Failed to parse token address: {}",
+                            transfer_event.token_address
+                        ))
+                    })?;
+
+            let token_id = near_bridge_client
+                .get_token_id(token_address.clone())
+                .await?;
+
+            if transfer_event.amount < transfer_event.fee {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Transfer amount is less than fee: {} < {}",
+                    transfer_event.amount, transfer_event.fee
+                )));
+            }
+
+            let decimals = self.near_get_token_decimals(token_address).await?;
+            let amount_to_send =
+                self.denormalize_amount(&decimals, transfer_event.amount - transfer_event.fee)?;
+            let balance = near_bridge_client
+                .ft_balance_of(token_id.clone(), relayer.clone())
+                .await?;
+
+            if balance < amount_to_send {
+                return Err(BridgeSdkError::InsufficientBalance(format!(
+                    "Insufficient balance for fast transfer: {balance} < {amount_to_send}",
+                )));
+            }
+
+            near_bridge_client::FastFinTransferArgs {
+                token_id,
+                amount_to_send,
+                recipient,
+                amount: transfer_event.amount,
+                fee: Fee {
+                    fee: transfer_event.fee.into(),
+                    native_fee: transfer_event.native_token_fee.into(),
+                },
+                transfer_id: omni_types::TransferId {
+                    origin_chain: chain_kind,
+                    origin_nonce: transfer_event.origin_nonce,
+                },
+                msg: transfer_event.message,
+                storage_deposit_amount,
+                relayer,
+            }
+        } else if chain_kind.is_utxo_chain() {
+            todo!()
+        } else {
             return Err(BridgeSdkError::ConfigError(format!(
                 "Fast transfer is not supported for chain kind: {chain_kind:?}"
             )));
-        }
-
-        let near_bridge_client = self.near_bridge_client()?;
-
-        let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
-            BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {e}"))
-        })?;
-
-        let transfer_event = self.evm_get_transfer_event(chain_kind, tx_hash).await?;
-
-        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
-            BridgeSdkError::InvalidArgument(format!(
-                "Failed to parse recipient: {}",
-                transfer_event.recipient
-            ))
-        })?;
-        let token_address =
-            OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
-                .map_err(|_| {
-                    BridgeSdkError::InvalidArgument(format!(
-                        "Failed to parse token address: {}",
-                        transfer_event.token_address
-                    ))
-                })?;
-
-        let token_id = near_bridge_client
-            .get_token_id(token_address.clone())
-            .await?;
-
-        if transfer_event.amount < transfer_event.fee {
-            return Err(BridgeSdkError::InvalidArgument(format!(
-                "Transfer amount is less than fee: {} < {}",
-                transfer_event.amount, transfer_event.fee
-            )));
-        }
-
-        let relayer = near_bridge_client.account_id()?;
-        let decimals = self.near_get_token_decimals(token_address).await?;
-        let amount_to_send =
-            self.denormalize_amount(&decimals, transfer_event.amount - transfer_event.fee)?;
-        let balance = near_bridge_client
-            .ft_balance_of(token_id.clone(), relayer)
-            .await?;
-
-        if balance < amount_to_send {
-            return Err(BridgeSdkError::InsufficientBalance(format!(
-                "Insufficient balance for fast transfer: {balance} < {amount_to_send}",
-            )));
-        }
+        };
 
         near_bridge_client
-            .fast_fin_transfer(
-                near_bridge_client::FastFinTransferArgs {
-                    token_id,
-                    amount_to_send,
-                    recipient,
-                    amount: transfer_event.amount,
-                    fee: Fee {
-                        fee: transfer_event.fee.into(),
-                        native_fee: transfer_event.native_token_fee.into(),
-                    },
-                    transfer_id: omni_types::TransferId {
-                        origin_chain: chain_kind,
-                        origin_nonce: transfer_event.origin_nonce,
-                    },
-                    msg: transfer_event.message,
-                    storage_deposit_amount,
-                    relayer: near_bridge_client.signer()?.account_id,
-                },
-                transaction_options,
-            )
+            .fast_fin_transfer(fast_fin_tf_args, transaction_options)
             .await
     }
 
@@ -1744,7 +1745,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(|tx_hash| tx_hash.encode_hex()),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1752,7 +1753,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(|tx_hash| tx_hash.encode_hex()),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,
