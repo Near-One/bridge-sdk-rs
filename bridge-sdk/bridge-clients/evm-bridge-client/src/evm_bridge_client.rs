@@ -557,11 +557,11 @@ impl EvmBridgeClient {
 
         tx.max_priority_fee_per_gas = tx
             .max_priority_fee_per_gas
-            .map(|fee| fee / 10);
+            .map(|fee| fee / 100);
 
         tx.max_fee_per_gas = tx
             .max_fee_per_gas
-            .map(|fee| fee / 10);
+            .map(|fee| fee / 100);
 
         Ok(())
     }
