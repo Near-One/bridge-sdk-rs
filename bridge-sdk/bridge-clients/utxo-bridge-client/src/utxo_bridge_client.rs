@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::{marker::PhantomData, str::FromStr};
 
 use crate::error::UtxoClientError;
-use crate::types::{TxProof, UTXOChain, UTXOChainBlock};
+use crate::types::{TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeTransactionData};
 
 pub mod error;
 pub mod types;
@@ -64,57 +64,23 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         &self,
         tx_hash: &str,
     ) -> Result<BlockHash, UtxoClientError> {
-        let args = if T::is_zcash() {
-            json!([tx_hash, 1])
-        } else {
-            json!([tx_hash, true])
-        };
-
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "getrawtransaction",
-                "params": args
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to send getrawtransaction request: {e}"))
-            })?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to read getrawtransaction response: {e}"))
-            })?;
-
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to read getrawtransaction. Response: {response_text}"
-            ))
-        })?;
-
-        let result: Value = serde_json::from_value(response["result"].clone()).map_err(|e| {
-            UtxoClientError::RpcError(format!(
-                "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
-            ))
-        })?;
+        let result = self.get_raw_transaction(tx_hash).await?;
 
         let hash_str = result["blockhash"].as_str().ok_or_else(|| {
             UtxoClientError::RpcError(format!(
-                "Block hash not found in transaction data. Response: {response_text}"
+                "Block hash not found in transaction data. Data: {}",
+                result.to_string()
             ))
         })?;
 
-        let receipt = BlockHash::from_str(hash_str).map_err(|e| {
+        let block_hash = BlockHash::from_str(hash_str).map_err(|e| {
             UtxoClientError::RpcError(format!(
-                "Block hash parsing error: {e}. Response: {response_text}"
+                "Block hash parsing error: {e}. Data: {}",
+                result.to_string()
             ))
         })?;
 
-        Ok(receipt)
+        Ok(block_hash)
     }
 
     pub async fn get_block_height_by_block_hash(
@@ -158,6 +124,57 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         })?;
 
         Ok(block_height)
+    }
+
+    pub async fn get_bridge_transaction_data(
+        &self,
+        tx_hash: &str,
+        deposit_address: &str,
+    ) -> Result<UtxoBridgeTransactionData, UtxoClientError> {
+        let result = self.get_raw_transaction(tx_hash).await?;
+
+        let vout = result["vout"].as_array().ok_or_else(|| {
+            UtxoClientError::RpcError(format!(
+                "vout not found in transaction data. Data: {}",
+                result.to_string()
+            ))
+        })?;
+
+        let (output_index, output) = vout
+            .iter()
+            .enumerate()
+            .find(|(_, output)| {
+                output["scriptPubKey"]["address"]
+                    .as_str()
+                    .map(|addr| addr == deposit_address)
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| {
+                UtxoClientError::RpcError(format!(
+                    "No output found for deposit_address address: {}",
+                    deposit_address
+                ))
+            })?;
+
+        let amount_btc = output["value"].as_f64().ok_or_else(|| {
+            UtxoClientError::RpcError(format!(
+                "Amount not found in output. Transaction data: {}",
+                result.to_string()
+            ))
+        })?;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let amount = (amount_btc * 100_000_000.0) as u64;
+
+        let vout: u32 = output_index.try_into().map_err(|_| {
+            UtxoClientError::RpcError(format!("Output index too large: {}", output_index))
+        })?;
+
+        Ok(UtxoBridgeTransactionData {
+            deposit_address: deposit_address.to_string(),
+            amount,
+            tx_hash: tx_hash.to_string(),
+            vout,
+        })
     }
 
     pub async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof, UtxoClientError> {
@@ -307,5 +324,45 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         })?;
 
         Ok(result)
+    }
+
+    async fn get_raw_transaction(&self, tx_hash: &str) -> Result<Value, UtxoClientError> {
+        let args = if T::is_zcash() {
+            json!([tx_hash, 1])
+        } else {
+            json!([tx_hash, true])
+        };
+
+        let response_text = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "getrawtransaction",
+                "params": args
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                UtxoClientError::RpcError(format!("Failed to send getrawtransaction request: {e}"))
+            })?
+            .text()
+            .await
+            .map_err(|e| {
+                UtxoClientError::RpcError(format!("Failed to read getrawtransaction response: {e}"))
+            })?;
+
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+            UtxoClientError::RpcError(format!(
+                "Failed to read getrawtransaction. Response: {response_text}"
+            ))
+        })?;
+
+        serde_json::from_value(response["result"].clone()).map_err(|e| {
+            UtxoClientError::RpcError(format!(
+                "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
+            ))
+        })
     }
 }
