@@ -325,18 +325,19 @@ impl EvmBridgeClient {
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
 
         let rand = rand::random::<u32>();
-        println!("Random value: {}", rand);
-        if rand % 2 == 0 {
-            println!("Actually sending the transaction");
-            let _ = call.send().await?;
+        let tx_hash = if rand % 2 == 0 {
+            let tx = call.send().await?;
+            tx.tx_hash()
+        } else {
+            call.tx.sighash()
         }
 
         tracing::info!(
-            tx_hash = format!("{:?}", call.tx.sighash()),
+            tx_hash = format!("{:?}", tx_hash),
             "Sent finalize transfer transaction"
         );
 
-        Ok(call.tx.sighash())
+        Ok(tx_hash)
     }
 
     pub async fn get_proof_for_event(
