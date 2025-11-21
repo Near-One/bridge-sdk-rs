@@ -159,7 +159,7 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer from Utxo chain on NEAR ")]
+    #[clap(about = "Finalize a transfer from Utxo chain on NEAR")]
     NearFastFinTransferFromUtxo {
         #[clap(short, long, help = "Origin chain of the transfer")]
         chain: ChainKind,
