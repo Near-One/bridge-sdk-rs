@@ -325,7 +325,9 @@ impl EvmBridgeClient {
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
 
         let rand = rand::random::<u32>();
+        println!("Random value: {}", rand);
         if rand % 2 == 0 {
+            println!("Actually sending the transaction");
             let _ = call.send().await?;
         }
 
