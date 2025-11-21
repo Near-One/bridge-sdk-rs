@@ -323,7 +323,11 @@ impl EvmBridgeClient {
         }
 
         self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
-        // let tx = call.send().await?;
+
+        let rand = rand::random::<u32>();
+        if rand % 2 == 0 {
+            let _ = call.send().await?;
+        }
 
         tracing::info!(
             tx_hash = format!("{:?}", call.tx.sighash()),
