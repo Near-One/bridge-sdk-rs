@@ -151,7 +151,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             })
             .ok_or_else(|| {
                 UtxoClientError::RpcError(format!(
-                    "No output found for deposit_address address: {}",
+                    "No output found for deposit_address: {}",
                     deposit_address
                 ))
             })?;
