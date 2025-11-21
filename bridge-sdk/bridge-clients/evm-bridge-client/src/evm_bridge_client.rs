@@ -330,7 +330,7 @@ impl EvmBridgeClient {
             tx.tx_hash()
         } else {
             call.tx.sighash()
-        }
+        };
 
         tracing::info!(
             tx_hash = format!("{:?}", tx_hash),
