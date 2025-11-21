@@ -9,8 +9,8 @@ use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs, OmniConnector,
-    OmniConnectorBuilder,
+    BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
+    OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
@@ -879,8 +879,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    recipient_id,
-                    fee,
+                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
                     transaction_options: TransactionOptions::default(),
                 })
                 .await

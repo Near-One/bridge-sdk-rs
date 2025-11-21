@@ -190,8 +190,7 @@ pub enum FinTransferArgs {
         chain_kind: ChainKind,
         btc_tx_hash: String,
         vout: usize,
-        recipient_id: OmniAddress,
-        fee: u128,
+        btc_deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -1726,15 +1725,14 @@ impl OmniConnector {
                 chain_kind,
                 btc_tx_hash,
                 vout,
-                recipient_id,
-                fee,
+                btc_deposit_args,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
                     chain_kind,
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    btc_deposit_args,
                     transaction_options,
                 )
                 .await
