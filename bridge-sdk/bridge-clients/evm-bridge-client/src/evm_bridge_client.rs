@@ -3,10 +3,13 @@ use std::{str::FromStr, sync::Arc};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use ethers::{abi::Address, prelude::*};
+use near_jsonrpc_client::methods::tx;
 use omni_types::prover_args::EvmProof;
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
 use omni_types::{EvmAddress, Fee};
+use sha3::digest::consts::U2;
+use sha3::digest::typenum::U;
 use sha3::{Digest, Keccak256};
 
 abigen!(
@@ -52,7 +55,6 @@ pub struct EvmBridgeClient {
     omni_bridge_address: Option<String>,
     #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
     wormhole_core_address: Option<String>,
-    times: Arc<std::cell::RefCell<u64>>,
 }
 
 impl EvmBridgeClient {
@@ -97,7 +99,7 @@ impl EvmBridgeClient {
 
     /// Checks if the transfer is already finalised on EVM
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
-        let omni_bridge = self.omni_bridge()?;
+        let omni_bridge = self.omni_bridge(U256::from(11))?;
 
         let is_finalised = omni_bridge
             .completed_transfers(nonce)
@@ -115,7 +117,7 @@ impl EvmBridgeClient {
         address: EvmAddress,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let omni_bridge = self.omni_bridge()?;
+        let omni_bridge = self.omni_bridge(U256::from(11))?;
 
         let mut call = omni_bridge.log_metadata(address.0.into());
 
@@ -142,7 +144,7 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let omni_bridge = self.omni_bridge()?;
+        let omni_bridge = self.omni_bridge(U256::from(11))?;
 
         let OmniBridgeEvent::LogMetadataEvent {
             signature,
@@ -196,7 +198,7 @@ impl EvmBridgeClient {
         message: String,
         mut tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let omni_bridge = self.omni_bridge()?;
+        let omni_bridge = self.omni_bridge(U256::from(11))?;
 
         if token != H160::zero() {
             let bridge_token = &self.bridge_token(token)?;
@@ -264,8 +266,8 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        *self.times.borrow_mut() += 1;
-        let omni_bridge = self.omni_bridge()?;
+        let nonce = tx_nonce.unwrap();
+        let omni_bridge = self.omni_bridge(nonce)?;
 
         let OmniBridgeEvent::SignTransferEvent {
             message_payload,
@@ -324,7 +326,7 @@ impl EvmBridgeClient {
             call = call.value(wormhole_fee);
         }
 
-        let nonce = if *self.times.borrow() % 2 == 1 {
+        let nonce = if nonce.div_mod(U256::from(2)).1 == U256::from(1) {
             tx_nonce
         } else {
             tx_nonce.map(|n| n.saturating_sub(U256::from(1)))    
@@ -415,8 +417,8 @@ impl EvmBridgeClient {
             })
     }
 
-    pub fn omni_bridge(&self) -> Result<OmniBridge<SignerMiddleware<Provider<Http>, LocalWallet>>> {
-        let endpoint = if *self.times.borrow() % 2 == 1 {
+    pub fn omni_bridge(&self, nonce: U256) -> Result<OmniBridge<SignerMiddleware<Provider<Http>, LocalWallet>>> {
+        let endpoint = if nonce.div_mod(U256::from(2)).1 == U256::from(1) {
             self.endpoint()?
         } else {
             "https://0xrpc.io/sep"
