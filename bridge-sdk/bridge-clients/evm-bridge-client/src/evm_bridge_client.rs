@@ -52,7 +52,7 @@ pub struct EvmBridgeClient {
     omni_bridge_address: Option<String>,
     #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
     wormhole_core_address: Option<String>,
-    times: std::cell::RefCell<u64>,
+    times: Arc<std::cell::RefCell<u64>>,
 }
 
 impl EvmBridgeClient {
