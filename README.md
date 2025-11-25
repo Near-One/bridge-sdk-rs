@@ -4,7 +4,7 @@
 ![Stability](https://img.shields.io/badge/Stability-Pre--Release-yellow)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-This is the Rust SDK for the **Omni Bridge**, the next generation of the Rainbow Bridge.  The Omni Bridge provides secure and efficient cross-chain communication and asset transfers between NEAR, Ethereum, Arbitrum, Base, and Solana. For detailed information about the Omni Bridge protocol and its capabilities, please visit the [Omni Bridge Repository](https://github.com/near/omni-bridge). 
+This is the Rust SDK for the **Omni Bridge**, the next generation of the Rainbow Bridge.  The Omni Bridge provides secure and efficient cross-chain communication and asset transfers between NEAR, Ethereum, Arbitrum, Base, and Solana. For detailed information about the Omni Bridge protocol and its capabilities, please visit the [Omni Bridge Repository](https://github.com/Near-One/omni-bridge). 
 
 This SDK is primarily intended for developers building applications that require direct interaction with the Omni Bridge protocol. 
 
