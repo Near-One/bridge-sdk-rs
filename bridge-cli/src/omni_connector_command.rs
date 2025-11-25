@@ -3,7 +3,7 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use ethers_core::types::TxHash;
+use alloy::primitives::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
