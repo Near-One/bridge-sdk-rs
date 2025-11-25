@@ -52,6 +52,7 @@ pub struct EvmBridgeClient {
     omni_bridge_address: Option<String>,
     #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
     wormhole_core_address: Option<String>,
+    times: std::cell::RefCell<u64>,
 }
 
 impl EvmBridgeClient {
@@ -263,6 +264,7 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
+        *self.times.borrow_mut() += 1;
         let omni_bridge = self.omni_bridge()?;
 
         let OmniBridgeEvent::SignTransferEvent {
@@ -322,22 +324,20 @@ impl EvmBridgeClient {
             call = call.value(wormhole_fee);
         }
 
-        self.prepare_tx_for_sending(&mut call, tx_nonce).await?;
-
-        let rand = rand::random::<u32>();
-        let tx_hash = if rand % 2 == 0 {
-            let tx = call.send().await?;
-            tx.tx_hash()
+        let nonce = if *self.times.borrow() % 2 == 1 {
+            tx_nonce
         } else {
-            call.tx.sighash()
+            tx_nonce.map(|n| n.saturating_sub(U256::from(1)))    
         };
+        self.prepare_tx_for_sending(&mut call, nonce).await?;
+        let tx = call.send().await?;            
 
         tracing::info!(
-            tx_hash = format!("{:?}", tx_hash),
+            tx_hash = format!("{:?}", tx.tx_hash()),
             "Sent finalize transfer transaction"
         );
 
-        Ok(tx_hash)
+        Ok(tx.tx_hash())
     }
 
     pub async fn get_proof_for_event(
@@ -416,7 +416,11 @@ impl EvmBridgeClient {
     }
 
     pub fn omni_bridge(&self) -> Result<OmniBridge<SignerMiddleware<Provider<Http>, LocalWallet>>> {
-        let endpoint = self.endpoint()?;
+        let endpoint = if *self.times.borrow() % 2 == 1 {
+            self.endpoint()?
+        } else {
+            "https://0xrpc.io/sep"
+        };
 
         let provider = Provider::<Http>::try_from(endpoint)
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
