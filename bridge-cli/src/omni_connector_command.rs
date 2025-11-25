@@ -875,13 +875,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_fin_transfer_btc(
-                    chain.into(),
+                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
+                    chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
-                    TransactionOptions::default(),
-                )
+                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    transaction_options: TransactionOptions::default(),
+                })
                 .await
                 .unwrap();
         }
