@@ -16,6 +16,7 @@ use omni_types::{
 };
 
 use bitcoin::hashes::Hash;
+use bitcoin::key::rand::rngs::OsRng;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
@@ -67,6 +68,12 @@ static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::n
 
 fn orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
     ORCHARD_PROVING_KEY.get_or_init(orchard::circuit::ProvingKey::build)
+}
+
+static ORCHARD_VERIFYING_KEY: OnceLock<orchard::circuit::VerifyingKey> = OnceLock::new();
+
+fn orchard_verifying_key() -> &'static orchard::circuit::VerifyingKey {
+    ORCHARD_VERIFYING_KEY.get_or_init(orchard::circuit::VerifyingKey::build)
 }
 
 #[allow(clippy::struct_field_names)]
@@ -777,7 +784,7 @@ impl OmniConnector {
 
         let coin = zcash_primitives::transaction::components::transparent::TxOut {
             value: zcash_protocol::value::Zatoshis::const_from_u64(25000),
-            script_pubkey: TransparentAddress::PublicKeyHash(h160).script(),
+            script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
         };
         builder
             .add_transparent_input(transparent_pubkey, utxo, coin)
@@ -919,6 +926,24 @@ impl OmniConnector {
             .get_btc_tx_data(chain, near_tx_hash, relayer)
             .await
             .unwrap();
+
+        let tx = zcash_primitives::transaction::Transaction::read(
+            &btc_tx_data[..],
+            zcash_primitives::consensus::BranchId::Nu6_1,
+        )
+        .unwrap();
+
+        let tx_id = *tx.txid().as_ref();
+        if let Some(bundle) = tx.into_data().orchard_bundle().clone() {
+            bundle.verify_proof(orchard_verifying_key()).unwrap();
+            let mut validator = orchard::bundle::BatchValidator::new();
+            validator.add_bundle(bundle, tx_id);
+            println!(
+                "Validate: {:?}",
+                validator.validate(orchard_verifying_key(), OsRng)
+            );
+            println!("Proof is verifiuyed!!");
+        }
 
         let utxo_bridge_client = self.utxo_bridge_client(chain).unwrap();
         let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await.unwrap();
