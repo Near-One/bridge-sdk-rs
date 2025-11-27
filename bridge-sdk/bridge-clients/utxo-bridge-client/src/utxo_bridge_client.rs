@@ -154,7 +154,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "Amount not found in output. Transaction data: {result}",
             ))
         })?;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
         let amount = (amount_btc * 100_000_000.0) as u64;
 
         let vout: u32 = output_index.try_into().map_err(|_| {
