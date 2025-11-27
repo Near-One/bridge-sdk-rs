@@ -1002,7 +1002,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), recipient_id, fee)
+                .get_btc_address(chain.into(), &recipient_id, fee)
                 .await
                 .unwrap();
 

@@ -501,7 +501,7 @@ impl OmniConnector {
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
-                near_bridge_client.get_deposit_msg_for_omni_bridge(recipient_id, fee)?
+                near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, fee)?
             }
         };
 
@@ -603,7 +603,7 @@ impl OmniConnector {
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
-        recipient_id: OmniAddress,
+        recipient_id: &OmniAddress,
         fee: u128,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -1031,9 +1031,9 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         if chain_kind.is_utxo_chain() {
-            return Err(BridgeSdkError::InvalidArgument(format!(
-                "For Utxo chains use \"near_fast_transfer_from_utxo\" method",
-            )));
+            return Err(BridgeSdkError::InvalidArgument(
+                "For Utxo chains use \"near_fast_transfer_from_utxo\" method".to_string(),
+            ));
         } else if !chain_kind.is_evm_chain() {
             return Err(BridgeSdkError::InvalidArgument(format!(
                 "Fast transfer is not supported for chain: {chain_kind:?}"
@@ -1125,7 +1125,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
 
         let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, recipient.clone(), fee)
+            .get_btc_address(chain_kind, &recipient, fee)
             .await?;
         let tx_data = utxo_bridge_client
             .get_bridge_transaction_data(&tx_hash, &deposit_address)
@@ -1148,8 +1148,8 @@ impl OmniConnector {
                 fee: fee.into(),
                 native_fee: 0.into(),
             },
-            msg: "".to_string(),
-            amount: amount,
+            msg: String::new(),
+            amount,
             storage_deposit_amount,
             relayer: near_bridge_client.account_id()?,
         };

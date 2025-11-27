@@ -585,7 +585,7 @@ impl NearBridgeClient {
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
-        recipient_id: OmniAddress,
+        recipient_id: &OmniAddress,
         fee: u128,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
@@ -728,7 +728,7 @@ impl NearBridgeClient {
 
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
-        recipient_id: OmniAddress,
+        recipient_id: &OmniAddress,
         fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {

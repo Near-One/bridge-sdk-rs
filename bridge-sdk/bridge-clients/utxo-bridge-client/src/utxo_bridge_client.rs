@@ -68,16 +68,12 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         let hash_str = result["blockhash"].as_str().ok_or_else(|| {
             UtxoClientError::RpcError(format!(
-                "Block hash not found in transaction data. Data: {}",
-                result.to_string()
+                "Block hash not found in transaction data. Data: {result}",
             ))
         })?;
 
         let block_hash = BlockHash::from_str(hash_str).map_err(|e| {
-            UtxoClientError::RpcError(format!(
-                "Block hash parsing error: {e}. Data: {}",
-                result.to_string()
-            ))
+            UtxoClientError::RpcError(format!("Block hash parsing error: {e}. Data: {result}",))
         })?;
 
         Ok(block_hash)
@@ -135,8 +131,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         let vout = result["vout"].as_array().ok_or_else(|| {
             UtxoClientError::RpcError(format!(
-                "vout not found in transaction data. Data: {}",
-                result.to_string()
+                "vout not found in transaction data. Data: {result}",
             ))
         })?;
 
@@ -146,27 +141,24 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .find(|(_, output)| {
                 output["scriptPubKey"]["address"]
                     .as_str()
-                    .map(|addr| addr == deposit_address)
-                    .unwrap_or(false)
+                    .is_some_and(|addr| addr == deposit_address)
             })
             .ok_or_else(|| {
                 UtxoClientError::RpcError(format!(
-                    "No output found for deposit_address: {}",
-                    deposit_address
+                    "No output found for deposit_address: {deposit_address}",
                 ))
             })?;
 
         let amount_btc = output["value"].as_f64().ok_or_else(|| {
             UtxoClientError::RpcError(format!(
-                "Amount not found in output. Transaction data: {}",
-                result.to_string()
+                "Amount not found in output. Transaction data: {result}",
             ))
         })?;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let amount = (amount_btc * 100_000_000.0) as u64;
 
         let vout: u32 = output_index.try_into().map_err(|_| {
-            UtxoClientError::RpcError(format!("Output index too large: {}", output_index))
+            UtxoClientError::RpcError(format!("Output index too large: {output_index}"))
         })?;
 
         Ok(UtxoBridgeTransactionData {
