@@ -43,6 +43,8 @@ wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" 
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 ripemd = "0.1.3"
 sha2 = "0.10.9"
-
+bincode = "1.3.3"
+incrementalmerkletree = "0.8.2"
+anyhow = "1.0.99"
 [lib]
 path = "src/omni_connector.rs"

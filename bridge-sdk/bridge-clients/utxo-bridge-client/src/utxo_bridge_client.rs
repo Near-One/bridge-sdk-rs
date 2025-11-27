@@ -225,12 +225,12 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn get_tree_state(&self, current_h: u64) -> String {
-        let response_tmp = self
+        /*let response_tmp = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
+                "id": "curltest",
+                "jsonrpc": "1.0",
                 "method": "z_gettreestate",
                 "params": [current_h]
             }))
@@ -241,7 +241,13 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         let response_txt = response_tmp.text().await.unwrap();
 
-        println!("Response: {:?}", response_txt);
-        response_txt
+        println!("Response: {:?}", response_txt);*/
+
+        //grpcurl -insecure \
+        //   -d '{"height": 3420618}' \
+        //   lightwalletd.testnet.electriccoin.co:9067 \
+        //   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetTreeState
+
+        "019e41c43c280346dedc862ac887e734629e4d70c040fbcc32043380ad5800960f0179d55a53141eae661f125f70687d30538e096e27825f684f1ba9f8c68a35903a1f0123b725bab331ef7a3fc447382fcdad268603354a6345b0aa82bde9c3eed1762601a152fee832afea562d00f3e95adffe41c880afbee7fe17172459881b9c5a6d190121e70938579ed4e5b718747d73ad8ef8924e8d5d89f08f495251dfa154cbe73b00000000000000019b9fcdbf9367f83551a5a190b3341969e1b0d65b95be6b43a1c3374fc29f250500000143275cd7061891f321cdeaebcb38811ed37d02d490e475ddcd9c3b6e6f721003017f93215cf466b333690a951c86254d6729672189dc06160f378267efb70b580a0125934a8c8cde7b4ba7e51d78f2321c7e286d140811a192f692f29d3f0ecce510000000000000000000000000000000".to_string()
     }
 }

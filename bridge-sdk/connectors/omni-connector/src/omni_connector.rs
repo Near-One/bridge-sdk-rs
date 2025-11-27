@@ -706,6 +706,19 @@ impl OmniConnector {
             .await
     }
 
+    fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
+        let tree: incrementalmerkletree::frontier::CommitmentTree<
+            orchard::tree::MerkleHashOrchard,
+            32,
+        > = zcash_primitives::merkle_tree::read_commitment_tree(
+            hex::decode(tree_hex).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        let root = tree.root().to_bytes();
+        orchard::Anchor::from_bytes(root).unwrap()
+    }
+
     pub async fn get_orchard_raw(
         &self,
         tx_out: TxOut,
@@ -729,25 +742,18 @@ impl OmniConnector {
 
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc).unwrap();
 
-        let current_height = 3420618u64;
+        let current_height = 3706104u64;
         let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
-
-        let orchard_root_hex = &tree_state/*.orchard_root*/;
-        let anchor = orchard::Anchor::from_bytes(
-            hex::decode(orchard_root_hex)
-                .expect(&orchard_root_hex.to_string())
-                .try_into()
-                .expect("32 bytes anchor"),
-        );
+        let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
 
         let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
         let params = zcash_protocol::consensus::TestNetwork;
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3420618.into(),
+            3706104.into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
-                orchard_anchor: Some(anchor.unwrap()),
+                orchard_anchor: Some(anchor),
             },
         );
         println!("Value: {:?}", tx_out.value.to_sat());
