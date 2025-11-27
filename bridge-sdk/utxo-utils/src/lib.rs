@@ -39,7 +39,8 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
 
 pub fn get_gas_fee(chain: ChainKind, num_input: u64, num_output: u64, fee_rate: u64) -> u64 {
     if chain == ChainKind::Zcash {
-        5000 * std::cmp::max(num_input, num_output) + 5000
+        10000
+        //5000 * std::cmp::max(num_input, num_output) + 5000
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
         (fee_rate * tx_size / 1024) + 50

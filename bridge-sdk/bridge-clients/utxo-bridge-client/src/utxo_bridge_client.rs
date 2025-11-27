@@ -192,7 +192,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
     pub async fn send_tx(&self, tx_bytes: &[u8]) -> Result<String> {
         let hex_str = hex::encode(tx_bytes);
-        let response: JsonRpcResponse<String> = self
+        let response_tmp = self
             .http_client
             .post(&self.endpoint_url)
             .json(&json!({
@@ -203,17 +203,45 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             }))
             .send()
             .await
-            .map_err(|e| {
-                BridgeSdkError::BtcClientError(format!("Failed to send transaction: {e}"))
-            })?
+            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to send transaction: {e}")))
+            .unwrap();
+
+        let response_txt = response_tmp.text().await.unwrap();
+
+        println!("Response: {:?}", response_txt);
+        Ok(response_txt)
+
+        /*let response: JsonRpcResponse<bitcoin::Txid> = response_tmp
             .json()
             .await
             .map_err(|e| {
                 BridgeSdkError::BtcClientError(format!(
                     "Failed to read sendrawtransaction response: {e}"
                 ))
-            })?;
+            })
+            .unwrap();
 
-        Ok(response.result)
+        Ok(response.result.to_string())*/
+    }
+
+    pub async fn get_tree_state(&self, current_h: u64) -> String {
+        let response_tmp = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "z_gettreestate",
+                "params": [current_h]
+            }))
+            .send()
+            .await
+            .map_err(|e| BridgeSdkError::BtcClientError(format!("Failed to send transaction: {e}")))
+            .unwrap();
+
+        let response_txt = response_tmp.text().await.unwrap();
+
+        println!("Response: {:?}", response_txt);
+        response_txt
     }
 }

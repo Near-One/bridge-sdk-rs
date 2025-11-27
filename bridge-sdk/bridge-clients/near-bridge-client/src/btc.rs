@@ -1,5 +1,6 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
+use base64::Engine;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::BridgeSdkError::BtcClientError;
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -591,28 +592,9 @@ impl NearBridgeClient {
             .strip_prefix("EVENT_JSON:")
             .ok_or(BridgeSdkError::BtcClientError("Incorrect logs".to_string()))?;
         let v: Value = serde_json::from_str(json_str)?;
-        let bytes = v["data"][0]["tx_bytes"]
-            .as_array()
-            .ok_or_else(|| {
-                BridgeSdkError::BtcClientError(
-                    "Expected 'tx_bytes' to be an array in logs".to_string(),
-                )
-            })?
-            .iter()
-            .map(|val| {
-                let num = val.as_u64().ok_or_else(|| {
-                    BridgeSdkError::BtcClientError(format!(
-                        "Expected u64 value in 'tx_bytes', got: {val}"
-                    ))
-                })?;
-
-                u8::try_from(num).map_err(|e| {
-                    BridgeSdkError::BtcClientError(format!(
-                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
-                    ))
-                })
-            })
-            .collect::<Result<Vec<u8>>>()?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(v["data"][0]["tx_bytes_base64"].as_str().unwrap())
+            .unwrap();
 
         Ok(bytes)
     }

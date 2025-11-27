@@ -106,6 +106,7 @@ impl AnyUtxoClient<'_> {
     forward_common_utxo_method!(get_fee_rate() -> Result<u64>);
     forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> Result<utxo_bridge_client::types::TxProof>);
     forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> Result<String>);
+    forward_common_utxo_method!(get_tree_state(current_u: u64) -> String);
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -682,11 +683,13 @@ impl OmniConnector {
 
         let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
 
-        let orchard = Self::get_orchard_raw(
-            tx_outs[0].clone(),
-            target_btc_address.clone(),
-            out_points.clone(),
-        );
+        let orchard = self
+            .get_orchard_raw(
+                tx_outs[0].clone(),
+                target_btc_address.clone(),
+                out_points.clone(),
+            )
+            .await;
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
@@ -695,7 +698,7 @@ impl OmniConnector {
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
-                    output: vec![tx_outs[1].clone()],
+                    output: vec![],
                     orchard_bundle_bytes: Some(orchard),
                 },
                 transaction_options,
@@ -703,7 +706,12 @@ impl OmniConnector {
             .await
     }
 
-    pub fn get_orchard_raw(tx_out: TxOut, recipient: String, out_point: Vec<OutPoint>) -> String {
+    pub async fn get_orchard_raw(
+        &self,
+        tx_out: TxOut,
+        recipient: String,
+        out_point: Vec<OutPoint>,
+    ) -> String {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
         // Loop through receivers
@@ -718,14 +726,28 @@ impl OmniConnector {
                 }
             }
         }
+
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc).unwrap();
+
+        let current_height = 3420618u64;
+        let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
+
+        let orchard_root_hex = &tree_state/*.orchard_root*/;
+        let anchor = orchard::Anchor::from_bytes(
+            hex::decode(orchard_root_hex)
+                .expect(&orchard_root_hex.to_string())
+                .try_into()
+                .expect("32 bytes anchor"),
+        );
+
         let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
         let params = zcash_protocol::consensus::TestNetwork;
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3577749.into(),
+            3420618.into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
-                orchard_anchor: Some(orchard::Anchor::empty_tree()),
+                orchard_anchor: Some(anchor.unwrap()),
             },
         );
         println!("Value: {:?}", tx_out.value.to_sat());
@@ -748,7 +770,7 @@ impl OmniConnector {
         h160.copy_from_slice(&rip);
 
         let coin = zcash_primitives::transaction::components::transparent::TxOut {
-            value: zcash_protocol::value::Zatoshis::const_from_u64(18000),
+            value: zcash_protocol::value::Zatoshis::const_from_u64(25000),
             script_pubkey: TransparentAddress::PublicKeyHash(h160).script(),
         };
         builder
@@ -757,12 +779,14 @@ impl OmniConnector {
 
         builder
             .add_orchard_output::<zip317::FeeRule>(
-                None,
+                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient.unwrap(),
                 tx_out.value.to_sat(),
                 MemoBytes::empty(),
             )
             .unwrap();
+
+        //builder.add_transparent_output(&TransparentAddress::PublicKeyHash(h160), zcash_protocol::value::Zatoshis::const_from_u64(5580) ).unwrap();
 
         let rng = k256::elliptic_curve::rand_core::OsRng;
 
@@ -791,13 +815,13 @@ impl OmniConnector {
         // println!("Signature: {}", hex::encode(sig_bytes));
 
         let pczt = signer.finish();
-        println!(
+        /*println!(
             "PARTIAL LEN: {:?}",
-            pczt.transparent().inputs()[0].partial_signatures.len()
+            pczt.transparent().inputs()[0].partial_signatures().len()
         );
 
         let mut iter = pczt.transparent().inputs()[0].partial_signatures.iter();
-        println!("next next {:?}, {:?}", iter.next(), iter.next());
+        println!("next next {:?}, {:?}", iter.next(), iter.next());*/
         // Finalize spends.
         let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
 
@@ -816,6 +840,12 @@ impl OmniConnector {
         println!("transaction bytes: {}", hex::encode(buf));
 
         let tx_orchard = tx.orchard_bundle();
+        println!(
+            "Tx Orchard Actions: {:?}",
+            tx_orchard.unwrap().actions().len()
+        );
+
+        println!("Tx Orchard Actions: {:?}", tx_orchard.unwrap().actions());
         let mut writer = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(
             tx_orchard,
@@ -878,13 +908,14 @@ impl OmniConnector {
         near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     ) -> Result<String> {
-        let near_bridge_client = self.near_bridge_client()?;
+        let near_bridge_client = self.near_bridge_client().unwrap();
         let btc_tx_data = near_bridge_client
             .get_btc_tx_data(chain, near_tx_hash, relayer)
-            .await?;
+            .await
+            .unwrap();
 
-        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain).unwrap();
+        let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await.unwrap();
         Ok(tx_hash)
     }
 

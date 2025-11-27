@@ -4523,6 +4523,7 @@ dependencies = [
 name = "near-bridge-client"
 version = "0.2.1"
 dependencies = [
+ "base64 0.21.7",
  "bitcoin",
  "borsh 1.5.7",
  "bridge-connector-common",
