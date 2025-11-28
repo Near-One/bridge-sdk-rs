@@ -47,6 +47,9 @@ use utxo_bridge_client::{
 };
 use wormhole_bridge_client::WormholeBridgeClient;
 use zcash_address::unified::{self, Container, Encoding};
+use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
+use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::{sighash_v5, Unauthorized};
 use zcash_primitives::{
     legacy::TransparentAddress,
     transaction::{
@@ -789,7 +792,7 @@ impl OmniConnector {
             script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
         };
         builder
-            .add_transparent_input(transparent_pubkey, utxo, coin)
+            .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
             .unwrap();
 
         builder
@@ -808,6 +811,19 @@ impl OmniConnector {
             )
             .unwrap();
 
+        let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
+            params,
+            3706104.into(),
+            zcash_primitives::transaction::builder::BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: Some(anchor),
+            },
+        );
+
+        builder1
+            .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
+            .unwrap();
+
         let rng = k256::elliptic_curve::rand_core::OsRng;
 
         let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
@@ -823,12 +839,6 @@ impl OmniConnector {
         // Finalize the I/O.
         let pczt = IoFinalizer::new(pczt).finalize_io().unwrap();
 
-        // Create proofs.
-        let pczt = Prover::new(pczt)
-            .create_orchard_proof(orchard_proving_key())
-            .unwrap()
-            .finish();
-
         let mut signer = Signer::new(pczt).unwrap();
         signer.sign_transparent(0, &secret_key).unwrap();
         // println!("Sighash: {}", hex::encode(sighash));
@@ -840,8 +850,16 @@ impl OmniConnector {
             pczt.transparent().inputs()[0].partial_signatures().len()
         );
 
+
         let mut iter = pczt.transparent().inputs()[0].partial_signatures.iter();
         println!("next next {:?}, {:?}", iter.next(), iter.next());*/
+
+        // Create proofs.
+        let pczt = Prover::new(pczt)
+            .create_orchard_proof(orchard_proving_key())
+            .unwrap()
+            .finish();
+
         // Finalize spends.
         let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
 
@@ -853,25 +871,34 @@ impl OmniConnector {
         //assert_eq!(u32::from(tx.expiry_height()), 10_000_040);
         assert_eq!(tx.version(), zcash_primitives::transaction::TxVersion::V5);
         assert_eq!(tx.lock_time(), 0);
-        println!("expire: {}", tx.expiry_height());
 
         let mut buf = Vec::new();
         tx.write(&mut buf).unwrap();
-        println!("transaction bytes: {}", hex::encode(buf));
 
-        let tx_orchard = tx.orchard_bundle();
+        let auth_data = tx.into_data();
+        let tx_orchard = auth_data.orchard_bundle().clone();
         println!(
             "Tx Orchard Actions: {:?}",
             tx_orchard.unwrap().actions().len()
         );
 
-        let tx_id = *tx.txid().as_ref();
+        //let unauthed_tx: TransactionData<Unauthorized> = builder.get_unath_tx(rng);
+
+        let txid_parts = auth_data.digest(TxIdDigester);
+        let shielded_sig_commitment = sighash_v5::my_signature_hash(
+            &auth_data,
+            builder1.get_transp_bundel(),
+            &SignableInput::Shielded,
+            &txid_parts,
+        );
+
+        let sighash: [u8; 32] = shielded_sig_commitment.as_ref()[..32].try_into().unwrap();
         tx_orchard
             .unwrap()
             .verify_proof(orchard_verifying_key())
             .unwrap();
         let mut validator = orchard::bundle::BatchValidator::new();
-        validator.add_bundle(tx_orchard.unwrap(), tx_id);
+        validator.add_bundle(tx_orchard.unwrap(), sighash);
         println!(
             "Validate: {:?}",
             validator.validate(orchard_verifying_key(), OsRng)
