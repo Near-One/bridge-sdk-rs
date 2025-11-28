@@ -698,19 +698,21 @@ impl OmniConnector {
             )
             .await;
 
-        near_bridge_client
-            .init_btc_transfer_near_to_btc(
-                chain,
-                amount + fee,
-                TokenReceiverMessage::Withdraw {
-                    target_btc_address,
-                    input: out_points,
-                    output: vec![],
-                    orchard_bundle_bytes: Some(orchard),
-                },
-                transaction_options,
-            )
-            .await
+        /*near_bridge_client
+        .init_btc_transfer_near_to_btc(
+            chain,
+            amount + fee,
+            TokenReceiverMessage::Withdraw {
+                target_btc_address,
+                input: out_points,
+                output: vec![],
+                orchard_bundle_bytes: Some(orchard),
+            },
+            transaction_options,
+        )
+        .await*/
+
+        Ok(CryptoHash::new())
     }
 
     fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
@@ -792,14 +794,19 @@ impl OmniConnector {
 
         builder
             .add_orchard_output::<zip317::FeeRule>(
-                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
+                None, //Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient.unwrap(),
                 tx_out.value.to_sat(),
                 MemoBytes::empty(),
             )
             .unwrap();
 
-        //builder.add_transparent_output(&TransparentAddress::PublicKeyHash(h160), zcash_protocol::value::Zatoshis::const_from_u64(5580) ).unwrap();
+        builder
+            .add_transparent_output(
+                &TransparentAddress::PublicKeyHash(h160),
+                zcash_protocol::value::Zatoshis::const_from_u64(580),
+            )
+            .unwrap();
 
         let rng = k256::elliptic_curve::rand_core::OsRng;
 
@@ -857,6 +864,19 @@ impl OmniConnector {
             "Tx Orchard Actions: {:?}",
             tx_orchard.unwrap().actions().len()
         );
+
+        let tx_id = *tx.txid().as_ref();
+        tx_orchard
+            .unwrap()
+            .verify_proof(orchard_verifying_key())
+            .unwrap();
+        let mut validator = orchard::bundle::BatchValidator::new();
+        validator.add_bundle(tx_orchard.unwrap(), tx_id);
+        println!(
+            "Validate: {:?}",
+            validator.validate(orchard_verifying_key(), OsRng)
+        );
+        println!("Proof is verifiuyed!!");
 
         println!("Tx Orchard Actions: {:?}", tx_orchard.unwrap().actions());
         let mut writer = Vec::new();
@@ -932,6 +952,8 @@ impl OmniConnector {
             zcash_primitives::consensus::BranchId::Nu6_1,
         )
         .unwrap();
+
+        println!("TX: {:?}", tx);
 
         let tx_id = *tx.txid().as_ref();
         if let Some(bundle) = tx.into_data().orchard_bundle().clone() {
