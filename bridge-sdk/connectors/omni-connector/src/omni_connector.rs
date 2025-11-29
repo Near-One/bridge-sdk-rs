@@ -701,21 +701,19 @@ impl OmniConnector {
             )
             .await;
 
-        /*near_bridge_client
-        .init_btc_transfer_near_to_btc(
-            chain,
-            amount + fee,
-            TokenReceiverMessage::Withdraw {
-                target_btc_address,
-                input: out_points,
-                output: vec![],
-                orchard_bundle_bytes: Some(orchard),
-            },
-            transaction_options,
-        )
-        .await*/
-
-        Ok(CryptoHash::new())
+        near_bridge_client
+            .init_btc_transfer_near_to_btc(
+                chain,
+                amount + fee,
+                TokenReceiverMessage::Withdraw {
+                    target_btc_address,
+                    input: out_points,
+                    output: vec![],
+                    orchard_bundle_bytes: Some(orchard),
+                },
+                transaction_options,
+            )
+            .await
     }
 
     fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
@@ -773,7 +771,8 @@ impl OmniConnector {
         let secp = secp256k1::Secp256k1::new();
         let secret_key =
             secp256k1::SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
-        let transparent_pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let pk_raw = "02c456bb9080223ed8c6b4b7c88a131593d539d200fe9a08c18d6071cc04b5f53e";
+        let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
         let utxo = zcash_primitives::transaction::components::transparent::OutPoint::new(
             out_point[0].txid.to_byte_array(),
@@ -797,17 +796,10 @@ impl OmniConnector {
 
         builder
             .add_orchard_output::<zip317::FeeRule>(
-                None, //Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
+                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient.unwrap(),
                 tx_out.value.to_sat(),
                 MemoBytes::empty(),
-            )
-            .unwrap();
-
-        builder
-            .add_transparent_output(
-                &TransparentAddress::PublicKeyHash(h160),
-                zcash_protocol::value::Zatoshis::const_from_u64(580),
             )
             .unwrap();
 
@@ -839,12 +831,12 @@ impl OmniConnector {
         // Finalize the I/O.
         let pczt = IoFinalizer::new(pczt).finalize_io().unwrap();
 
-        let mut signer = Signer::new(pczt).unwrap();
+        /*let mut signer = Signer::new(pczt).unwrap();
         signer.sign_transparent(0, &secret_key).unwrap();
         // println!("Sighash: {}", hex::encode(sighash));
         // println!("Signature: {}", hex::encode(sig_bytes));
 
-        let pczt = signer.finish();
+        let pczt = signer.finish();*/
         /*println!(
             "PARTIAL LEN: {:?}",
             pczt.transparent().inputs()[0].partial_signatures().len()
@@ -861,7 +853,7 @@ impl OmniConnector {
             .finish();
 
         // Finalize spends.
-        let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
+        //let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
 
         // We should now be able to extract the fully authorized transaction.
         let tx: zcash_primitives::transaction::Transaction =
