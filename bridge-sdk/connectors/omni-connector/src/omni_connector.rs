@@ -45,6 +45,7 @@ use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
 };
+use utxo_utils::UTXO;
 use wormhole_bridge_client::WormholeBridgeClient;
 use zcash_address::unified::{self, Container, Encoding};
 use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
@@ -670,7 +671,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let utxos = near_bridge_client.get_utxos(chain).await?;
 
-        let (out_points, utxos_balance, gas_fee) =
+        let (out_points, selected_utxo, utxos_balance, gas_fee) =
             utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
@@ -698,6 +699,7 @@ impl OmniConnector {
                 tx_outs[0].clone(),
                 target_btc_address.clone(),
                 out_points.clone(),
+                selected_utxo,
             )
             .await;
 
@@ -714,6 +716,8 @@ impl OmniConnector {
                 transaction_options,
             )
             .await
+
+        //return Ok(CryptoHash::new());
     }
 
     fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
@@ -734,6 +738,7 @@ impl OmniConnector {
         tx_out: TxOut,
         recipient: String,
         out_point: Vec<OutPoint>,
+        utxos: Vec<UTXO>,
     ) -> String {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
@@ -750,7 +755,7 @@ impl OmniConnector {
             }
         }
 
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc).unwrap();
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
         let current_height = 3706104u64;
         let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
@@ -771,7 +776,15 @@ impl OmniConnector {
         let secp = secp256k1::Secp256k1::new();
         let secret_key =
             secp256k1::SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
-        let pk_raw = "02c456bb9080223ed8c6b4b7c88a131593d539d200fe9a08c18d6071cc04b5f53e";
+
+        let near_bridge_client = self.near_bridge_client().unwrap();
+        let pk_raw = &near_bridge_client
+            .get_pk_raw(ChainKind::Zcash, utxos[0].clone())
+            .await;
+
+        println!("PK RAW: {}", pk_raw);
+
+        //let pk_raw = "02c456bb9080223ed8c6b4b7c88a131593d539d200fe9a08c18d6071cc04b5f53e";
         let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
         let utxo = zcash_primitives::transaction::components::transparent::OutPoint::new(
@@ -2230,7 +2243,7 @@ impl OmniConnector {
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
-        let (out_points, utxos_balance, gas_fee) =
+        let (out_points, _, utxos_balance, gas_fee) =
             utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;

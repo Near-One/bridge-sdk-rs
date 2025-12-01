@@ -485,6 +485,24 @@ impl NearBridgeClient {
         Ok(utxos)
     }
 
+    pub async fn get_pk_raw(&self, chain: ChainKind, utxo: UTXO) -> String {
+        let endpoint = self.endpoint().unwrap();
+        let btc_connector = self.utxo_chain_connector(chain).unwrap();
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "generate_public_key_pub".to_string(),
+                args: serde_json::json!({"path": utxo.path}),
+            },
+        )
+        .await
+        .unwrap();
+
+        serde_json::from_slice::<String>(&response).unwrap()
+    }
+
     pub async fn get_withdraw_fee(&self, chain: ChainKind) -> Result<u128> {
         let config = self.get_config(chain).await?;
         Ok(config.withdraw_bridge_fee.fee_min)

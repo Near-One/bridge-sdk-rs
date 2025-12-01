@@ -53,7 +53,7 @@ pub fn choose_utxos(
     amount: u128,
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
-) -> Result<(Vec<OutPoint>, u128, u128)> {
+) -> Result<(Vec<OutPoint>, Vec<UTXO>, u128, u128)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -80,8 +80,13 @@ pub fn choose_utxos(
         }
     }
 
-    let out_points = utxo_to_out_points(selected)?;
-    Ok((out_points, utxos_balance, gas_fee))
+    let out_points = utxo_to_out_points(selected.clone())?;
+    Ok((
+        out_points,
+        selected.into_iter().map(|(id, utxo)| utxo).collect(),
+        utxos_balance,
+        gas_fee,
+    ))
 }
 
 #[allow(clippy::implicit_hasher)]
