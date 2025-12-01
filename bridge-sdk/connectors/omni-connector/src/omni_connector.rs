@@ -50,19 +50,17 @@ use wormhole_bridge_client::WormholeBridgeClient;
 use zcash_address::unified::{self, Container, Encoding};
 use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
 use zcash_primitives::transaction::txid::TxIdDigester;
-use zcash_primitives::transaction::{sighash_v5, Unauthorized};
-use zcash_primitives::{
-    legacy::TransparentAddress,
-    transaction::{
-        fees::{transparent::OutputView, zip317},
-        TransactionData, TxVersion,
-    },
+use zcash_primitives::transaction::{
+    fees::{transparent::OutputView, zip317},
+    TransactionData, TxVersion,
 };
+use zcash_primitives::transaction::{sighash_v5, Unauthorized};
 use zcash_protocol::{
     consensus::{BranchId, MAIN_NETWORK, TEST_NETWORK},
     memo::MemoBytes,
 };
 use zcash_transparent::address::Script;
+use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::{
     keys::{IncomingViewingKey, NonHardenedChildIndex},
     pczt::*,
@@ -787,7 +785,7 @@ impl OmniConnector {
         //let pk_raw = "02c456bb9080223ed8c6b4b7c88a131593d539d200fe9a08c18d6071cc04b5f53e";
         let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
-        let utxo = zcash_primitives::transaction::components::transparent::OutPoint::new(
+        let utxo = zcash_transparent::bundle::OutPoint::new(
             out_point[0].txid.to_byte_array(),
             out_point[0].vout,
         );
@@ -799,7 +797,7 @@ impl OmniConnector {
         let mut h160 = [0u8; 20];
         h160.copy_from_slice(&rip);
 
-        let coin = zcash_primitives::transaction::components::transparent::TxOut {
+        let coin = zcash_transparent::bundle::TxOut {
             value: zcash_protocol::value::Zatoshis::const_from_u64(25000),
             script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
         };
@@ -981,7 +979,7 @@ impl OmniConnector {
 
         let tx = zcash_primitives::transaction::Transaction::read(
             &btc_tx_data[..],
-            zcash_primitives::consensus::BranchId::Nu6_1,
+            zcash_protocol::consensus::BranchId::Nu6_1,
         )
         .unwrap();
 
