@@ -5,6 +5,7 @@ members = [
     "bridge-sdk/eth-proof",
     "bridge-sdk/near-rpc-client",
     "bridge-sdk/bridge-clients/solana-bridge-client",
+    "bridge-sdk/bridge-clients/solana-optimistic-poc-client",
     "bridge-sdk/bridge-clients/near-bridge-client",
     "bridge-sdk/bridge-clients/evm-bridge-client",
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
@@ -53,6 +54,7 @@ solana-sdk = "2.0.13"
 solana-client = "2.0.13"
 solana-system-interface = "1.0.0"
 solana-transaction-status-client-types = "2.3.6"
+solana-transaction-status = "2.0.13"
 spl-token = "7.0.0"
 spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
