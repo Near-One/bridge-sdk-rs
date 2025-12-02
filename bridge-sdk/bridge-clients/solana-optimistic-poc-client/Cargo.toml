@@ -1,0 +1,25 @@
+[package]
+name = "solana-optimistic-poc-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+near-jsonrpc-client = { workspace = true }
+near-jsonrpc-primitives = { workspace = true }
+near-primitives = { workspace = true }
+near-crypto = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+serde_json = { workspace = true }
+solana-client = { workspace = true, optional = true }
+solana-transaction-status = { workspace = true, optional = true }
+solana-sdk = { workspace = true, optional = true }
+
+[features]
+default = ["solana-rpc"]
+solana-rpc = ["solana-client", "solana-transaction-status", "solana-sdk"]
+
+[dev-dependencies]
+serde_json = { workspace = true }
+base64 = { workspace = true }

@@ -286,6 +286,22 @@ bridge-cli solana-finalize-transfer-sol \
     [--sender-id <NEAR_SENDER_ID>]
 ```
 
+## POC (flagged): Solana optimistic smoke
+Opt-in subcommand (feature `poc-solana-optimistic`) to run the Solana→NEAR optimistic POC against captured fixtures.
+
+Build/run (dev/test only):
+```bash
+cargo run -p bridge-cli --features poc-solana-optimistic -- testnet poc-solana-test \
+  --verifier-account <near_contract> \
+  --signer-account <near_signer> \
+  --signer-secret-key <ed25519:...> \
+  --fixture-path path/to/fixtures/latest.json \
+  --mode happy \
+  --bond-yocto 0 \
+  --challenge-period-secs 0
+```
+Env/args required: `NEAR_RPC`, `SOLANA_RPC`, plus optional `POC_ESCROW_PDA`, `POC_ESCROW_MINT`, `POC_ENFORCE_ESCROW`. Modes: `happy` (init+finalize) or `challenge` (init+challenge). Use `--expect-failure` for negative fixtures like `latest-no-transfer.json`.
+
 ## Development Status
 
 This CLI is under active development. Features and commands may be added, modified, or removed. Please report any issues or suggestions on our GitHub repository.

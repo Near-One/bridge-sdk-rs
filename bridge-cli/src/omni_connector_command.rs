@@ -16,8 +16,22 @@ use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signer::EncodableKey};
+use serde::Deserialize;
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
+
+#[cfg(feature = "poc-solana-optimistic")]
+use solana_optimistic_poc_client::{
+    Claim as PocClaim, PocConfig, PocSigner, SolanaOptimisticPocClient, SolanaProof,
+};
+#[cfg(feature = "poc-solana-optimistic")]
+use std::fs;
+#[cfg(feature = "poc-solana-optimistic")]
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+#[cfg(feature = "poc-solana-optimistic")]
+use base64::Engine;
+#[cfg(feature = "poc-solana-optimistic")]
+use near_crypto::SecretKey;
 
 use crate::{combined_config, CliConfig, Network};
 
@@ -44,6 +58,13 @@ impl From<Network> for utxo_utils::address::Network {
             Network::Testnet | Network::Devnet => utxo_utils::address::Network::Testnet,
         }
     }
+}
+
+#[cfg(feature = "poc-solana-optimistic")]
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum PocMode {
+    Happy,
+    Challenge,
 }
 
 #[derive(Subcommand, Debug)]
@@ -111,6 +132,36 @@ pub enum OmniConnectorSubCommand {
         fee: u128,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[cfg(feature = "poc-solana-optimistic")]
+    #[clap(about = "Run Solana optimistic POC test (fixture-driven; dev/test only)")]
+    PocSolanaTest {
+        #[clap(long, help = "NEAR verifier contract account (deployed POC)")]
+        verifier_account: AccountId,
+        #[clap(long, help = "NEAR signer account")]
+        signer_account: AccountId,
+        #[clap(long, help = "NEAR signer secret key (ed25519:...)")]
+        signer_secret_key: String,
+        #[clap(long, help = "Path to Solana fixture json")]
+        fixture_path: String,
+        #[clap(
+            long,
+            value_enum,
+            default_value = "happy",
+            help = "Smoke mode: happy (init+finalize) or challenge (init+challenge)"
+        )]
+        mode: PocMode,
+        #[clap(long, default_value_t = 0, help = "Bond yocto to attach on init")]
+        bond_yocto: u128,
+        #[clap(long, default_value_t = 0, help = "Challenge window (secs) for init")]
+        challenge_period_secs: u64,
+        #[clap(
+            long,
+            help = "Expect the run to fail (e.g., negative fixture). If set, a success will error."
+        )]
+        expect_failure: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -436,6 +487,18 @@ pub enum OmniConnectorSubCommand {
         #[command(subcommand)]
         subcommand: InternalSubCommand,
     },
+}
+
+#[cfg(feature = "poc-solana-optimistic")]
+#[derive(Deserialize)]
+struct PocFixture {
+    tx_sig: String,
+    slot: u64,
+    log_index: u64,
+    base64_payload: String,
+    amount: String,
+    recipient: String,
+    nonce: String,
 }
 
 #[derive(Subcommand, Debug)]
@@ -978,6 +1041,78 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .active_utxo_management(chain.into(), TransactionOptions::default())
                 .await
                 .unwrap();
+        }
+        #[cfg(feature = "poc-solana-optimistic")]
+        OmniConnectorSubCommand::PocSolanaTest {
+            verifier_account,
+            signer_account,
+            signer_secret_key,
+            fixture_path,
+            mode,
+            bond_yocto,
+            challenge_period_secs,
+            expect_failure,
+            config_cli,
+        } => {
+            let cfg = combined_config(config_cli, network);
+            let near_rpc = cfg
+                .near_rpc
+                .expect("NEAR RPC required (set NEAR_RPC or --near-rpc)");
+            let solana_rpc = cfg
+                .solana_rpc
+                .expect("Solana RPC required (set SOLANA_RPC or --solana-rpc)");
+            let signer = PocSigner {
+                account_id: signer_account,
+                secret_key: SecretKey::from_str(&signer_secret_key)
+                    .expect("invalid signer_secret_key"),
+            };
+            let poc_config = PocConfig {
+                verifier_account,
+                near_rpc,
+                solana_rpc,
+                bond_yocto,
+                challenge_period_secs,
+            };
+            let fixture: PocFixture = serde_json::from_str(
+                &fs::read_to_string(&fixture_path)
+                    .unwrap_or_else(|_| panic!("failed to read fixture {}", fixture_path)),
+            )
+            .expect("invalid fixture json");
+            let claim = PocClaim {
+                amount: fixture.amount.parse().expect("invalid amount"),
+                recipient: fixture.recipient.parse().expect("invalid recipient"),
+                nonce: fixture.nonce.parse().expect("invalid nonce"),
+                proof: SolanaProof {
+                    tx_sig: fixture.tx_sig,
+                    slot: fixture.slot,
+                    log_index: fixture.log_index,
+                    message_base64: fixture.base64_payload,
+                },
+            };
+            let client = SolanaOptimisticPocClient::new(poc_config);
+            let res = match mode {
+                PocMode::Happy => async {
+                    let transfer_id = client.init_claim(&signer, &claim).await?;
+                    client.finalize(&signer, &transfer_id).await
+                }
+                .await,
+                PocMode::Challenge => {
+                    let bad_base64 = BASE64_STANDARD.encode([1u8, 2, 3]);
+                    async {
+                        let transfer_id = client.init_claim(&signer, &claim).await?;
+                        client
+                            .challenge(&signer, &transfer_id, &bad_base64)
+                            .await
+                    }
+                    .await
+                }
+            };
+            match (res, expect_failure) {
+                (Ok(()), true) => panic!("expected failure but succeeded"),
+                (Ok(()), false) => tracing::info!("poc smoke passed"),
+                (Err(e), true) => tracing::info!("poc smoke failed as expected: {e}"),
+                (Err(e), false) => panic!("poc smoke failed: {e}"),
+            }
         }
         OmniConnectorSubCommand::Internal { subcommand } => match subcommand {
             InternalSubCommand::InitNearToBitcoinTransfer {
