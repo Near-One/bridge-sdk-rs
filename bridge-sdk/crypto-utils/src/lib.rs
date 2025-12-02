@@ -15,7 +15,7 @@ pub fn derive_address(near_account_id: &AccountId, path: &str) -> [u8; 64] {
     let point = EncodedPoint::from_bytes(bytes).unwrap();
     let mpc_key = AffinePoint::from_encoded_point(&point).unwrap();
 
-    let epsilon = derive_epsilon(near_account_id, path);
+    let epsilon = derive_epsilon(&near_account_id.to_string().parse().unwrap(), path);
     let derived_public_key = derive_key(mpc_key, epsilon);
     let encoded_point = derived_public_key.to_encoded_point(false);
     let slice: &[u8] = &encoded_point.as_bytes()[1..65];
