@@ -692,9 +692,10 @@ impl OmniConnector {
 
         let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
 
-        let orchard = self
+        let (orchard, expiry_height) = self
             .get_orchard_raw(
                 tx_outs[0].clone(),
+                tx_outs[1].clone(),
                 target_btc_address.clone(),
                 out_points.clone(),
                 selected_utxo,
@@ -708,8 +709,9 @@ impl OmniConnector {
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
-                    output: vec![],
+                    output: vec![tx_outs[1].clone()],
                     orchard_bundle_bytes: Some(orchard),
+                    expiry_height: Some(expiry_height),
                 },
                 transaction_options,
             )
@@ -734,10 +736,11 @@ impl OmniConnector {
     pub async fn get_orchard_raw(
         &self,
         tx_out: TxOut,
+        tx_out_change: TxOut,
         recipient: String,
         out_point: Vec<OutPoint>,
         utxos: Vec<UTXO>,
-    ) -> String {
+    ) -> (String, u32) {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
         // Loop through receivers
@@ -811,6 +814,13 @@ impl OmniConnector {
                 recipient.unwrap(),
                 tx_out.value.to_sat(),
                 MemoBytes::empty(),
+            )
+            .unwrap();
+
+        builder
+            .add_transparent_output(
+                &TransparentAddress::PublicKeyHash(h160),
+                zcash_protocol::value::Zatoshis::const_from_u64(tx_out_change.value.to_sat()),
             )
             .unwrap();
 
@@ -919,7 +929,7 @@ impl OmniConnector {
         let bytes_str = hex::encode(writer.clone());
         println!("orchard bytes: {}", bytes_str);
 
-        return bytes_str;
+        return (bytes_str, auth_data.expiry_height().into());
     }
 
     pub async fn near_submit_btc_transfer(
@@ -943,6 +953,7 @@ impl OmniConnector {
                     input: out_points,
                     output: tx_outs,
                     orchard_bundle_bytes: None,
+                    expiry_height: None,
                 },
                 transaction_options,
             )

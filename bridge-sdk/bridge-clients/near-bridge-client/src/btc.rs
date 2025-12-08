@@ -81,6 +81,7 @@ pub enum TokenReceiverMessage {
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
         orchard_bundle_bytes: Option<String>,
+        expiry_height: Option<u32>,
     },
 }
 
