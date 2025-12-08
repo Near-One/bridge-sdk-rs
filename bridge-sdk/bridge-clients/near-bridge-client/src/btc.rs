@@ -494,7 +494,7 @@ impl NearBridgeClient {
             endpoint,
             ViewRequest {
                 contract_account_id: btc_connector,
-                method_name: "generate_public_key_pub".to_string(),
+                method_name: "get_public_key_by_path".to_string(),
                 args: serde_json::json!({"path": utxo.path}),
             },
         )
