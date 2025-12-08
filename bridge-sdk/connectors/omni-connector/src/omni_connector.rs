@@ -759,7 +759,7 @@ impl OmniConnector {
 
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
-        let current_height = 3723909u64;
+        let current_height = 3724909u64;
         let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
         let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
 
@@ -767,7 +767,7 @@ impl OmniConnector {
         let params = zcash_protocol::consensus::TestNetwork;
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3723909.into(),
+            3724909.into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(anchor),
@@ -819,19 +819,16 @@ impl OmniConnector {
             .unwrap();
 
         //panic!("Change Script: {:?}", tx_out_change.script_pubkey);
-        /*"a0287167b6efd610d2133adc43eda9d9bd762599";
-        let change_pubkey = tx_out_change
-            .script_pubkey
-            .as_script()
-            .p2pk_public_key()
-            .unwrap();
+        //"a0287167b6efd610d2133adc43eda9d9bd762599";
+        //let change_pubkey =
 
-        let pk_bytes = change_pubkey.inner.serialize();
+        /*let pk_bytes = change_pubkey.inner.serialize();
         let sha = sha2::Sha256::digest(&pk_bytes);
         let rip = ripemd::Ripemd160::digest(&sha);*/
 
-        let mut h160_out =
-            <[u8; 20]>::from_hex("a0287167b6efd610d2133adc43eda9d9bd762599").expect("invalid hex");
+        let h160_out = tx_out_change.script_pubkey.into_bytes()[3..23]
+            .try_into()
+            .unwrap();
         //h160_out.copy_from_slice(&rip);
 
         builder
@@ -843,7 +840,7 @@ impl OmniConnector {
 
         let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3723909.into(),
+            3724909.into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(anchor),
