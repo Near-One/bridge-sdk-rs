@@ -245,4 +245,32 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         //grpcurl -insecure -d '{"height": 3723909}' testnet.zec.rocks:443 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetTreeState
         "01353e6d0c0533b23256bee162aff079bd852e6ba72e771c989d8d1f3199e45d0b01ec3de1b5252483bd1b44b969fb32e1275cef86cba8deb3242f68680909d925261f00000000017440d32c765f6564ea7b2de261d348ce90820f530d19c950bd301b7f6891d9000140a6298ea2d7f93eca65a638652c90d4448399f04937e2b8809ef6636860f92500000000000155e51aaff7e2c8958c6ac42f78bf8b1004f2dbe1fe0b0576734374f79677d926000143275cd7061891f321cdeaebcb38811ed37d02d490e475ddcd9c3b6e6f721003017f93215cf466b333690a951c86254d6729672189dc06160f378267efb70b580a0125934a8c8cde7b4ba7e51d78f2321c7e286d140811a192f692f29d3f0ecce510000000000000000000000000000000".to_string()
     }
+
+    pub async fn get_current_height(&self) -> Result<u64> {
+        let count_response: JsonRpcResponse<Value> = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "getblockcount",
+                "params": []
+            }))
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to send getblockcount: {e}"))
+            })?
+            .json()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::BtcClientError(format!("Failed to parse getblockcount: {e}"))
+            })?;
+
+        let last_block_height = count_response.result.as_u64().ok_or_else(|| {
+            BridgeSdkError::BtcClientError("Invalid getblockcount result".to_string())
+        })?;
+
+        Ok(last_block_height)
+    }
 }

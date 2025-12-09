@@ -117,6 +117,7 @@ impl AnyUtxoClient<'_> {
     forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> Result<utxo_bridge_client::types::TxProof>);
     forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> Result<String>);
     forward_common_utxo_method!(get_tree_state(current_u: u64) -> String);
+    forward_common_utxo_method!(get_current_height() -> Result<u64>);
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -759,7 +760,7 @@ impl OmniConnector {
 
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
-        let current_height = 3724909u64;
+        let current_height = utxo_bridge_client.get_current_height().await.unwrap();
         let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
         let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
 
@@ -767,7 +768,7 @@ impl OmniConnector {
         let params = zcash_protocol::consensus::TestNetwork;
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3724909.into(),
+            (current_height as u32).into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(anchor),
@@ -840,7 +841,7 @@ impl OmniConnector {
 
         let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
             params,
-            3724909.into(),
+            (current_height as u32).into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(anchor),
