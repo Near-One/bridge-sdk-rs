@@ -768,6 +768,7 @@ impl OmniConnector {
         let current_height = utxo_bridge_client.get_current_height().await.unwrap();
         let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
         let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
+        let near_bridge_client = self.near_bridge_client().unwrap();
 
         let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
         let params = zcash_protocol::consensus::TestNetwork;
@@ -780,32 +781,46 @@ impl OmniConnector {
             },
         );
 
-        let near_bridge_client = self.near_bridge_client().unwrap();
-        let pk_raw = &near_bridge_client
-            .get_pk_raw(ChainKind::Zcash, utxos[0].clone())
-            .await;
-
-        let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
-
-        let utxo = zcash_transparent::bundle::OutPoint::new(
-            out_point[0].txid.to_byte_array(),
-            out_point[0].vout,
+        let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
+            params,
+            (current_height as u32).into(),
+            zcash_primitives::transaction::builder::BuildConfig::Standard {
+                sapling_anchor: None,
+                orchard_anchor: Some(anchor),
+            },
         );
 
-        let pk_bytes = transparent_pubkey.serialize();
-        let sha = sha2::Sha256::digest(&pk_bytes);
-        let rip = ripemd::Ripemd160::digest(&sha);
+        for i in 0..utxos.len() {
+            let pk_raw = &near_bridge_client
+                .get_pk_raw(ChainKind::Zcash, utxos[i].clone())
+                .await;
 
-        let mut h160 = [0u8; 20];
-        h160.copy_from_slice(&rip);
+            let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
-        let coin = zcash_transparent::bundle::TxOut {
-            value: zcash_protocol::value::Zatoshis::const_from_u64(25000),
-            script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
-        };
-        builder
-            .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
-            .unwrap();
+            let utxo = zcash_transparent::bundle::OutPoint::new(
+                out_point[i].txid.to_byte_array(),
+                out_point[i].vout,
+            );
+
+            let pk_bytes = transparent_pubkey.serialize();
+            let sha = sha2::Sha256::digest(&pk_bytes);
+            let rip = ripemd::Ripemd160::digest(&sha);
+
+            let mut h160 = [0u8; 20];
+            h160.copy_from_slice(&rip);
+
+            let coin = zcash_transparent::bundle::TxOut {
+                value: zcash_protocol::value::Zatoshis::const_from_u64(utxos[i].balance),
+                script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
+            };
+            builder
+                .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
+                .unwrap();
+
+            builder1
+                .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
+                .unwrap();
+        }
 
         builder
             .add_orchard_output::<zip317::FeeRule>(
@@ -828,19 +843,6 @@ impl OmniConnector {
                 )
                 .unwrap();
         }
-
-        let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
-            params,
-            (current_height as u32).into(),
-            zcash_primitives::transaction::builder::BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(anchor),
-            },
-        );
-
-        builder1
-            .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
-            .unwrap();
 
         let rng = k256::elliptic_curve::rand_core::OsRng;
 
