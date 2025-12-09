@@ -663,6 +663,7 @@ impl OmniConnector {
         chain: ChainKind,
         target_btc_address: String,
         amount: u128,
+        enable_orchard: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -672,7 +673,7 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos(chain).await?;
 
         let (out_points, selected_utxo, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate, true)?;
+            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate, enable_orchard)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
@@ -694,15 +695,21 @@ impl OmniConnector {
 
         let fee = near_bridge_client.get_withdraw_fee(chain).await? + gas_fee;
 
-        let (orchard, expiry_height) = self
-            .get_orchard_raw(
-                tx_outs[0].clone(),
-                tx_outs[1].clone(),
-                target_btc_address.clone(),
-                out_points.clone(),
-                selected_utxo,
-            )
-            .await;
+        let (orchard, expiry_height, output) = if enable_orchard {
+            let (orchard, expiry_height) = self
+                .get_orchard_raw(
+                    tx_outs[0].clone(),
+                    tx_outs[1].clone(),
+                    target_btc_address.clone(),
+                    out_points.clone(),
+                    selected_utxo,
+                )
+                .await;
+
+            (Some(orchard), Some(expiry_height), vec![tx_outs[1].clone()])
+        } else {
+            (None, None, tx_outs)
+        };
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
@@ -711,15 +718,13 @@ impl OmniConnector {
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
-                    output: vec![tx_outs[1].clone()],
-                    orchard_bundle_bytes: Some(orchard),
-                    expiry_height: Some(expiry_height),
+                    output,
+                    orchard_bundle_bytes: orchard,
+                    expiry_height: expiry_height,
                 },
                 transaction_options,
             )
             .await
-
-        //return Ok(CryptoHash::new());
     }
 
     fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {

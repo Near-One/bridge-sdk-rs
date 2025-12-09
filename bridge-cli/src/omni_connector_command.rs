@@ -435,6 +435,13 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         amount: u128,
+        #[clap(
+            short,
+            long,
+            help = "Enable Orchard shielded mode",
+            default_value = "false"
+        )]
+        orchard: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -947,6 +954,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             target_btc_address,
             amount,
+            orchard,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -954,6 +962,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     target_btc_address,
                     amount,
+                    orchard,
                     TransactionOptions::default(),
                 )
                 .await
