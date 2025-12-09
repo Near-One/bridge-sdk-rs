@@ -208,20 +208,14 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         let response_txt = response_tmp.text().await.unwrap();
 
-        println!("Response: {:?}", response_txt);
-        Ok(response_txt)
-
-        /*let response: JsonRpcResponse<bitcoin::Txid> = response_tmp
-            .json()
-            .await
-            .map_err(|e| {
+        let response: JsonRpcResponse<bitcoin::Txid> = serde_json::from_str(&response_txt)
+            .map_err(|_| {
                 BridgeSdkError::BtcClientError(format!(
-                    "Failed to read sendrawtransaction response: {e}"
+                    "Failed to read sendrawtransaction response: {response_txt};"
                 ))
-            })
-            .unwrap();
+            })?;
 
-        Ok(response.result.to_string())*/
+        Ok(response.result.to_string())
     }
 
     pub async fn get_tree_state(&self, current_h: u64) -> String {
