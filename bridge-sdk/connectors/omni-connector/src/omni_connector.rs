@@ -672,7 +672,7 @@ impl OmniConnector {
         let utxos = near_bridge_client.get_utxos(chain).await?;
 
         let (out_points, selected_utxo, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate, true)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
@@ -2268,7 +2268,7 @@ impl OmniConnector {
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let (out_points, _, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)?;
+            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate, false)?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(

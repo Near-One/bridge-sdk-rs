@@ -37,10 +37,15 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>> {
         .collect()
 }
 
-pub fn get_gas_fee(chain: ChainKind, num_input: u64, num_output: u64, fee_rate: u64) -> u64 {
+pub fn get_gas_fee(
+    chain: ChainKind,
+    num_input: u64,
+    num_output: u64,
+    fee_rate: u64,
+    orchard: bool,
+) -> u64 {
     if chain == ChainKind::Zcash {
-        10000
-        //5000 * std::cmp::max(num_input, num_output) + 5000
+        5000 * std::cmp::max(num_input, num_output) + 5000 * (orchard as u64)
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
         (fee_rate * tx_size / 1024) + 50
@@ -53,6 +58,7 @@ pub fn choose_utxos(
     amount: u128,
     utxos: HashMap<String, UTXO>,
     fee_rate: u64,
+    orchard: bool,
 ) -> Result<(Vec<OutPoint>, Vec<UTXO>, u128, u128)> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
@@ -65,13 +71,16 @@ pub fn choose_utxos(
         utxos_balance += u128::from(utxo.1.balance);
         selected.push(utxo);
 
+        let num_output = 2 - orchard as u64;
+
         gas_fee = get_gas_fee(
             chain,
             selected.len().try_into().map_err(|e| {
                 BridgeSdkError::BtcClientError(format!("Error on convert usize into u64: {e}"))
             })?,
-            2,
+            num_output,
             fee_rate,
+            orchard,
         )
         .into();
 
@@ -130,7 +139,7 @@ pub fn choose_utxos_for_active_management(
             BridgeSdkError::BtcClientError(format!("Error on convert usize into u64: {e}"))
         })?;
 
-        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate);
+        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate, false);
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs_utxo_management(
@@ -158,6 +167,7 @@ pub fn choose_utxos_for_active_management(
             })?,
             1,
             fee_rate,
+            false,
         );
         let out_points = utxo_to_out_points(selected)?;
 
