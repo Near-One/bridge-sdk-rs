@@ -699,14 +699,18 @@ impl OmniConnector {
             let (orchard, expiry_height) = self
                 .get_orchard_raw(
                     tx_outs[0].clone(),
-                    tx_outs[1].clone(),
+                    tx_outs.get(1),
                     target_btc_address.clone(),
                     out_points.clone(),
                     selected_utxo,
                 )
                 .await;
+            let mut output = vec![];
+            if tx_outs.len() == 2 {
+                output.push(tx_outs[1].clone());
+            }
 
-            (Some(orchard), Some(expiry_height), vec![tx_outs[1].clone()])
+            (Some(orchard), Some(expiry_height), output)
         } else {
             (None, None, tx_outs)
         };
@@ -740,26 +744,22 @@ impl OmniConnector {
         orchard::Anchor::from_bytes(root).unwrap()
     }
 
-    pub async fn get_orchard_raw(
+    async fn get_orchard_raw(
         &self,
         tx_out: TxOut,
-        tx_out_change: TxOut,
+        tx_out_change: Option<&TxOut>,
         recipient: String,
         out_point: Vec<OutPoint>,
         utxos: Vec<UTXO>,
     ) -> (String, u32) {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
-        // Loop through receivers
         for receiver in ua.items() {
             match receiver {
                 unified::Receiver::Orchard(orchard_receiver) => {
-                    println!("Found Orchard receiver:");
                     recipient = Some(orchard_receiver);
                 }
-                _ => {
-                    // Skip other types like Sapling, Transparent, etc.
-                }
+                _ => {}
             }
         }
 
@@ -779,20 +779,12 @@ impl OmniConnector {
                 orchard_anchor: Some(anchor),
             },
         );
-        println!("Value: {:?}", tx_out.value.to_sat());
-
-        let secp = secp256k1::Secp256k1::new();
-        let secret_key =
-            secp256k1::SecretKey::from_slice(&[0xcd; 32]).expect("32 bytes, within curve order");
 
         let near_bridge_client = self.near_bridge_client().unwrap();
         let pk_raw = &near_bridge_client
             .get_pk_raw(ChainKind::Zcash, utxos[0].clone())
             .await;
 
-        println!("PK RAW: {}", pk_raw);
-
-        //let pk_raw = "02c456bb9080223ed8c6b4b7c88a131593d539d200fe9a08c18d6071cc04b5f53e";
         let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
         let utxo = zcash_transparent::bundle::OutPoint::new(
@@ -824,25 +816,18 @@ impl OmniConnector {
             )
             .unwrap();
 
-        //panic!("Change Script: {:?}", tx_out_change.script_pubkey);
-        //"a0287167b6efd610d2133adc43eda9d9bd762599";
-        //let change_pubkey =
+        if let Some(tx_out_change) = tx_out_change {
+            let h160_change = tx_out_change.clone().script_pubkey.into_bytes()[3..23]
+                .try_into()
+                .unwrap();
 
-        /*let pk_bytes = change_pubkey.inner.serialize();
-        let sha = sha2::Sha256::digest(&pk_bytes);
-        let rip = ripemd::Ripemd160::digest(&sha);*/
-
-        let h160_out = tx_out_change.script_pubkey.into_bytes()[3..23]
-            .try_into()
-            .unwrap();
-        //h160_out.copy_from_slice(&rip);
-
-        builder
-            .add_transparent_output(
-                &TransparentAddress::PublicKeyHash(h160_out),
-                zcash_protocol::value::Zatoshis::const_from_u64(tx_out_change.value.to_sat()),
-            )
-            .unwrap();
+            builder
+                .add_transparent_output(
+                    &TransparentAddress::PublicKeyHash(h160_change),
+                    zcash_protocol::value::Zatoshis::const_from_u64(tx_out_change.value.to_sat()),
+                )
+                .unwrap();
+        }
 
         let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
             params,
@@ -866,42 +851,16 @@ impl OmniConnector {
             )
             .unwrap();
 
-        // Create the base PCZT.
         let pczt = Creator::build_from_parts(pczt_parts).unwrap();
-
-        // Finalize the I/O.
         let pczt = IoFinalizer::new(pczt).finalize_io().unwrap();
-
-        /*let mut signer = Signer::new(pczt).unwrap();
-        signer.sign_transparent(0, &secret_key).unwrap();
-        // println!("Sighash: {}", hex::encode(sighash));
-        // println!("Signature: {}", hex::encode(sig_bytes));
-
-        let pczt = signer.finish();*/
-        /*println!(
-            "PARTIAL LEN: {:?}",
-            pczt.transparent().inputs()[0].partial_signatures().len()
-        );
-
-
-        let mut iter = pczt.transparent().inputs()[0].partial_signatures.iter();
-        println!("next next {:?}, {:?}", iter.next(), iter.next());*/
-
-        // Create proofs.
         let pczt = Prover::new(pczt)
             .create_orchard_proof(orchard_proving_key())
             .unwrap()
             .finish();
 
-        // Finalize spends.
-        //let pczt = SpendFinalizer::new(pczt).finalize_spends().unwrap();
-
-        // We should now be able to extract the fully authorized transaction.
         let tx: zcash_primitives::transaction::Transaction =
             TransactionExtractor::new(pczt).extract().unwrap();
-        println!("Transaction: {:?}", tx);
 
-        //assert_eq!(u32::from(tx.expiry_height()), 10_000_040);
         assert_eq!(tx.version(), zcash_primitives::transaction::TxVersion::V5);
         assert_eq!(tx.lock_time(), 0);
 
@@ -910,12 +869,6 @@ impl OmniConnector {
 
         let auth_data = tx.into_data();
         let tx_orchard = auth_data.orchard_bundle().clone();
-        println!(
-            "Tx Orchard Actions: {:?}",
-            tx_orchard.unwrap().actions().len()
-        );
-
-        //let unauthed_tx: TransactionData<Unauthorized> = builder.get_unath_tx(rng);
 
         let txid_parts = auth_data.digest(TxIdDigester);
         let shielded_sig_commitment = sighash_v5::my_signature_hash(
@@ -932,13 +885,8 @@ impl OmniConnector {
             .unwrap();
         let mut validator = orchard::bundle::BatchValidator::new();
         validator.add_bundle(tx_orchard.unwrap(), sighash);
-        println!(
-            "Validate: {:?}",
-            validator.validate(orchard_verifying_key(), OsRng)
-        );
-        println!("Proof is verifiuyed!!");
+        assert_eq!(validator.validate(orchard_verifying_key(), OsRng), true);
 
-        println!("Tx Orchard Actions: {:?}", tx_orchard.unwrap().actions());
         let mut writer = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(
             tx_orchard,
@@ -947,9 +895,7 @@ impl OmniConnector {
         .unwrap();
 
         let bytes_str = hex::encode(writer.clone());
-        println!("orchard bytes: {}", bytes_str);
-
-        return (bytes_str, auth_data.expiry_height().into());
+        (bytes_str, auth_data.expiry_height().into())
     }
 
     pub async fn near_submit_btc_transfer(
