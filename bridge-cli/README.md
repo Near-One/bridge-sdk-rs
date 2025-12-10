@@ -33,6 +33,9 @@ cargo build --release
 
 # The binary will be available at
 ./target/release/bridge-cli
+
+# Or install globally with
+cargo install --path ./bridge-cli
 ```
 
 
@@ -50,12 +53,6 @@ The CLI can be configured in multiple ways (in order of precedence):
 ```.env
 NEAR_SIGNER=<signer-account-id>
 NEAR_PRIVATE_KEY=<signer-private-key>
-
-# mainnet
-TOKEN_LOCKER_ID=omni.bridge.near
-
-# testnet
-# TOKEN_LOCKER_ID=omni-locker.testnet
 
 ETH_PRIVATE_KEY=<eth-private-key>
 BASE_PRIVATE_KEY=<base-private-key>
@@ -135,12 +132,70 @@ bridge-cli testnet solana-finalize-transfer \
     --solana-token So11111111111111111111111111111111111111112
 ```
 
+### Example 4: Transfer BTC from Bitcoin to NEAR
+
+This example shows how to transfer BTC to NEAR:
+
+```bash
+# 1. Get deterministically calculated deposit address
+bridge-cli testnet get-bitcoin-address \
+    --chain btc \
+    --amount 50000 \
+    --recipient alice.near
+
+# Example output:
+# BTC Address: tb1q.....q4g
+# Amount you need to transfer, including the fee: 52000
+
+# 2. Send the specified amount to the generated address using your Bitcoin wallet.
+# ATTENTION: Transactions with non-zero lock time are not supported. Make sure to set it to 0 in your wallet of choice.
+
+# 3. Finalize and mint tokens on NEAR
+bridge-cli testnet near-fin-transfer-btc \
+    --chain btc \
+    --btc-tx-hash cb9.....36b \
+    --recipient alice.near
+```
+
+### Example 5: Transfer BTC from NEAR to Bitcoin
+
+This example shows how to transfer BTC back to Bitcoin:
+
+```bash
+# 1. Initialize the transfer normally
+bridge-cli testnet near-init-transfer \
+    --token nbtc.n-bridge.testnet \
+    --amount 50000 \
+    --recipient btc:tb1q3....
+
+# 2. Submit transfer operation builds bitcoin transaction to send funds to the recipient
+bridge-cli testnet near-submit-btc-transfer \
+    --chain btc \
+    --near-tx-hash 4Ss....ux
+
+# 3. Request MPC to sign bitcoin transaction
+bridge-cli testnet near-sign-btc-transaction \
+    --chain btc \
+    --near-tx-hash 88f.....RM
+
+# 4. Send the signed transaction on bitcoin
+bridge-cli testnet btc-fin-transfer \
+    --chain btc \
+    --near-tx-hash 2V6....3P
+
+# 5. Once transaction is confirmed, update UTXOs on the Near contract to keep it up-to-date
+bridge-cli testnet btc-verify-withdraw \
+    --chain btc \
+    --btc-tx-hash 5d...a6
+```
+
 > [!NOTE]
 > - You have to wait for around 20 minutes for transaction confirmation after calling any method on EVM chain. Otherwise, you'll get `ERR_INVALID_BLOCK_HASH` meaning that light client or wormhole is not yet synced with the block that transaction was included in
 > - Replace placeholder values (addresses, amounts, hashes) with actual values
 > - Token amounts are specified in their smallest units (e.g., wei for ETH, yoctoNEAR for NEAR)
 > - Always test with small amounts on testnet first
 > - Ensure you have sufficient funds for gas fees and storage deposits
+> - If you run these operations on testnet and mainnet and attach a sufficient fee, there is a good chance our relayer will handle it starting from step 2.
 
 ## Usage
 

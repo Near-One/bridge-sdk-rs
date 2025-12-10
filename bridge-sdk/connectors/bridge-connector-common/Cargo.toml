@@ -12,5 +12,5 @@ serde_json.workspace = true
 solana-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
-near-light-client-on-eth = { path = "../../near-light-client-on-eth" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
+utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }

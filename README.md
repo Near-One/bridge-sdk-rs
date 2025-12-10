@@ -18,7 +18,7 @@ The repository also contains the CLI tool, which provides a way to perform bridg
 ## Getting Started
 
 ### Prerequisites
-- Rust 1.82.0 or later
+- Rust 1.86.0 or later
 - Cargo package manager
 
 ### Installation
@@ -62,6 +62,8 @@ These are low-level clients for interacting with bridge contracts on specific bl
 
 *   **`solana-bridge-client`:**  For interacting with the Solana blockchain
 
+*   **`utxo-bridge-client`:**  For interacting with BTC-like chains (Bitcoin, Zcash, Litecoin, Dogecoin)
+
 *   **`wormhole-bridge-client`:**  A client specifically for retrieving Wormhole's Verified Action Approvals (VAAs). These are used to prove events across Wormhole-connected chains (like Solana, Base, Arbitrum)
 
 ### 2. `connectors`
@@ -83,24 +85,17 @@ A client for interacting directly with the NEAR RPC.  Used by other components f
 *   Waiting for transaction finality.
 *   Retrieving light client proofs.
 
-### 5. `bridge-cli`
+### 5. `light-client`
 
-The [Bridge CLI](bridge-cli/README.md) is the recommended interface for most users.  It provides easy-to-use commands for common Omni Bridge operations, built on top of the SDK. Use the CLI to:
+A component for interacting with light clients deployed on NEAR (e.g. Ethereum light client, Bitcoin light client)
+
+### 6. `bridge-cli`
+
+The [Bridge CLI](bridge-cli/README.md) is a command-line interface for Omni-Bridge.  It provides easy-to-use commands for common Omni Bridge operations, built on top of the SDK. Use the CLI to:
 
 *   Deploy bridged tokens
 *   Transfer tokens between NEAR, Ethereum, Solana, and other supported chains.
 *   Manage storage deposits.
-
-**For most users, the CLI will be the preferred way to interact with the Omni Bridge.**
-
-### Legacy Components (for previous Rainbow Bridge versions):
-- `legacy-bridge-sdk/connectors/eth-connector`: Provides access to the old ETH connector (for Aurora).
-- `legacy-bridge-sdk/connectors/nep141-connector`: Provides access to the old NEP141 connector (for transferring tokens between NEAR and EVM).
-- `legacy-bridge-sdk/connectors/fast-bridge`: Client for the Fast Bridge (for transferring tokens between NEAR and Aurora, fast but with additional trust assumptions).
-- `legacy-bridge-sdk/near-light-client-on-eth`: A client for interacting with the NEAR light client *deployed on Ethereum*. **This is specific to the legacy Rainbow Bridge and is not used in the Omni Bridge, which uses MPC signatures.**
-- `legacy-bridge-cli`: A command-line interface for the legacy connectors.
-
-**These legacy components are provided for compatibility with older versions of the Rainbow Bridge.  New projects should use the `omni-connector` and `bridge-cli`.**
 
 ## License
 

@@ -1,6 +1,6 @@
 [package]
 name = "near-bridge-client"
-version = "0.2.1"
+version = "0.2.10"
 edition = "2021"
 
 [dependencies]
@@ -12,6 +12,7 @@ near-jsonrpc-client.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
 near-contract-standards.workspace = true
+near-sdk = "5.17.2"
 omni-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -21,6 +22,7 @@ near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 utxo-utils = { path = "../../utxo-utils" }
 base64 = "0.21.7"
+futures = "0.3.31"
 
 [lib]
 path = "src/near_bridge_client.rs"

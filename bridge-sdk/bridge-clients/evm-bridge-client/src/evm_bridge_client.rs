@@ -535,7 +535,7 @@ impl EvmBridgeClient {
             .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
 
         let signer_address = self.signer()?.address();
-        client
+        let gas = client
             .estimate_gas(call.tx.set_from(signer_address), None)
             .await
             .map_err(|err| BridgeSdkError::EvmGasEstimateError(err.to_string()))?;
@@ -551,6 +551,7 @@ impl EvmBridgeClient {
 
         tx.nonce = tx_nonce;
 
+        tx.gas = Some(gas * 13 / 10);
         tx.max_priority_fee_per_gas = Some(max_priority_fee_per_gas);
         tx.max_fee_per_gas = Some(base_fee_per_gas * 2 + max_priority_fee_per_gas);
 

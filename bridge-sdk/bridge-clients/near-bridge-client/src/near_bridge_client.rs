@@ -82,11 +82,11 @@ pub struct FastFinTransferArgs {
 #[derive(Default, Clone)]
 pub struct UTXOChainAccounts {
     #[doc = r"UTXO Chain Connector account id on Near"]
-    pub utxo_chain_connector: Option<String>,
+    pub utxo_chain_connector: Option<AccountId>,
     #[doc = r"UTXO Chain Token account id on Near"]
-    pub utxo_chain_token: Option<String>,
+    pub utxo_chain_token: Option<AccountId>,
     #[doc = r"Satoshi Relayer Account Id which sign transaction in UTXO Chain Bridge"]
-    pub satoshi_relayer: Option<String>,
+    pub satoshi_relayer: Option<AccountId>,
 }
 
 /// Bridging NEAR-originated NEP-141 tokens
@@ -97,9 +97,9 @@ pub struct NearBridgeClient {
     #[doc = r"NEAR private key"]
     private_key: Option<String>,
     #[doc = r"NEAR account id of the transaction signer"]
-    signer: Option<String>,
+    signer: Option<AccountId>,
     #[doc = r"`OmniBridge` account id on Near"]
-    omni_bridge_id: Option<String>,
+    omni_bridge_id: Option<AccountId>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
     utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
 }
@@ -333,24 +333,22 @@ impl NearBridgeClient {
     #[tracing::instrument(skip_all, name = "STORAGE DEPOSIT")]
     pub async fn storage_deposit_for_token(
         &self,
-        token_id: String,
+        token_id: AccountId,
+        account_id: AccountId,
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let omni_bridge_id = self.omni_bridge_id()?;
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
-                receiver_id: token_id.parse().map_err(|err| {
-                    BridgeSdkError::ConfigError(format!("Failed to parse token_id: {err}"))
-                })?,
+                receiver_id: token_id,
                 method_name: "storage_deposit".to_string(),
                 args: serde_json::json!({
-                    "account_id": omni_bridge_id
+                    "account_id": account_id
                 })
                 .to_string()
                 .into_bytes(),
@@ -613,7 +611,10 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self.get_required_balance_for_init_transfer().await?;
+        let required_balance = self
+            .get_required_balance_for_init_transfer()
+            .await?
+            .saturating_add(native_fee);
 
         let nonce = if self
             .deposit_storage_if_required(required_balance, transaction_options.clone())
@@ -744,23 +745,11 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let required_balance = self.get_required_balance_for_fast_fin_transfer().await?
-            + args.storage_deposit_amount.unwrap_or(0);
-
-        let nonce = if self
-            .deposit_storage_if_required(required_balance, transaction_options.clone())
-            .await?
-        {
-            transaction_options.nonce.map(|nonce| nonce + 1)
-        } else {
-            transaction_options.nonce
-        };
-
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
                 signer: self.signer()?,
-                nonce,
+                nonce: transaction_options.nonce,
                 receiver_id: args.token_id,
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
@@ -939,9 +928,9 @@ impl NearBridgeClient {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Near signer account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
+            ))
             .map_err(|_| BridgeSdkError::ConfigError("Invalid near signer account id".to_string()))
+            .cloned()
     }
 
     pub fn signer(&self) -> Result<near_crypto::InMemorySigner> {
@@ -971,8 +960,8 @@ impl NearBridgeClient {
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "OmniBridge account id is not set".to_string(),
-            ))?
-            .parse::<AccountId>()
+            ))
             .map_err(|_| BridgeSdkError::ConfigError("Invalid omni bridge account id".to_string()))
+            .cloned()
     }
 }

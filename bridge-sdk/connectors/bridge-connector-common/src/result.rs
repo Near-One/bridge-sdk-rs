@@ -5,11 +5,11 @@ use ethers::{
     providers::{Http, Provider, ProviderError},
     signers::LocalWallet,
 };
-use near_light_client_on_eth::NearLightClientOnEthError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
 use std::result;
+use utxo_bridge_client::{self, error::UtxoClientError};
 
 pub type Result<T> = result::Result<T, BridgeSdkError>;
 
@@ -35,14 +35,26 @@ pub enum BridgeSdkError {
     SolanaOtherError(String),
     #[error("Wormhole client error: {0}")]
     WormholeClientError(String),
-    #[error("BTC Client Error: {0}")]
-    BtcClientError(String),
+    #[error("Utxo Client Error: {0}")]
+    UtxoClientError(String),
+    #[error("Error communicating with Utxo chain RPC: {0}")]
+    UtxoRpcError(String),
+    #[error("Insufficient UTXO chain Gas Fee: {0}")]
+    InsufficientUTXOGasFee(String),
+    #[error("Insufficient UTXO balance to cover amount and fees")]
+    InsufficientUTXOBalance,
     #[error("Insufficient balance for transaction: {0}")]
     InsufficientBalance(String),
     #[error("Invalid argument provided: {0}")]
     InvalidArgument(String),
     #[error("Light client not synced, current height {0}")]
     LightClientNotSynced(u64),
+    #[error("Invalid log found. {0}")]
+    InvalidLog(String),
+    #[error("Invalid contract configuration. {0}")]
+    ContractConfigurationError(String),
+    #[error("Utxo management error: {0}")]
+    UtxoManagementError(String),
     #[error("Unexpected error occured: {0}")]
     UnknownError(String),
 }
@@ -80,17 +92,6 @@ impl From<EthProofError> for BridgeSdkError {
     }
 }
 
-impl From<NearLightClientOnEthError> for BridgeSdkError {
-    fn from(error: NearLightClientOnEthError) -> Self {
-        match error {
-            NearLightClientOnEthError::ConfigError(e) => Self::ConfigError(e),
-            NearLightClientOnEthError::EthRpcError(e) => {
-                Self::EthRpcError(EthRpcError::ProviderContractError(e))
-            }
-        }
-    }
-}
-
 impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for BridgeSdkError {
     fn from(error: ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>) -> Self {
         Self::EthRpcError(EthRpcError::SignerContractError(error))
@@ -100,5 +101,14 @@ impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for Brid
 impl From<ProviderError> for BridgeSdkError {
     fn from(error: ProviderError) -> Self {
         Self::EthRpcError(EthRpcError::ProviderError(error))
+    }
+}
+
+impl From<UtxoClientError> for BridgeSdkError {
+    fn from(error: UtxoClientError) -> Self {
+        match error {
+            UtxoClientError::RpcError(e) => Self::UtxoRpcError(e),
+            UtxoClientError::Other(e) => Self::UtxoClientError(e),
+        }
     }
 }
