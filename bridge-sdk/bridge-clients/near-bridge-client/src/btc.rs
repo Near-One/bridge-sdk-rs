@@ -1,5 +1,6 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
+use base64::Engine;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
@@ -806,26 +807,30 @@ impl NearBridgeClient {
                 "Missing EVENT_JSON prefix".to_string(),
             ))?;
         let v: Value = serde_json::from_str(json_str)?;
-        let bytes = v["data"][0]["tx_bytes"]
-            .as_array()
-            .ok_or_else(|| {
-                BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
-            })?
-            .iter()
-            .map(|val| {
-                let num = val.as_u64().ok_or_else(|| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Expected u64 value in 'tx_bytes', got: {val}"
-                    ))
-                })?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(v["data"][0]["tx_bytes_base64"].as_str().unwrap())
+            .unwrap();
 
-                u8::try_from(num).map_err(|e| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
-                    ))
-                })
+        /*let bytes = v["data"][0]["tx_bytes"]
+        .as_array()
+        .ok_or_else(|| {
+            BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
+        })?
+        .iter()
+        .map(|val| {
+            let num = val.as_u64().ok_or_else(|| {
+                BridgeSdkError::InvalidLog(format!(
+                    "Expected u64 value in 'tx_bytes', got: {val}"
+                ))
+            })?;
+
+            u8::try_from(num).map_err(|e| {
+                BridgeSdkError::InvalidLog(format!(
+                    "Value {num} in 'tx_bytes' is out of range for u8: {e}"
+                ))
             })
-            .collect::<Result<Vec<u8>>>()?;
+        })
+        .collect::<Result<Vec<u8>>>()?;*/
 
         Ok(bytes)
     }
