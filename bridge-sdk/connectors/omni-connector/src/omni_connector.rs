@@ -51,6 +51,7 @@ use zcash_primitives::transaction::sighash_v5;
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_protocol::memo::MemoBytes;
 use zcash_transparent::address::TransparentAddress;
+use zcash_transparent::bundle::Bundle;
 
 static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
 
@@ -778,49 +779,26 @@ impl OmniConnector {
         orchard::Anchor::from_bytes(root).unwrap()
     }
 
-    async fn get_orchard_raw(
+    async fn get_builder_with_transparent(
         &self,
-        tx_out: TxOut,
-        tx_out_change: Option<&TxOut>,
-        recipient: String,
+        current_height: u64,
+        orchard_anchor: Option<orchard::Anchor>,
         out_point: Vec<OutPoint>,
         utxos: Vec<UTXO>,
-    ) -> (Vec<u8>, u32) {
-        let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
-        let mut recipient = None;
-        for receiver in ua.items() {
-            match receiver {
-                unified::Receiver::Orchard(orchard_receiver) => {
-                    recipient = Some(orchard_receiver);
-                }
-                _ => {}
-            }
-        }
-
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
-
-        let current_height = utxo_bridge_client.get_current_height().await.unwrap();
-        let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
-        let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
+        tx_out_change: Option<&TxOut>,
+    ) -> zcash_primitives::transaction::builder::Builder<
+        '_,
+        zcash_protocol::consensus::TestNetwork,
+        (),
+    > {
         let near_bridge_client = self.near_bridge_client().unwrap();
-
-        let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
         let params = zcash_protocol::consensus::TestNetwork;
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
             (current_height as u32).into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
-                orchard_anchor: Some(anchor),
-            },
-        );
-
-        let mut builder1 = zcash_primitives::transaction::builder::Builder::new(
-            params,
-            (current_height as u32).into(),
-            zcash_primitives::transaction::builder::BuildConfig::Standard {
-                sapling_anchor: None,
-                orchard_anchor: Some(anchor),
+                orchard_anchor: orchard_anchor,
             },
         );
 
@@ -850,20 +828,7 @@ impl OmniConnector {
             builder
                 .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
                 .unwrap();
-
-            builder1
-                .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
-                .unwrap();
         }
-
-        builder
-            .add_orchard_output::<zip317::FeeRule>(
-                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
-                recipient.unwrap(),
-                tx_out.value.to_sat(),
-                MemoBytes::empty(),
-            )
-            .unwrap();
 
         if let Some(tx_out_change) = tx_out_change {
             let h160_change = tx_out_change.clone().script_pubkey.into_bytes()[3..23]
@@ -878,7 +843,67 @@ impl OmniConnector {
                 .unwrap();
         }
 
+        builder
+    }
+
+    async fn get_transparent_bundle(
+        &self,
+        current_height: u64,
+        out_point: Vec<OutPoint>,
+        utxos: Vec<UTXO>,
+        tx_out_change: Option<&TxOut>,
+    ) -> Option<Bundle<zcash_transparent::builder::Unauthorized>> {
+        let builder = self
+            .get_builder_with_transparent(current_height, None, out_point, utxos, tx_out_change)
+            .await;
+        builder.get_transp_bundel()
+    }
+
+    async fn get_orchard_raw(
+        &self,
+        tx_out: TxOut,
+        tx_out_change: Option<&TxOut>,
+        recipient: String,
+        in_points: Vec<OutPoint>,
+        utxos: Vec<UTXO>,
+    ) -> (Vec<u8>, u32) {
+        let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
+        let mut recipient = None;
+        for receiver in ua.items() {
+            match receiver {
+                unified::Receiver::Orchard(orchard_receiver) => {
+                    recipient = Some(orchard_receiver);
+                }
+                _ => {}
+            }
+        }
+        let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
+
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
+
+        let current_height = utxo_bridge_client.get_current_height().await.unwrap();
+        let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
+        let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
+        let mut builder = self
+            .get_builder_with_transparent(
+                current_height,
+                Some(anchor),
+                in_points.clone(),
+                utxos.clone(),
+                tx_out_change.clone(),
+            )
+            .await;
+
         let rng = k256::elliptic_curve::rand_core::OsRng;
+
+        builder
+            .add_orchard_output::<zip317::FeeRule>(
+                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
+                recipient.unwrap(),
+                tx_out.value.to_sat(),
+                MemoBytes::empty(),
+            )
+            .unwrap();
 
         let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
             .build_for_pczt(
@@ -909,7 +934,8 @@ impl OmniConnector {
         let txid_parts = auth_data.digest(TxIdDigester);
         let shielded_sig_commitment = sighash_v5::my_signature_hash(
             &auth_data,
-            builder1.get_transp_bundel(),
+            self.get_transparent_bundle(current_height, in_points, utxos, tx_out_change)
+                .await,
             &SignableInput::Shielded,
             &txid_parts,
         );
@@ -932,6 +958,7 @@ impl OmniConnector {
 
         (writer, auth_data.expiry_height().into())
     }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer(
         &self,

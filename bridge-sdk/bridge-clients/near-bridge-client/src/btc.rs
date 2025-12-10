@@ -817,7 +817,9 @@ impl NearBridgeClient {
         let bytes = if let Some(_) = v["data"][0].get("tx_bytes_base64") {
             base64::engine::general_purpose::STANDARD
                 .decode(v["data"][0]["tx_bytes_base64"].as_str().ok_or_else(|| {
-                    BridgeSdkError::InvalidLog("Expected string value in 'tx_bytes_base64'")
+                    BridgeSdkError::InvalidLog(
+                        "Expected string value in 'tx_bytes_base64'".to_string(),
+                    )
                 })?)
                 .map_err(|err| {
                     BridgeSdkError::InvalidLog(format!("Error on parsing base64: {err}"))
