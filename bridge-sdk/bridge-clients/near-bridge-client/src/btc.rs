@@ -7,6 +7,7 @@ use futures::future::join_all;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_sdk::json_types::Base64VecU8;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
 use omni_types::ChainKind;
@@ -113,6 +114,12 @@ pub struct BtcVerifyWithdrawArgs {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChainSpecificData {
+    pub orchard_bundle_bytes: Option<Base64VecU8>,
+    pub expiry_height: Option<u32>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum TokenReceiverMessage {
     DepositProtocolFee,
     Withdraw {
@@ -120,8 +127,7 @@ pub enum TokenReceiverMessage {
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
         max_gas_fee: Option<U128>,
-        orchard_bundle_bytes: Option<String>,
-        expiry_height: Option<u32>,
+        chain_specific_data: Option<ChainSpecificData>,
     },
 }
 

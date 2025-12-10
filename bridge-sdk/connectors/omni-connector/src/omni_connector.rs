@@ -21,8 +21,8 @@ use bitcoin::hashes::Hash;
 use bitcoin::key::rand::rngs::OsRng;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo,
-    TokenReceiverMessage, VUTXO,
+    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
+    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use pczt::roles::{
@@ -755,8 +755,10 @@ impl OmniConnector {
                     input: out_points,
                     output,
                     max_gas_fee: None,
-                    orchard_bundle_bytes: orchard,
-                    expiry_height: expiry_height,
+                    chain_specific_data: Some(ChainSpecificData {
+                        orchard_bundle_bytes: orchard.map(|v| v.into()),
+                        expiry_height: expiry_height,
+                    }),
                 },
                 transaction_options,
             )
@@ -783,7 +785,7 @@ impl OmniConnector {
         recipient: String,
         out_point: Vec<OutPoint>,
         utxos: Vec<UTXO>,
-    ) -> (String, u32) {
+    ) -> (Vec<u8>, u32) {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
         for receiver in ua.items() {
@@ -928,8 +930,7 @@ impl OmniConnector {
         )
         .unwrap();
 
-        let bytes_str = hex::encode(writer.clone());
-        (bytes_str, auth_data.expiry_height().into())
+        (writer, auth_data.expiry_height().into())
     }
     #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer(
@@ -974,8 +975,7 @@ impl OmniConnector {
                     input: out_points,
                     output: tx_outs,
                     max_gas_fee,
-                    orchard_bundle_bytes: None,
-                    expiry_height: None,
+                    chain_specific_data: None,
                 },
                 transaction_options,
             )
