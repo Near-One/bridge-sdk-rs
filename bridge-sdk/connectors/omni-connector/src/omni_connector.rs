@@ -18,22 +18,14 @@ use omni_types::{
 use bitcoin::hashes::Hash;
 use bitcoin::key::rand::rngs::OsRng;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
-use hex::FromHex;
 use near_bridge_client::btc::{
     BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, TokenReceiverMessage,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
-use pczt::roles::tx_extractor::{Error, OrchardError};
-use pczt::{
-    roles::{
-        combiner::Combiner, creator::Creator, io_finalizer::IoFinalizer, prover::Prover,
-        signer::Signer, spend_finalizer::SpendFinalizer, tx_extractor::TransactionExtractor,
-        updater::Updater,
-    },
-    Pczt,
+use pczt::roles::{
+    creator::Creator, io_finalizer::IoFinalizer, prover::Prover, tx_extractor::TransactionExtractor,
 };
-use ripemd::Ripemd160;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
     TransferId,
@@ -49,23 +41,12 @@ use utxo_bridge_client::{
 use utxo_utils::UTXO;
 use wormhole_bridge_client::WormholeBridgeClient;
 use zcash_address::unified::{self, Container, Encoding};
-use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
+use zcash_primitives::transaction::fees::zip317;
+use zcash_primitives::transaction::sighash::SignableInput;
+use zcash_primitives::transaction::sighash_v5;
 use zcash_primitives::transaction::txid::TxIdDigester;
-use zcash_primitives::transaction::{
-    fees::{transparent::OutputView, zip317},
-    TransactionData, TxVersion,
-};
-use zcash_primitives::transaction::{sighash_v5, Unauthorized};
-use zcash_protocol::{
-    consensus::{BranchId, MAIN_NETWORK, TEST_NETWORK},
-    memo::MemoBytes,
-};
-use zcash_transparent::address::Script;
+use zcash_protocol::memo::MemoBytes;
 use zcash_transparent::address::TransparentAddress;
-use zcash_transparent::{
-    keys::{IncomingViewingKey, NonHardenedChildIndex},
-    pczt::*,
-};
 
 static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
 
@@ -809,10 +790,10 @@ impl OmniConnector {
             let mut h160 = [0u8; 20];
             h160.copy_from_slice(&rip);
 
-            let coin = zcash_transparent::bundle::TxOut {
-                value: zcash_protocol::value::Zatoshis::const_from_u64(utxos[i].balance),
-                script_pubkey: TransparentAddress::PublicKeyHash(h160).script().into(),
-            };
+            let coin = zcash_transparent::bundle::TxOut::new(
+                zcash_protocol::value::Zatoshis::const_from_u64(utxos[i].balance),
+                TransparentAddress::PublicKeyHash(h160).script().into(),
+            );
             builder
                 .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
                 .unwrap();

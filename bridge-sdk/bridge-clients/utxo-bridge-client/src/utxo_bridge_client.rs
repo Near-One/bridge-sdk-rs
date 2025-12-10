@@ -218,7 +218,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         Ok(response.result.to_string())
     }
 
-    pub async fn get_tree_state(&self, current_h: u64) -> String {
+    pub async fn get_tree_state(&self, _current_h: u64) -> String {
         /*let response_tmp = self
             .http_client
             .post(&self.endpoint_url)

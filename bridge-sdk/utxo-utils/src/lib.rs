@@ -92,7 +92,7 @@ pub fn choose_utxos(
     let out_points = utxo_to_out_points(selected.clone())?;
     Ok((
         out_points,
-        selected.into_iter().map(|(id, utxo)| utxo).collect(),
+        selected.into_iter().map(|(_id, utxo)| utxo).collect(),
         utxos_balance,
         gas_fee,
     ))
