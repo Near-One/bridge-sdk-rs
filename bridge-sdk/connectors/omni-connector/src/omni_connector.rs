@@ -713,12 +713,12 @@ impl OmniConnector {
         let (orchard, expiry_height, output) = if enable_orchard {
             let (orchard, expiry_height) = self
                 .get_orchard_raw(
-                    tx_outs[0].clone(),
-                    tx_outs.get(1),
                     target_btc_address.clone(),
+                    tx_outs[0].clone().value.to_sat(),
                     utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
                         BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
                     })?,
+                    tx_outs.get(1),
                 )
                 .await;
             let mut output = vec![];

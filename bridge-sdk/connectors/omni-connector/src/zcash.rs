@@ -128,10 +128,10 @@ impl OmniConnector {
 
     pub(crate) async fn get_orchard_raw(
         &self,
-        tx_out: TxOut,
-        tx_out_change: Option<&TxOut>,
         recipient: String,
+        amount: u64,
         input_points: Vec<InputPoint>,
+        tx_out_change: Option<&TxOut>,
     ) -> (Vec<u8>, u32) {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
@@ -165,7 +165,7 @@ impl OmniConnector {
             .add_orchard_output::<zip317::FeeRule>(
                 Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient.unwrap(),
-                tx_out.value.to_sat(),
+                amount,
                 MemoBytes::empty(),
             )
             .unwrap();
