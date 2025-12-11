@@ -34,19 +34,6 @@ fn orchard_verifying_key() -> &'static orchard::circuit::VerifyingKey {
 }
 
 impl OmniConnector {
-    fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
-        let tree: incrementalmerkletree::frontier::CommitmentTree<
-            orchard::tree::MerkleHashOrchard,
-            32,
-        > = zcash_primitives::merkle_tree::read_commitment_tree(
-            hex::decode(tree_hex).unwrap().as_slice(),
-        )
-        .unwrap();
-
-        let root = tree.root().to_bytes();
-        orchard::Anchor::from_bytes(root).unwrap()
-    }
-
     async fn get_builder_with_transparent(
         &self,
         current_height: u64,
@@ -163,8 +150,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
         let current_height = utxo_bridge_client.get_current_height().await.unwrap();
-        let tree_state = utxo_bridge_client.get_tree_state(current_height).await;
-        let anchor = Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state);
+        let anchor = utxo_bridge_client.get_orchard_anchor().await;
         let mut builder = self
             .get_builder_with_transparent(
                 current_height,

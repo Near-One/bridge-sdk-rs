@@ -361,4 +361,23 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         Ok(last_block_height)
     }
+
+    pub async fn get_orchard_anchor(&self) -> orchard::Anchor {
+        let current_height = self.get_current_height().await.unwrap();
+        let tree_state = self.get_tree_state(current_height).await;
+        Self::orchard_anchor_from_legacy_orchard_tree_hex(&tree_state)
+    }
+
+    fn orchard_anchor_from_legacy_orchard_tree_hex(tree_hex: &str) -> orchard::Anchor {
+        let tree: incrementalmerkletree::frontier::CommitmentTree<
+            orchard::tree::MerkleHashOrchard,
+            32,
+        > = zcash_primitives::merkle_tree::read_commitment_tree(
+            hex::decode(tree_hex).unwrap().as_slice(),
+        )
+        .unwrap();
+
+        let root = tree.root().to_bytes();
+        orchard::Anchor::from_bytes(root).unwrap()
+    }
 }

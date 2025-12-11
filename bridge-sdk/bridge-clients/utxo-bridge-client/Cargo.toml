@@ -20,6 +20,9 @@ thiserror.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
 zebra-chain = "2.0.0"
+incrementalmerkletree = "0.8.2"
+orchard = { git = "https://github.com/Near-One/orchard", rev = "a343552ea2ec90365481da4755a720ce2ace525b", default-features = false }
+zcash_primitives = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] } #{ version = "0.26.1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
 
 [lib]
 path = "src/utxo_bridge_client.rs"

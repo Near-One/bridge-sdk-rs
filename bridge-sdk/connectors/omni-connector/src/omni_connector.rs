@@ -81,6 +81,7 @@ impl AnyUtxoClient<'_> {
 
     forward_common_utxo_method!(get_tree_state(current_u: u64) -> String);
     forward_common_utxo_method!(get_current_height() -> std::result::Result<u64, UtxoClientError>);
+    forward_common_utxo_method!(get_orchard_anchor() -> orchard::Anchor);
 }
 
 pub enum WormholeDeployTokenArgs {
