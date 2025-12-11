@@ -15,8 +15,8 @@ use std::sync::OnceLock;
 use utxo_utils::InputPoint;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_primitives::transaction::sighash::SignableInput;
-use zcash_primitives::transaction::sighash_v5;
 use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::{sighash_v5, Authorized, TransactionData};
 use zcash_protocol::memo::MemoBytes;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::Bundle;
@@ -125,6 +125,33 @@ impl OmniConnector {
         builder.get_transp_bundel()
     }
 
+    async fn validate_orchard(
+        &self,
+        auth_data: &TransactionData<Authorized>,
+        current_height: u64,
+        input_points: Vec<InputPoint>,
+        tx_out_change: Option<&TxOut>,
+    ) {
+        let tx_orchard = auth_data.orchard_bundle().clone();
+        let txid_parts = auth_data.digest(TxIdDigester);
+        let shielded_sig_commitment = sighash_v5::my_signature_hash(
+            &auth_data,
+            self.get_transparent_bundle(current_height, input_points, tx_out_change)
+                .await,
+            &SignableInput::Shielded,
+            &txid_parts,
+        );
+
+        let sighash: [u8; 32] = shielded_sig_commitment.as_ref()[..32].try_into().unwrap();
+        tx_orchard
+            .unwrap()
+            .verify_proof(orchard_verifying_key())
+            .unwrap();
+        let mut validator = orchard::bundle::BatchValidator::new();
+        validator.add_bundle(tx_orchard.unwrap(), sighash);
+        assert_eq!(validator.validate(orchard_verifying_key(), OsRng), true);
+    }
+
     pub(crate) async fn get_orchard_raw(
         &self,
         recipient: String,
@@ -180,29 +207,15 @@ impl OmniConnector {
 
         let auth_data = tx.into_data();
         let tx_orchard = auth_data.orchard_bundle().clone();
+        let expiry_height = auth_data.expiry_height().into();
 
-        let txid_parts = auth_data.digest(TxIdDigester);
-        let shielded_sig_commitment = sighash_v5::my_signature_hash(
-            &auth_data,
-            self.get_transparent_bundle(current_height, input_points, tx_out_change)
-                .await,
-            &SignableInput::Shielded,
-            &txid_parts,
-        );
-
-        let sighash: [u8; 32] = shielded_sig_commitment.as_ref()[..32].try_into().unwrap();
-        tx_orchard
-            .unwrap()
-            .verify_proof(orchard_verifying_key())
-            .unwrap();
-        let mut validator = orchard::bundle::BatchValidator::new();
-        validator.add_bundle(tx_orchard.unwrap(), sighash);
-        assert_eq!(validator.validate(orchard_verifying_key(), OsRng), true);
+        self.validate_orchard(&auth_data, current_height, input_points, tx_out_change)
+            .await;
 
         let mut res = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
             .unwrap();
 
-        (res, auth_data.expiry_height().into())
+        (res, expiry_height)
     }
 }
