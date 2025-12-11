@@ -13,7 +13,6 @@ use sha2::Digest;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use utxo_utils::InputPoint;
-use zcash_address::unified::{self, Container, Encoding};
 use zcash_primitives::transaction::fees::zip317;
 use zcash_primitives::transaction::sighash::SignableInput;
 use zcash_primitives::transaction::sighash_v5;
@@ -133,18 +132,7 @@ impl OmniConnector {
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> (Vec<u8>, u32) {
-        let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
-        let mut recipient = None;
-        for receiver in ua.items() {
-            match receiver {
-                unified::Receiver::Orchard(orchard_receiver) => {
-                    recipient = Some(orchard_receiver);
-                }
-                _ => {}
-            }
-        }
-        let recipient = orchard::Address::from_raw_address_bytes(&recipient.unwrap());
-
+        let recipient = utxo_utils::extract_orchar_address(recipient);
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
         let current_height = utxo_bridge_client.get_current_height().await.unwrap();
@@ -190,9 +178,6 @@ impl OmniConnector {
         assert_eq!(tx.version(), zcash_primitives::transaction::TxVersion::V5);
         assert_eq!(tx.lock_time(), 0);
 
-        let mut buf = Vec::new();
-        tx.write(&mut buf).unwrap();
-
         let auth_data = tx.into_data();
         let tx_orchard = auth_data.orchard_bundle().clone();
 
@@ -214,13 +199,10 @@ impl OmniConnector {
         validator.add_bundle(tx_orchard.unwrap(), sighash);
         assert_eq!(validator.validate(orchard_verifying_key(), OsRng), true);
 
-        let mut writer = Vec::new();
-        zcash_primitives::transaction::components::orchard::write_v5_bundle(
-            tx_orchard,
-            &mut writer,
-        )
-        .unwrap();
+        let mut res = Vec::new();
+        zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
+            .unwrap();
 
-        (writer, auth_data.expiry_height().into())
+        (res, auth_data.expiry_height().into())
     }
 }

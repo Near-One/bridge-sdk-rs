@@ -4,9 +4,13 @@ use crate::address::UTXOAddress;
 use address::Network;
 use bitcoin::consensus::deserialize;
 use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
+use k256::elliptic_curve::subtle::CtOption;
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
+use zcash_address::unified;
+use zcash_address::unified::Container;
+use zcash_address::unified::Encoding;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -264,4 +268,18 @@ pub fn get_tx_outs_utxo_management(
     }
 
     Ok(res)
+}
+
+pub fn extract_orchar_address(uaddress: String) -> CtOption<orchard::Address> {
+    let (_, ua) = unified::Address::decode(&uaddress).expect("Invalid unified address");
+    let mut parsed_address = None;
+    for receiver in ua.items() {
+        match receiver {
+            unified::Receiver::Orchard(orchard_receiver) => {
+                parsed_address = Some(orchard_receiver);
+            }
+            _ => {}
+        }
+    }
+    orchard::Address::from_raw_address_bytes(&parsed_address.unwrap())
 }
