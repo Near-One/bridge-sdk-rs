@@ -42,7 +42,7 @@ use utxo_bridge_client::{
     UTXOBridgeClient,
 };
 use utxo_utils::get_gas_fee;
-use utxo_utils::UTXO;
+use utxo_utils::InputPoint;
 use wormhole_bridge_client::WormholeBridgeClient;
 use zcash_address::unified::{self, Container, Encoding};
 use zcash_primitives::transaction::fees::zip317;
@@ -695,10 +695,19 @@ impl OmniConnector {
             BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
         })?;
 
-        let (out_points, selected_utxo, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, net_amount, utxos, fee_rate, enable_orchard)
-                .map_err(BridgeSdkError::UtxoManagementError)?;
-
+        let (selected_utxo, utxos_balance) = utxo_utils::choose_utxos(net_amount, utxos)
+            .map_err(BridgeSdkError::UtxoManagementError)?;
+        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
+            BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+        })?;
+        let gas_fee = get_gas_fee(
+            chain,
+            selected_utxo.clone().len().try_into().unwrap(),
+            2 - enable_orchard as u64,
+            fee_rate,
+            false,
+        )
+        .into();
         // TODO: use extract_utxo method
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
@@ -733,8 +742,9 @@ impl OmniConnector {
                     tx_outs[0].clone(),
                     tx_outs.get(1),
                     target_btc_address.clone(),
-                    out_points.clone(),
-                    selected_utxo,
+                    utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
+                        BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+                    })?,
                 )
                 .await;
             let mut output = vec![];
@@ -783,8 +793,7 @@ impl OmniConnector {
         &self,
         current_height: u64,
         orchard_anchor: Option<orchard::Anchor>,
-        out_point: Vec<OutPoint>,
-        utxos: Vec<UTXO>,
+        input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> zcash_primitives::transaction::builder::Builder<
         '_,
@@ -802,16 +811,16 @@ impl OmniConnector {
             },
         );
 
-        for i in 0..utxos.len() {
+        for i in 0..input_points.len() {
             let pk_raw = &near_bridge_client
-                .get_pk_raw(ChainKind::Zcash, utxos[i].clone())
+                .get_pk_raw(ChainKind::Zcash, input_points[i].utxo.clone())
                 .await;
 
             let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
 
             let utxo = zcash_transparent::bundle::OutPoint::new(
-                out_point[i].txid.to_byte_array(),
-                out_point[i].vout,
+                input_points[i].out_point.txid.to_byte_array(),
+                input_points[i].out_point.vout,
             );
 
             let pk_bytes = transparent_pubkey.serialize();
@@ -822,7 +831,7 @@ impl OmniConnector {
             h160.copy_from_slice(&rip);
 
             let coin = zcash_transparent::bundle::TxOut::new(
-                zcash_protocol::value::Zatoshis::const_from_u64(utxos[i].balance),
+                zcash_protocol::value::Zatoshis::const_from_u64(input_points[i].utxo.balance),
                 TransparentAddress::PublicKeyHash(h160).script().into(),
             );
             builder
@@ -849,12 +858,11 @@ impl OmniConnector {
     async fn get_transparent_bundle(
         &self,
         current_height: u64,
-        out_point: Vec<OutPoint>,
-        utxos: Vec<UTXO>,
+        input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> Option<Bundle<zcash_transparent::builder::Unauthorized>> {
         let builder = self
-            .get_builder_with_transparent(current_height, None, out_point, utxos, tx_out_change)
+            .get_builder_with_transparent(current_height, None, input_points, tx_out_change)
             .await;
         builder.get_transp_bundel()
     }
@@ -864,8 +872,7 @@ impl OmniConnector {
         tx_out: TxOut,
         tx_out_change: Option<&TxOut>,
         recipient: String,
-        in_points: Vec<OutPoint>,
-        utxos: Vec<UTXO>,
+        input_points: Vec<InputPoint>,
     ) -> (Vec<u8>, u32) {
         let (_, ua) = unified::Address::decode(&recipient).expect("Invalid unified address");
         let mut recipient = None;
@@ -888,8 +895,7 @@ impl OmniConnector {
             .get_builder_with_transparent(
                 current_height,
                 Some(anchor),
-                in_points.clone(),
-                utxos.clone(),
+                input_points.clone(),
                 tx_out_change.clone(),
             )
             .await;
@@ -934,7 +940,7 @@ impl OmniConnector {
         let txid_parts = auth_data.digest(TxIdDigester);
         let shielded_sig_commitment = sighash_v5::my_signature_hash(
             &auth_data,
-            self.get_transparent_bundle(current_height, in_points, utxos, tx_out_change)
+            self.get_transparent_bundle(current_height, input_points, tx_out_change)
                 .await,
             &SignableInput::Shielded,
             &txid_parts,
@@ -2418,10 +2424,20 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
-        let (out_points, _, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate, false)
-                .map_err(BridgeSdkError::UtxoManagementError)?;
+        let (selected_utxo, utxos_balance) =
+            utxo_utils::choose_utxos(amount, utxos).map_err(BridgeSdkError::UtxoManagementError)?;
+        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
+            BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+        })?;
 
+        let gas_fee = get_gas_fee(
+            chain,
+            selected_utxo.len().try_into().unwrap(),
+            2,
+            fee_rate,
+            false,
+        )
+        .into();
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,

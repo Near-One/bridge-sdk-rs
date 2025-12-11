@@ -18,7 +18,14 @@ pub struct UTXO {
     pub balance: u64,
 }
 
-fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, String> {
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct InputPoint {
+    pub utxo: UTXO,
+    pub out_point: OutPoint,
+}
+
+pub fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, String> {
     utxos
         .into_iter()
         .map(|(txid, utxo)| {
@@ -34,6 +41,15 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, Strin
             Ok(OutPoint::new(parsed_txid, utxo.vout))
         })
         .collect()
+}
+
+pub fn utxo_to_input_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<InputPoint>, String> {
+    let outputs = utxo_to_out_points(utxos.clone())?;
+    Ok(utxos
+        .into_iter()
+        .zip(outputs.into_iter())
+        .map(|((_, utxo), out_point)| InputPoint { utxo, out_point })
+        .collect())
 }
 
 pub fn get_gas_fee(
@@ -53,12 +69,9 @@ pub fn get_gas_fee(
 
 #[allow(clippy::implicit_hasher)]
 pub fn choose_utxos(
-    chain: ChainKind,
     amount: u128,
     utxos: HashMap<String, UTXO>,
-    fee_rate: u64,
-    orchard: bool,
-) -> Result<(Vec<OutPoint>, Vec<UTXO>, u128, u128), String> {
+) -> Result<(Vec<(String, UTXO)>, u128), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -74,26 +87,7 @@ pub fn choose_utxos(
         }
     }
 
-    let num_output = 2 - orchard as u64;
-    let gas_fee = get_gas_fee(
-        chain,
-        selected
-            .len()
-            .try_into()
-            .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
-        num_output,
-        fee_rate,
-        orchard,
-    )
-    .into();
-
-    let out_points = utxo_to_out_points(selected.clone())?;
-    Ok((
-        out_points,
-        selected.into_iter().map(|(_id, utxo)| utxo).collect(),
-        utxos_balance,
-        gas_fee,
-    ))
+    Ok((selected, utxos_balance))
 }
 
 #[allow(clippy::implicit_hasher)]
