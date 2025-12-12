@@ -10,7 +10,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
 near-sdk = "5.15.1"
-zcash_address = "0.9.0"
-zcash_protocol = "0.6.1"
+zcash_address.workspace = true
+zcash_protocol.workspace = true
 k256 = "0.13.1"
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
+orchard.workspace = true

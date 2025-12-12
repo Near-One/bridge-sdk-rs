@@ -24,14 +24,14 @@ light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
-pczt = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
-bip0039 = "0.12.0"
-zcash_keys = "0.12.0"
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
-zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
+zcash_primitives.workspace = true
+zcash_transparent.workspace = true
+zcash_protocol.workspace = true
+pczt.workspace = true
+bip0039.workspace = true
+zcash_keys.workspace = true
+orchard.workspace = true
+zcash_address.workspace = true
 
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }

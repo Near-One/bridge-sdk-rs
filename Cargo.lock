@@ -10593,8 +10593,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "zcash_address 0.9.0",
- "zcash_protocol 0.6.2",
+ "zcash_address 0.10.1 (git+https://github.com/Near-One/librustzcash?rev=4a9d9814478162c1b5191cc83808bf1686f3713b)",
+ "zcash_protocol 0.7.1",
 ]
 
 [[package]]
