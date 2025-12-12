@@ -635,7 +635,7 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
-    pub async fn get_pk_raw(&self, chain: ChainKind, utxo: UTXO) -> String {
+    pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> String {
         let endpoint = self.endpoint().unwrap();
         let btc_connector = self.utxo_chain_connector(chain).unwrap();
 

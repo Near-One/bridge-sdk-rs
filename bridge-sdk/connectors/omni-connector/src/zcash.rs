@@ -57,7 +57,7 @@ impl OmniConnector {
 
         for i in 0..input_points.len() {
             let pk_raw = &near_bridge_client
-                .get_pk_raw(ChainKind::Zcash, input_points[i].utxo.clone())
+                .get_pk_for_utxo(ChainKind::Zcash, input_points[i].utxo.clone())
                 .await;
 
             let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
