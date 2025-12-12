@@ -78,10 +78,7 @@ impl AnyUtxoClient<'_> {
     forward_common_utxo_method!(get_fee_rate() -> std::result::Result<u64, UtxoClientError>);
     forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> std::result::Result<utxo_bridge_client::types::TxProof, UtxoClientError>);
     forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> std::result::Result<String, UtxoClientError>);
-
-    forward_common_utxo_method!(get_tree_state(current_u: u64) -> String);
     forward_common_utxo_method!(get_current_height() -> std::result::Result<u64, UtxoClientError>);
-    forward_common_utxo_method!(get_orchard_anchor() -> orchard::Anchor);
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -680,7 +677,7 @@ impl OmniConnector {
             selected_utxo.clone().len().try_into().unwrap(),
             2 - enable_orchard as u64,
             fee_rate,
-            false,
+            enable_orchard,
         )
         .into();
         // TODO: use extract_utxo method

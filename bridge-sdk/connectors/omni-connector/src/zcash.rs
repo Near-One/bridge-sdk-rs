@@ -37,7 +37,6 @@ impl OmniConnector {
     async fn get_builder_with_transparent(
         &self,
         current_height: u64,
-        orchard_anchor: Option<orchard::Anchor>,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> zcash_primitives::transaction::builder::Builder<
@@ -52,7 +51,7 @@ impl OmniConnector {
             (current_height as u32).into(),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
-                orchard_anchor: orchard_anchor,
+                orchard_anchor: Some(orchard::Anchor::empty_tree()),
             },
         );
 
@@ -107,7 +106,7 @@ impl OmniConnector {
         tx_out_change: Option<&TxOut>,
     ) -> Option<Bundle<zcash_transparent::builder::Unauthorized>> {
         let builder = self
-            .get_builder_with_transparent(current_height, None, input_points, tx_out_change)
+            .get_builder_with_transparent(current_height, input_points, tx_out_change)
             .await;
         builder.get_transp_bundel()
     }
@@ -150,11 +149,9 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
 
         let current_height = utxo_bridge_client.get_current_height().await.unwrap();
-        let anchor = utxo_bridge_client.get_orchard_anchor().await;
         let mut builder = self
             .get_builder_with_transparent(
                 current_height,
-                Some(anchor),
                 input_points.clone(),
                 tx_out_change.clone(),
             )
