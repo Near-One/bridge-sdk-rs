@@ -13,4 +13,4 @@ near-sdk = "5.15.1"
 zcash_address = "0.9.0"
 zcash_protocol = "0.6.1"
 k256 = "0.13.1"
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a343552ea2ec90365481da4755a720ce2ace525b", default-features = false }
+orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }

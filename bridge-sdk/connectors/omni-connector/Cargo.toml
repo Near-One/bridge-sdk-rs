@@ -24,14 +24,14 @@ light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 
-zcash_primitives = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] } #{ version = "0.26.1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f", features = ["transparent-inputs"] } #{ version = "0.6.1", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f" } #"0.7.1"
-pczt = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder", "tx-extractor"] } #{ version = "0.5.0", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder", "tx-extractor"] }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["transparent-inputs"] }
+zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
+pczt = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
 bip0039 = "0.12.0"
 zcash_keys = "0.12.0"
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a343552ea2ec90365481da4755a720ce2ace525b", default-features = false }
-zcash_address = { git = "https://github.com/olga24912/librustzcash", rev = "a4e2d42a4ec5f0d26e92380ccfc3f31b5b72552f" }#"0.9"
+orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
+zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
 
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }
