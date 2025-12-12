@@ -5127,7 +5127,6 @@ dependencies = [
 name = "omni-connector"
 version = "0.2.20"
 dependencies = [
- "anyhow",
  "bincode",
  "bip0039",
  "bitcoin",
@@ -5139,7 +5138,6 @@ dependencies = [
  "ethers",
  "evm-bridge-client",
  "hex",
- "incrementalmerkletree",
  "light-client",
  "near-bridge-client",
  "near-contract-standards",
