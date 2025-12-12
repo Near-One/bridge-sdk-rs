@@ -32,6 +32,8 @@ bip0039.workspace = true
 zcash_keys.workspace = true
 orchard.workspace = true
 zcash_address.workspace = true
+ripemd.workspace = true
+sha2.workspace = true
 
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }
@@ -42,8 +44,6 @@ evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
-ripemd = "0.1.3"
-sha2 = "0.10.9"
 
 [lib]
 path = "src/omni_connector.rs"
