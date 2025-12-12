@@ -47,6 +47,7 @@ pub struct OmniConnector {
     base_bridge_client: Option<EvmBridgeClient>,
     arb_bridge_client: Option<EvmBridgeClient>,
     bnb_bridge_client: Option<EvmBridgeClient>,
+    pol_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
@@ -1508,7 +1509,8 @@ impl OmniConnector {
             OmniAddress::Eth(address)
             | OmniAddress::Arb(address)
             | OmniAddress::Base(address)
-            | OmniAddress::Bnb(address) => self
+            | OmniAddress::Bnb(address)
+            | OmniAddress::Pol(address) => self
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
@@ -1798,7 +1800,7 @@ impl OmniConnector {
                 })
                 .await
             }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -1858,6 +1860,7 @@ impl OmniConnector {
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
+            ChainKind::Pol => self.pol_bridge_client.as_ref(),
             ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
                 unreachable!("Unsupported chain kind")
             }
@@ -1926,6 +1929,7 @@ impl OmniConnector {
             | ChainKind::Base
             | ChainKind::Arb
             | ChainKind::Bnb
+            | ChainKind::Pol
             | ChainKind::Sol => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
@@ -1960,7 +1964,7 @@ impl OmniConnector {
         tx_hash: String,
     ) -> Result<Vec<StorageDepositAction>> {
         match chain {
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;
