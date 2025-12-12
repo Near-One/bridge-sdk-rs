@@ -283,7 +283,8 @@ impl EvmBridgeClient {
                 OmniAddress::Eth(addr)
                 | OmniAddress::Base(addr)
                 | OmniAddress::Arb(addr)
-                | OmniAddress::Bnb(addr) => addr.0.into(),
+                | OmniAddress::Bnb(addr)
+                | OmniAddress::Pol(addr) => addr.0.into(),
                 OmniAddress::Near(_)
                 | OmniAddress::Sol(_)
                 | OmniAddress::Btc(_)
@@ -299,7 +300,8 @@ impl EvmBridgeClient {
                 OmniAddress::Eth(addr)
                 | OmniAddress::Base(addr)
                 | OmniAddress::Arb(addr)
-                | OmniAddress::Bnb(addr) => H160(addr.0),
+                | OmniAddress::Bnb(addr)
+                | OmniAddress::Pol(addr) => H160(addr.0),
                 OmniAddress::Near(_)
                 | OmniAddress::Sol(_)
                 | OmniAddress::Btc(_)

@@ -68,6 +68,17 @@ struct CliConfig {
     bnb_wormhole_address: Option<String>,
 
     #[arg(long)]
+    pol_rpc: Option<String>,
+    #[arg(long)]
+    pol_chain_id: Option<u64>,
+    #[arg(long)]
+    pol_private_key: Option<String>,
+    #[arg(long)]
+    pol_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    pol_wormhole_address: Option<String>,
+
+    #[arg(long)]
     solana_rpc: Option<String>,
     #[arg(long)]
     solana_bridge_address: Option<String>,
@@ -153,6 +164,14 @@ impl CliConfig {
                 .or(other.bnb_bridge_token_factory_address),
             bnb_wormhole_address: self.bnb_wormhole_address.or(other.bnb_wormhole_address),
 
+            pol_rpc: self.pol_rpc.or(other.pol_rpc),
+            pol_chain_id: self.pol_chain_id.or(other.pol_chain_id),
+            pol_private_key: self.pol_private_key.or(other.pol_private_key),
+            pol_bridge_token_factory_address: self
+                .pol_bridge_token_factory_address
+                .or(other.pol_bridge_token_factory_address),
+            pol_wormhole_address: self.pol_wormhole_address.or(other.pol_wormhole_address),
+
             solana_rpc: self.solana_rpc.or(other.solana_rpc),
             solana_bridge_address: self.solana_bridge_address.or(other.solana_bridge_address),
             solana_wormhole_address: self
@@ -226,6 +245,14 @@ fn env_config() -> CliConfig {
         bnb_private_key: env::var("BNB_PRIVATE_KEY").ok(),
         bnb_bridge_token_factory_address: env::var("BNB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         bnb_wormhole_address: env::var("BNB_WORMHOLE_ADDRESS").ok(),
+
+        pol_rpc: env::var("POL_RPC").ok(),
+        pol_chain_id: env::var("POL_CHAIN_ID")
+            .ok()
+            .and_then(|val| val.parse::<u64>().ok()),
+        pol_private_key: env::var("POL_PRIVATE_KEY").ok(),
+        pol_bridge_token_factory_address: env::var("POL_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
+        pol_wormhole_address: env::var("POL_WORMHOLE_ADDRESS").ok(),
 
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
@@ -302,6 +329,14 @@ fn default_config(network: Network) -> CliConfig {
             ),
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
+            pol_rpc: Some(defaults::POL_RPC_MAINNET.to_owned()),
+            pol_chain_id: Some(defaults::POL_CHAIN_ID_MAINNET),
+            pol_private_key: None,
+            pol_bridge_token_factory_address: Some(
+                defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
+            pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_MAINNET.to_owned()),
@@ -369,6 +404,14 @@ fn default_config(network: Network) -> CliConfig {
             ),
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
+            pol_rpc: Some(defaults::POL_RPC_TESTNET.to_owned()),
+            pol_chain_id: Some(defaults::POL_CHAIN_ID_TESTNET),
+            pol_private_key: None,
+            pol_bridge_token_factory_address: Some(
+                defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
+            pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_TESTNET.to_owned()),
@@ -435,6 +478,14 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+
+            pol_rpc: Some(defaults::POL_RPC_DEVNET.to_owned()),
+            pol_chain_id: Some(defaults::POL_CHAIN_ID_DEVNET),
+            pol_private_key: None,
+            pol_bridge_token_factory_address: Some(
+                defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+            pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
