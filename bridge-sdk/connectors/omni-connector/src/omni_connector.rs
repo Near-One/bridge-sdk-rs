@@ -1,7 +1,6 @@
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
-use ethers::abi::AbiEncode;
 use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
@@ -1747,7 +1746,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.encode_hex()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1755,7 +1754,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.encode_hex()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,
