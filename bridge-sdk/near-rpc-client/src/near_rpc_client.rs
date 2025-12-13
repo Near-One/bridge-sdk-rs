@@ -12,6 +12,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction, TransactionV0};
 use near_primitives::types::{AccountId, BlockReference, Finality, FunctionArgs};
 use near_primitives::views::{FinalExecutionOutcomeView, QueryRequest};
+use near_token::NearToken;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use tokio::time;
 
@@ -177,8 +178,8 @@ pub async fn change(
         actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
             method_name: change_request.method_name,
             args: change_request.args,
-            gas: change_request.gas,
-            deposit: change_request.deposit,
+            gas: near_primitives::gas::Gas::from_gas(change_request.gas),
+            deposit: NearToken::from_yoctonear(change_request.deposit),
         }))],
     });
     let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
