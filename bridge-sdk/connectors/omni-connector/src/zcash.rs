@@ -38,13 +38,19 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
-    ) -> zcash_primitives::transaction::builder::Builder<
-        '_,
-        zcash_protocol::consensus::TestNetwork,
-        (),
+    ) -> Result<
+        zcash_primitives::transaction::builder::Builder<
+            '_,
+            zcash_protocol::consensus::TestNetwork,
+            (),
+        >,
     > {
-        let near_bridge_client = self.near_bridge_client().unwrap();
+        let near_bridge_client = self.near_bridge_client().map_err(|err| {
+            BridgeSdkError::ZCashError(format!("Near bridge client is not initialized: {err}"))
+        })?;
+
         let params = zcash_protocol::consensus::TestNetwork;
+
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
             (current_height as u32).into(),
@@ -54,16 +60,18 @@ impl OmniConnector {
             },
         );
 
-        for i in 0..input_points.len() {
-            let pk_raw = &near_bridge_client
-                .get_pk_for_utxo(ChainKind::Zcash, input_points[i].utxo.clone())
+        for input in &input_points {
+            let pk_raw = near_bridge_client
+                .get_pk_for_utxo(ChainKind::Zcash, input.utxo.clone())
                 .await;
 
-            let transparent_pubkey = secp256k1::PublicKey::from_str(pk_raw).unwrap();
+            let transparent_pubkey = secp256k1::PublicKey::from_str(&pk_raw).map_err(|err| {
+                BridgeSdkError::ZCashError(format!("Invalid secp256k1 public key for UTXO: {err}"))
+            })?;
 
             let utxo = zcash_transparent::bundle::OutPoint::new(
-                input_points[i].out_point.txid.to_byte_array(),
-                input_points[i].out_point.vout,
+                input.out_point.txid.to_byte_array(),
+                input.out_point.vout,
             );
 
             let pk_bytes = transparent_pubkey.serialize();
@@ -74,28 +82,41 @@ impl OmniConnector {
             h160.copy_from_slice(&rip);
 
             let coin = zcash_transparent::bundle::TxOut::new(
-                zcash_protocol::value::Zatoshis::const_from_u64(input_points[i].utxo.balance),
+                zcash_protocol::value::Zatoshis::const_from_u64(input.utxo.balance),
                 TransparentAddress::PublicKeyHash(h160).script().into(),
             );
+
             builder
-                .add_transparent_input(transparent_pubkey, utxo.clone(), coin.clone())
-                .unwrap();
+                .add_transparent_input(transparent_pubkey, utxo, coin)
+                .map_err(|err| {
+                    BridgeSdkError::ZCashError(format!(
+                        "Failed to add transparent input for UTXO: {err}"
+                    ))
+                })?;
         }
 
         if let Some(tx_out_change) = tx_out_change {
-            let h160_change = tx_out_change.clone().script_pubkey.into_bytes()[3..23]
-                .try_into()
-                .unwrap();
+            let script_bytes = tx_out_change.clone().script_pubkey.into_bytes();
+
+            let h160_change: [u8; 20] = script_bytes[3..23].try_into().map_err(|_| {
+                BridgeSdkError::ZCashError(
+                    "Failed to convert change output hash160 to [u8; 20]".to_string(),
+                )
+            })?;
 
             builder
                 .add_transparent_output(
                     &TransparentAddress::PublicKeyHash(h160_change),
                     zcash_protocol::value::Zatoshis::const_from_u64(tx_out_change.value.to_sat()),
                 )
-                .unwrap();
+                .map_err(|err| {
+                    BridgeSdkError::ZCashError(format!(
+                        "Failed to add transparent change output: {err}"
+                    ))
+                })?;
         }
 
-        builder
+        Ok(builder)
     }
 
     async fn get_transparent_bundle(
@@ -103,11 +124,11 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
-    ) -> Option<Bundle<zcash_transparent::builder::Unauthorized>> {
+    ) -> Result<Option<Bundle<zcash_transparent::builder::Unauthorized>>> {
         let builder = self
             .get_builder_with_transparent(current_height, input_points, tx_out_change)
-            .await;
-        builder.get_transp_bundel()
+            .await?;
+        Ok(builder.get_transp_bundel())
     }
 
     async fn validate_orchard(
@@ -116,25 +137,51 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
-    ) {
-        let tx_orchard = auth_data.orchard_bundle().clone();
+    ) -> Result<()> {
+        let tx_orchard = auth_data.orchard_bundle().clone().ok_or_else(|| {
+            BridgeSdkError::ZCashError("Missing Orchard bundle in transaction".to_string())
+        })?;
+
         let txid_parts = auth_data.digest(TxIdDigester);
+
         let shielded_sig_commitment = sighash_v5::my_signature_hash(
-            &auth_data,
+            auth_data,
             self.get_transparent_bundle(current_height, input_points, tx_out_change)
-                .await,
+                .await?,
             &SignableInput::Shielded,
             &txid_parts,
         );
 
-        let sighash: [u8; 32] = shielded_sig_commitment.as_ref()[..32].try_into().unwrap();
+        let sighash: [u8; 32] = shielded_sig_commitment
+            .as_ref()
+            .get(..32)
+            .ok_or_else(|| {
+                BridgeSdkError::ZCashError(
+                    "Shielded signature commitment is shorter than 32 bytes".to_string(),
+                )
+            })?
+            .try_into()
+            .map_err(|_| {
+                BridgeSdkError::ZCashError("Failed to convert sighash to [u8; 32]".to_string())
+            })?;
+
         tx_orchard
-            .unwrap()
             .verify_proof(orchard_verifying_key())
-            .unwrap();
+            .map_err(|err| {
+                BridgeSdkError::ZCashError(format!("Orchard proof verification failed: {err}"))
+            })?;
+
         let mut validator = orchard::bundle::BatchValidator::new();
-        validator.add_bundle(tx_orchard.unwrap(), sighash);
-        assert_eq!(validator.validate(orchard_verifying_key(), OsRng), true);
+        validator.add_bundle(tx_orchard, sighash);
+
+        let is_valid = validator.validate(orchard_verifying_key(), OsRng);
+        if !is_valid {
+            return Err(BridgeSdkError::ZCashError(
+                "Batch Orchard validation failed".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     pub(crate) async fn get_orchard_raw(
@@ -158,7 +205,7 @@ impl OmniConnector {
                 input_points.clone(),
                 tx_out_change.clone(),
             )
-            .await;
+            .await?;
 
         let rng = OsRng;
 
@@ -220,7 +267,7 @@ impl OmniConnector {
         let expiry_height = auth_data.expiry_height().into();
 
         self.validate_orchard(&auth_data, current_height, input_points, tx_out_change)
-            .await;
+            .await?;
 
         let mut res = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
