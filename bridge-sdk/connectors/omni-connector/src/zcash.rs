@@ -1,7 +1,6 @@
 use crate::*;
 
 use bitcoin::{secp256k1, TxOut};
-use ethers::prelude::*;
 
 use bitcoin::hashes::Hash;
 use bitcoin::key::rand::rngs::OsRng;
@@ -144,11 +143,15 @@ impl OmniConnector {
         amount: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
-    ) -> (Vec<u8>, u32) {
-        let recipient = utxo_utils::extract_orchar_address(recipient);
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash).unwrap();
+    ) -> Result<(Vec<u8>, u32)> {
+        let recipient = utxo_utils::extract_orchard_address(recipient).map_err(|err| {
+            BridgeSdkError::ZCashError(format!("Error on extract Orchard Address: {err}"))
+        })?;
 
-        let current_height = utxo_bridge_client.get_current_height().await.unwrap();
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash)?;
+
+        let current_height = utxo_bridge_client.get_current_height().await?;
+
         let mut builder = self
             .get_builder_with_transparent(
                 current_height,
@@ -157,36 +160,60 @@ impl OmniConnector {
             )
             .await;
 
-        let rng = k256::elliptic_curve::rand_core::OsRng;
+        let rng = OsRng;
+
+        let recipient = recipient.into_option().ok_or_else(|| {
+            BridgeSdkError::ZCashError("Recipient Orchard address is None".to_string())
+        })?;
 
         builder
             .add_orchard_output::<zip317::FeeRule>(
                 Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
-                recipient.unwrap(),
+                recipient,
                 amount,
                 MemoBytes::empty(),
             )
-            .unwrap();
+            .map_err(|err| {
+                BridgeSdkError::ZCashError(format!("Error on add orchard output: {err:?}"))
+            })?;
 
         let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
-            .build_for_pczt(
-                rng,
-                &zcash_primitives::transaction::fees::zip317::FeeRule::standard(),
-            )
-            .unwrap();
+            .build_for_pczt(rng, &zip317::FeeRule::standard())
+            .map_err(|err| BridgeSdkError::ZCashError(format!("Error on build PCZT: {err}")))?;
 
-        let pczt = Creator::build_from_parts(pczt_parts).unwrap();
-        let pczt = IoFinalizer::new(pczt).finalize_io().unwrap();
+        let pczt = Creator::build_from_parts(pczt_parts).ok_or_else(|| {
+            BridgeSdkError::ZCashError(format!("Error on Creator::build_from_parts"))
+        })?;
+
+        let pczt = IoFinalizer::new(pczt).finalize_io().map_err(|err| {
+            BridgeSdkError::ZCashError(format!("Error on IoFinalizer::finalize_io: {err:?}"))
+        })?;
+
         let pczt = Prover::new(pczt)
             .create_orchard_proof(orchard_proving_key())
-            .unwrap()
+            .map_err(|err| {
+                BridgeSdkError::ZCashError(format!("Error on create orchard proof: {err:?}"))
+            })?
             .finish();
 
         let tx: zcash_primitives::transaction::Transaction =
-            TransactionExtractor::new(pczt).extract().unwrap();
+            TransactionExtractor::new(pczt).extract().map_err(|err| {
+                BridgeSdkError::ZCashError(format!("Error on extract transaction: {err:?}"))
+            })?;
 
-        assert_eq!(tx.version(), zcash_primitives::transaction::TxVersion::V5);
-        assert_eq!(tx.lock_time(), 0);
+        if tx.version() != zcash_primitives::transaction::TxVersion::V5 {
+            return Err(BridgeSdkError::ZCashError(format!(
+                "Invalid transaction version: expected V5, got {:?}",
+                tx.version()
+            )));
+        }
+
+        if tx.lock_time() != 0 {
+            return Err(BridgeSdkError::ZCashError(format!(
+                "Invalid transaction lock_time: expected 0, got {}",
+                tx.lock_time()
+            )));
+        }
 
         let auth_data = tx.into_data();
         let tx_orchard = auth_data.orchard_bundle().clone();
@@ -197,8 +224,10 @@ impl OmniConnector {
 
         let mut res = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
-            .unwrap();
+            .map_err(|err| {
+            BridgeSdkError::ZCashError(format!("Error on write orchard bundle: {err}"))
+        })?;
 
-        (res, expiry_height)
+        Ok((res, expiry_height))
     }
 }

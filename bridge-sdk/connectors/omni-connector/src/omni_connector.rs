@@ -718,7 +718,8 @@ impl OmniConnector {
                     })?,
                     tx_outs.get(1),
                 )
-                .await;
+                .await
+                .unwrap();
             let mut output = vec![];
             if tx_outs.len() == 2 {
                 output.push(tx_outs[1].clone());

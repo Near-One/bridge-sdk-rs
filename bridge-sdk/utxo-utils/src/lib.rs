@@ -270,8 +270,9 @@ pub fn get_tx_outs_utxo_management(
     Ok(res)
 }
 
-pub fn extract_orchar_address(uaddress: String) -> CtOption<orchard::Address> {
-    let (_, ua) = unified::Address::decode(&uaddress).expect("Invalid unified address");
+pub fn extract_orchard_address(uaddress: String) -> Result<CtOption<orchard::Address>, String> {
+    let (_, ua) = unified::Address::decode(&uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
     let mut parsed_address = None;
     for receiver in ua.items() {
         match receiver {
@@ -281,5 +282,7 @@ pub fn extract_orchar_address(uaddress: String) -> CtOption<orchard::Address> {
             _ => {}
         }
     }
-    orchard::Address::from_raw_address_bytes(&parsed_address.unwrap())
+    Ok(orchard::Address::from_raw_address_bytes(
+        &parsed_address.ok_or_else(|| "No orchard address found in unified address".to_string())?,
+    ))
 }
