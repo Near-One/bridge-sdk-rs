@@ -740,7 +740,7 @@ impl OmniConnector {
                     max_gas_fee: None,
                     chain_specific_data: Some(ChainSpecificData {
                         orchard_bundle_bytes: orchard.map(|v| v.into()),
-                        expiry_height: expiry_height,
+                        expiry_height,
                     }),
                 },
                 transaction_options,
@@ -798,6 +798,10 @@ impl OmniConnector {
             .await
     }
 
+    /// Initiates an RBF (Replace-By-Fee) transaction to increase gas fee.
+    ///
+    /// For Zcash shielded withdrawals, you can optionally provide a new Orchard bundle.
+    /// Use `regenerate_orchard_bundle` to create a new bundle with the same parameters.
     pub async fn near_rbf_increase_gas_fee(
         &self,
         chain: ChainKind,
@@ -805,11 +809,51 @@ impl OmniConnector {
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        self.near_rbf_increase_gas_fee_with_bundle(
+            chain,
+            btc_tx_hash,
+            fee_rate,
+            None,
+            None,
+            transaction_options,
+        )
+        .await
+    }
+
+    /// Initiates an RBF (Replace-By-Fee) transaction with an optional new Orchard bundle.
+    ///
+    /// For Zcash shielded withdrawals, this allows replacing the zero-knowledge proof
+    /// while keeping the same recipient and amount. Use `regenerate_orchard_bundle`
+    /// to create a new bundle.
+    ///
+    /// # Arguments
+    /// * `chain` - The chain kind (Btc or Zcash)
+    /// * `btc_tx_hash` - The pending transaction hash to replace
+    /// * `fee_rate` - Optional fee rate override
+    /// * `orchard_bundle_hex` - Optional new Orchard bundle (hex-encoded)
+    /// * `expiry_height` - Optional expiry height for the new bundle
+    /// * `transaction_options` - Transaction options
+    pub async fn near_rbf_increase_gas_fee_with_bundle(
+        &self,
+        chain: ChainKind,
+        btc_tx_hash: String,
+        fee_rate: Option<u64>,
+        orchard_bundle_hex: Option<String>,
+        expiry_height: Option<u32>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
         if chain == ChainKind::Zcash {
             return near_bridge_client
-                .btc_rbf_increase_gas_fee(chain, btc_tx_hash, vec![], transaction_options)
+                .btc_rbf_increase_gas_fee(
+                    chain,
+                    btc_tx_hash,
+                    vec![],
+                    orchard_bundle_hex,
+                    expiry_height,
+                    transaction_options,
+                )
                 .await;
         }
 
@@ -893,7 +937,7 @@ impl OmniConnector {
         );
 
         near_bridge_client
-            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, transaction_options)
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, None, None, transaction_options)
             .await
     }
 

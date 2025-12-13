@@ -342,6 +342,8 @@ impl NearBridgeClient {
         chain: ChainKind,
         btc_tx_hash: String,
         outs: Vec<TxOut>,
+        orchard_bundle_hex: Option<String>,
+        expiry_height: Option<u32>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -356,7 +358,9 @@ impl NearBridgeClient {
                 args: serde_json::json!({
                     "chain_kind": chain,
                     "original_btc_pending_verify_id": btc_tx_hash,
-                    "output": outs
+                    "output": outs,
+                    "orchard_bundle_bytes": orchard_bundle_hex,
+                    "expiry_height": expiry_height
                 })
                 .to_string()
                 .into_bytes(),
