@@ -680,7 +680,7 @@ impl OmniConnector {
             enable_orchard,
         )
         .into();
-        // TODO: use extract_utxo method
+
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
@@ -718,8 +718,7 @@ impl OmniConnector {
                     })?,
                     tx_outs.get(1),
                 )
-                .await
-                .unwrap();
+                .await?;
             let mut output = vec![];
             if tx_outs.len() == 2 {
                 output.push(tx_outs[1].clone());
