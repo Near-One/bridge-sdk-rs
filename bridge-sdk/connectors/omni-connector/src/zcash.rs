@@ -141,7 +141,7 @@ impl OmniConnector {
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> Result<()> {
-        let tx_orchard = auth_data.orchard_bundle().clone().ok_or_else(|| {
+        let tx_orchard = auth_data.orchard_bundle().ok_or_else(|| {
             BridgeSdkError::ZCashError("Missing Orchard bundle in transaction".to_string())
         })?;
 
@@ -207,11 +207,7 @@ impl OmniConnector {
         let current_height = utxo_bridge_client.get_current_height().await?;
 
         let mut builder = self
-            .get_builder_with_transparent(
-                current_height,
-                input_points.clone(),
-                tx_out_change.clone(),
-            )
+            .get_builder_with_transparent(current_height, input_points.clone(), tx_out_change)
             .await?;
 
         let rng = OsRng;
@@ -279,8 +275,8 @@ impl OmniConnector {
         let mut res = Vec::new();
         zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
             .map_err(|err| {
-                BridgeSdkError::ZCashError(format!("Error on write orchard bundle: {err}"))
-            })?;
+            BridgeSdkError::ZCashError(format!("Error on write orchard bundle: {err}"))
+        })?;
 
         Ok((res, expiry_height))
     }
@@ -451,15 +447,11 @@ fn parse_utxo_path(path: &str) -> Result<(bitcoin::Txid, u32)> {
     let txid_str = parts.first().ok_or_else(|| {
         BridgeSdkError::InvalidArgument(format!("Invalid UTXO path format: {path}"))
     })?;
-    let vout: u32 = parts
-        .get(1)
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| {
-            BridgeSdkError::InvalidArgument(format!("Invalid vout in UTXO path: {path}"))
-        })?;
-    let txid = bitcoin::Txid::from_str(txid_str).map_err(|e| {
-        BridgeSdkError::InvalidArgument(format!("Invalid txid in UTXO path: {e}"))
+    let vout: u32 = parts.get(1).and_then(|s| s.parse().ok()).ok_or_else(|| {
+        BridgeSdkError::InvalidArgument(format!("Invalid vout in UTXO path: {path}"))
     })?;
+    let txid = bitcoin::Txid::from_str(txid_str)
+        .map_err(|e| BridgeSdkError::InvalidArgument(format!("Invalid txid in UTXO path: {e}")))?;
     Ok((txid, vout))
 }
 

@@ -818,7 +818,7 @@ impl NearBridgeClient {
             ))?;
         let v: Value = serde_json::from_str(json_str)?;
 
-        let bytes = if let Some(_) = v["data"][0].get("tx_bytes_base64") {
+        let bytes = if v["data"][0].get("tx_bytes_base64").is_some() {
             base64::engine::general_purpose::STANDARD
                 .decode(v["data"][0]["tx_bytes_base64"].as_str().ok_or_else(|| {
                     BridgeSdkError::InvalidLog(

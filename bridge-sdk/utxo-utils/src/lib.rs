@@ -51,7 +51,7 @@ pub fn utxo_to_input_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<InputPoint
     let outputs = utxo_to_out_points(utxos.clone())?;
     Ok(utxos
         .into_iter()
-        .zip(outputs.into_iter())
+        .zip(outputs)
         .map(|((_, utxo), out_point)| InputPoint { utxo, out_point })
         .collect())
 }
@@ -275,11 +275,8 @@ pub fn extract_orchard_address(uaddress: String) -> Result<CtOption<orchard::Add
         .map_err(|err| format!("Invalid unified address {err}"))?;
     let mut parsed_address = None;
     for receiver in ua.items() {
-        match receiver {
-            unified::Receiver::Orchard(orchard_receiver) => {
-                parsed_address = Some(orchard_receiver);
-            }
-            _ => {}
+        if let unified::Receiver::Orchard(orchard_receiver) = receiver {
+            parsed_address = Some(orchard_receiver);
         }
     }
     Ok(orchard::Address::from_raw_address_bytes(
