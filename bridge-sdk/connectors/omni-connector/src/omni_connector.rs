@@ -3,7 +3,6 @@ mod zcash;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
-use ethers::abi::AbiEncode;
 use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
@@ -675,7 +674,7 @@ impl OmniConnector {
         let gas_fee = get_gas_fee(
             chain,
             selected_utxo.clone().len().try_into().unwrap(),
-            2 - enable_orchard as u64,
+            2 - <bool as std::convert::Into<u64>>::into(enable_orchard),
             fee_rate,
             enable_orchard,
         )
@@ -739,7 +738,7 @@ impl OmniConnector {
                     output,
                     max_gas_fee: None,
                     chain_specific_data: Some(ChainSpecificData {
-                        orchard_bundle_bytes: orchard.map(|v| v.into()),
+                        orchard_bundle_bytes: orchard.map(std::convert::Into::into),
                         expiry_height,
                     }),
                 },
@@ -1828,7 +1827,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.encode_hex()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1836,7 +1835,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.encode_hex()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,

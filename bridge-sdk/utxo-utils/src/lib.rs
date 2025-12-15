@@ -64,7 +64,11 @@ pub fn get_gas_fee(
     orchard: bool,
 ) -> u64 {
     if chain == ChainKind::Zcash {
-        5000 * std::cmp::max(num_input, num_output) + 5000 * (orchard as u64)
+        let mut fee = 5000 * std::cmp::max(num_input, num_output);
+        if orchard {
+            fee += 5000;
+        }
+        fee
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
         (fee_rate * tx_size / 1024) + 141
@@ -270,8 +274,8 @@ pub fn get_tx_outs_utxo_management(
     Ok(res)
 }
 
-pub fn extract_orchard_address(uaddress: String) -> Result<CtOption<orchard::Address>, String> {
-    let (_, ua) = unified::Address::decode(&uaddress)
+pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Address>, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
         .map_err(|err| format!("Invalid unified address {err}"))?;
     let mut parsed_address = None;
     for receiver in ua.items() {

@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{CryptoHash, OmniConnector, TransactionOptions};
 
 use bitcoin::{secp256k1, OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -19,6 +19,7 @@ use zcash_primitives::transaction::fees::zip317;
 use zcash_primitives::transaction::sighash::SignableInput;
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{sighash_v5, Authorized, TransactionData};
+use zcash_protocol::consensus::BlockHeight;
 use zcash_protocol::memo::MemoBytes;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::Bundle;
@@ -56,7 +57,7 @@ impl OmniConnector {
 
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            (current_height as u32).into(),
+            BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX)),
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard::Anchor::empty_tree()),
@@ -189,8 +190,8 @@ impl OmniConnector {
 
     /// Creates an Orchard bundle for a shielded Zcash withdrawal.
     ///
-    /// Returns a tuple of (bundle_bytes, expiry_height).
-    /// The bundle_bytes can be passed to the contract as chain_specific_data.
+    /// Returns a tuple of (`bundle_bytes`, `expiry_height`).
+    /// The `bundle_bytes` can be passed to the contract as `chain_specific_data`.
     pub async fn get_orchard_raw(
         &self,
         recipient: String,
@@ -198,7 +199,7 @@ impl OmniConnector {
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> Result<(Vec<u8>, u32)> {
-        let recipient = utxo_utils::extract_orchard_address(recipient).map_err(|err| {
+        let recipient = utxo_utils::extract_orchard_address(&recipient).map_err(|err| {
             BridgeSdkError::ZCashError(format!("Error on extract Orchard Address: {err}"))
         })?;
 
@@ -282,7 +283,7 @@ impl OmniConnector {
     }
 
     /// Internal helper to regenerate an Orchard bundle for an existing pending transaction.
-    /// Returns (bundle_bytes_hex, expiry_height).
+    /// Returns (`bundle_bytes_hex`, `expiry_height`).
     async fn regenerate_orchard_bundle(&self, btc_tx_hash: String) -> Result<(String, u32)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -365,7 +366,7 @@ impl OmniConnector {
         let change_amount = calculate_change_amount(
             utxo_balance,
             orchard_amount,
-            btc_pending_info.gas_fee as u64,
+            btc_pending_info.gas_fee.try_into().unwrap_or(u64::MAX),
         );
 
         let tx_out_change = if change_amount > 0 {
