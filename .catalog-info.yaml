@@ -7,6 +7,5 @@ metadata:
 spec:
   targets:
     - ./bridge-sdk/eth-proof/.catalog-info.yaml
-    - ./bridge-sdk/near-light-client-on-eth/.catalog-info.yaml
     - ./bridge-sdk/near-rpc-client/.catalog-info.yaml
     - ./bridge-cli/.catalog-info.yaml
