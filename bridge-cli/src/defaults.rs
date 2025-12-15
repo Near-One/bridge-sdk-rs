@@ -83,7 +83,8 @@ pub const BNB_WORMHOLE_ADDRESS_TESTNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2
 
 pub const POL_RPC_TESTNET: &str = "https://polygon-amoy-bor-rpc.publicnode.com";
 pub const POL_CHAIN_ID_TESTNET: u64 = 80002;
-pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str = "tbd";
+pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
@@ -136,7 +137,8 @@ pub const BNB_WORMHOLE_ADDRESS_DEVNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2A
 
 pub const POL_RPC_DEVNET: &str = "https://polygon-amoy-bor-rpc.publicnode.com";
 pub const POL_CHAIN_ID_DEVNET: u64 = 80002;
-pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str = "tbd";
+pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";
