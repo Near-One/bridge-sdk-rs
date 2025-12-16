@@ -30,7 +30,8 @@ pub const BNB_WORMHOLE_ADDRESS_MAINNET: &str = "0x98f3c9e6E3fAce36bAAd05FE09d375
 
 pub const POL_RPC_MAINNET: &str = "https://polygon-bor-rpc.publicnode.com";
 pub const POL_CHAIN_ID_MAINNET: u64 = 137;
-pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str = "tbd";
+pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const POL_WORMHOLE_ADDRESS_MAINNET: &str = "0x7A4B5a56256163F07b2C80A7cA55aBE66c4ec4d7";
 
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
