@@ -13,6 +13,7 @@ near-jsonrpc-client.workspace = true
 near-jsonrpc-primitives.workspace = true
 near-primitives.workspace = true
 near-crypto.workspace = true
+near-token.workspace = true
 borsh.workspace = true
 
 [dev-dependencies]
