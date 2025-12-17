@@ -232,7 +232,7 @@ impl EvmBridgeClient {
             let erc20 = ERC20::new(token, &self.provider);
 
             let allowance_result = erc20
-                .allowance(signer_address.clone(), omni_bridge_address)
+                .allowance(*signer_address, omni_bridge_address)
                 .call()
                 .await?;
 
@@ -441,21 +441,19 @@ impl EvmBridgeClient {
     }
 
     fn signer_provider(&self) -> Result<&DynProvider> {
-        Ok(self
-            .signer_provider
+        self.signer_provider
             .as_ref()
             .ok_or(EvmBridgeClientError::ConfigError(
                 "EVM private key is not set".to_string(),
-            ))?)
+            ))
     }
 
     fn signer_address(&self) -> Result<&Address> {
-        Ok(self
-            .signer_address
+        self.signer_address
             .as_ref()
             .ok_or(EvmBridgeClientError::ConfigError(
                 "EVM private key is not set".to_string(),
-            ))?)
+            ))
     }
 
     fn convert_omni_address(address: OmniAddress) -> Result<Address> {
@@ -468,12 +466,9 @@ impl EvmBridgeClient {
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
             | OmniAddress::Btc(_)
-            | OmniAddress::Zcash(_) => {
-                return Err(EvmBridgeClientError::InvalidArgument(format!(
-                    "Unsupported address type in SignTransferEvent: {:?}",
-                    address
-                )))
-            }
+            | OmniAddress::Zcash(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
+                "Unsupported address type in SignTransferEvent: {address:?}",
+            ))),
         }
     }
 }
