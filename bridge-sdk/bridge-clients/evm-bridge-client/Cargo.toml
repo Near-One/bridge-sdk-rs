@@ -17,9 +17,9 @@ near-token.workspace = true
 omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
-bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 
 [lib]
 path = "src/evm_bridge_client.rs"

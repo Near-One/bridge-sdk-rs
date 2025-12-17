@@ -1,15 +1,10 @@
-use std::{str::FromStr};
-
-use bridge_connector_common::result::{BridgeSdkError, Result};
-use derive_builder::Builder;
 use alloy::{
-    primitives::{Address, TxHash, U256, Bytes},
-    providers::{Provider, ProviderBuilder},
-    network::{EthereumWallet, Ethereum},
+    primitives::{Address, Bytes, TxHash, U256},
+    providers::{DynProvider, Provider},
     sol,
-    signers::local::PrivateKeySigner,
     sol_types::SolEvent,
 };
+use error::Result;
 use ethereum_types::H256 as EthH256;
 use omni_types::prover_args::EvmProof;
 use omni_types::prover_result::ProofKind;
@@ -17,35 +12,41 @@ use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
 use omni_types::{EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
 
-// Define contract ABIs using the sol! macro
+use crate::error::EvmBridgeClientError;
+
+pub use builder::EvmBridgeClientBuilder;
+
+mod builder;
+pub mod error;
+
 sol! {
     #[allow(missing_docs)]
     #[sol(rpc)]
     interface OmniBridge {
-        struct MetadataPayload { 
-            string token; 
-            string name; 
-            string symbol; 
-            uint8 decimals; 
+        struct MetadataPayload {
+            string token;
+            string name;
+            string symbol;
+            uint8 decimals;
         }
-        
-        struct TransferMessagePayload { 
-            uint64 destinationNonce; 
-            uint8 originChain; 
-            uint64 originNonce; 
-            address tokenAddress; 
-            uint128 amount; 
-            address recipient; 
-            string feeRecipient; 
+
+        struct TransferMessagePayload {
+            uint64 destinationNonce;
+            uint8 originChain;
+            uint64 originNonce;
+            address tokenAddress;
+            uint128 amount;
+            address recipient;
+            string feeRecipient;
         }
-        
+
         function deployToken(bytes signatureData, MetadataPayload metadata) external returns (address);
         function finTransfer(bytes, TransferMessagePayload) external;
         function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external payable;
         function nearToEthToken(string nearTokenId) external view returns (address);
         function logMetadata(address tokenAddress) external payable;
         function completedTransfers(uint64) external view returns (bool);
-        
+
         event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message);
     }
 }
@@ -67,22 +68,8 @@ sol! {
     }
 }
 
-/// Bridging NEAR-originated NEP-141 tokens to EVM and back
-#[derive(Builder, Default, Clone)]
-pub struct EvmBridgeClient {
-    #[doc = r"EVM RPC endpoint. Required for `deploy_token`, `mint`, `burn`, `withdraw`"]
-    endpoint: Option<String>,
-    #[doc = r"EVM chain id. Required for `deploy_token`, `mint`, `burn`, `withdraw`"]
-    chain_id: Option<u64>,
-    #[doc = r"EVM private key. Required for `deploy_token`, `mint`, `burn`"]
-    private_key: Option<String>,
-    #[doc = r"`OmniBridge` address on EVM. Required for `deploy_token`, `mint`, `burn`"]
-    omni_bridge_address: Option<String>,
-    #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
-    wormhole_core_address: Option<String>,
-}
-
 // Helper type for InitTransferFilter compatibility
+#[derive(Debug)]
 pub struct InitTransferFilter {
     pub sender: Address,
     pub token_address: Address,
@@ -94,43 +81,43 @@ pub struct InitTransferFilter {
     pub message: String,
 }
 
+/// Bridging NEAR-originated NEP-141 tokens to EVM and back
+#[derive(Clone)]
+pub struct EvmBridgeClient {
+    endpoint: String,
+    provider: DynProvider,
+    signer_provider: Option<DynProvider>,
+    signer_address: Option<Address>,
+    omni_bridge_address: Option<Address>,
+    wormhole_core_address: Option<Address>,
+}
+
 impl EvmBridgeClient {
-    /// Creates an empty instance of the bridging client. Property values can be set separately depending on the required use case.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    // Gets the block number of a transaction
+    /// Gets the block number of a transaction
     pub async fn get_tx_block_number(&self, tx_hash: TxHash) -> Result<u64> {
-        let provider = self.provider()?;
-
-        let tx = provider
+        let tx = self
+            .provider
             .get_transaction_by_hash(tx_hash)
-            .await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get transaction: {e}")))?
+            .await?
             .ok_or_else(|| {
-                BridgeSdkError::UnknownError("Transaction not found".to_string())
+                EvmBridgeClientError::BlockchainDataError("Transaction missing".to_string())
             })?;
-        
-        let block_number = tx
-            .block_number
-            .ok_or_else(|| {
-                BridgeSdkError::UnknownError("Failed to get tx block number".to_string())
-            })?;
+
+        let block_number = tx.block_number.ok_or_else(|| {
+            EvmBridgeClientError::BlockchainDataError("Block number missing for tx".to_string())
+        })?;
 
         Ok(block_number)
     }
 
     /// Gets last finalized block number on EVM chain
     pub async fn get_last_block_number(&self) -> Result<u64> {
-        let provider = self.provider()?;
-
-        let block = provider
+        let block = self
+            .provider
             .get_block_by_number(alloy::eips::BlockNumberOrTag::Latest)
-            .await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get block: {e}")))?
+            .await?
             .ok_or_else(|| {
-                BridgeSdkError::UnknownError("Failed to get finalized block number".to_string())
+                EvmBridgeClientError::BlockchainDataError("Latest block missing".to_string())
             })?;
 
         Ok(block.header.number)
@@ -138,12 +125,8 @@ impl EvmBridgeClient {
 
     /// Checks if the transfer is already finalised on EVM
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
-        let provider = self.provider()?;
-        let omni_bridge_address = self.omni_bridge_address()?;
-        
-        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
-        let is_finalised = omni_bridge.completedTransfers(nonce).call().await
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
+        let omni_bridge = self.omni_bridge()?;
+        let is_finalised = omni_bridge.completedTransfers(nonce).call().await?;
 
         Ok(is_finalised)
     }
@@ -155,26 +138,20 @@ impl EvmBridgeClient {
         address: EvmAddress,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let provider = self.signer_provider().await?;
-        let omni_bridge_address = self.omni_bridge_address()?;
-        
-        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
+        let omni_bridge = self.omni_bridge()?;
         let token_address = Address::from_slice(&address.0);
-        
+
         let mut call_builder = omni_bridge.logMetadata(token_address);
-        
-        if let Ok(wormhole_fee) = self.get_wormhole_fee(&provider).await {
+
+        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
             call_builder = call_builder.value(wormhole_fee);
         }
-        
+
         if let Some(nonce) = tx_nonce {
             call_builder = call_builder.nonce(nonce.to::<u64>());
         }
-        
-        let receipt = call_builder.send().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to send transaction: {e}")))?
-            .get_receipt().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get receipt: {e}")))?;
+
+        let receipt = call_builder.send().await?.get_receipt().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
@@ -184,22 +161,21 @@ impl EvmBridgeClient {
         Ok(receipt.transaction_hash)
     }
 
-    /// Deploys an ERC-20 token representing a bridged version of a token from another chain
+    /// Deploys an ERC-20 token representing a bridged version of a token from another chain. Requires a receipt from `log_metadata` transaction on Near
     #[tracing::instrument(skip_all, name = "EVM DEPLOY TOKEN")]
     pub async fn deploy_token(
         &self,
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let provider = self.signer_provider().await?;
-        let omni_bridge_address = self.omni_bridge_address()?;
-        
+        let omni_bridge = self.omni_bridge()?;
+
         let OmniBridgeEvent::LogMetadataEvent {
             signature,
             metadata_payload,
         } = transfer_log
         else {
-            return Err(BridgeSdkError::InvalidArgument(format!(
+            return Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Expected LogMetadataEvent but got {transfer_log:?}"
             )));
         };
@@ -213,25 +189,20 @@ impl EvmBridgeClient {
 
         let serialized_signature = signature.to_bytes();
         assert!(serialized_signature.len() == 65);
-        
-        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
-        let mut call_builder = omni_bridge.deployToken(
-            Bytes::from(serialized_signature.to_vec()), 
-            payload
-        ).gas(500_000);
 
-        if let Ok(wormhole_fee) = self.get_wormhole_fee(&provider).await {
+        let mut call_builder = omni_bridge
+            .deployToken(Bytes::from(serialized_signature.to_vec()), payload)
+            .gas(500_000);
+
+        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
             call_builder = call_builder.value(wormhole_fee);
         }
-        
+
         if let Some(nonce) = tx_nonce {
             call_builder = call_builder.nonce(nonce.to::<u64>());
         }
 
-        let receipt = call_builder.send().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to send transaction: {e}")))?
-            .get_receipt().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get receipt: {e}")))?;
+        let receipt = call_builder.send().await?.get_receipt().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
@@ -241,7 +212,7 @@ impl EvmBridgeClient {
         Ok(receipt.transaction_hash)
     }
 
-    /// Burns bridged tokens on EVM
+    /// Burns bridged tokens on EVM. The proof from this transaction is then used to withdraw the corresponding tokens on Near
     #[tracing::instrument(skip_all, name = "EVM INIT TRANSFER")]
     pub async fn init_transfer(
         &self,
@@ -252,16 +223,18 @@ impl EvmBridgeClient {
         message: String,
         mut tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let provider = self.signer_provider().await?;
         let omni_bridge_address = self.omni_bridge_address()?;
+        let omni_bridge = self.omni_bridge()?;
         let signer_address = self.signer_address()?;
-        
+
         // Handle token approval if not native token
         if !token.is_zero() {
-            let erc20 = ERC20::new(token, &provider);
-            
-            let allowance_result = erc20.allowance(signer_address, omni_bridge_address)
-                .call().await?;
+            let erc20 = ERC20::new(token, &self.provider);
+
+            let allowance_result = erc20
+                .allowance(signer_address.clone(), omni_bridge_address)
+                .call()
+                .await?;
 
             let amount_u256 = U256::from(amount);
             if allowance_result < amount_u256 {
@@ -269,20 +242,17 @@ impl EvmBridgeClient {
                 if let Some(nonce) = tx_nonce {
                     approval_call = approval_call.nonce(nonce.to::<u64>());
                 }
-                
-                approval_call.send().await
-                    .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to send approval: {e}")))?
-                    .get_receipt().await
-                    .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get approval receipt: {e}")))?;
+
+                approval_call.send().await?.get_receipt().await?;
                 tx_nonce = tx_nonce.map(|n| n + U256::from(1));
-                
+
                 tracing::debug!("Approved tokens for spending");
             }
         }
 
         let mut value = U256::from(fee.native_fee.0);
 
-        if let Ok(wormhole_fee) = self.get_wormhole_fee(&provider).await {
+        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
             value += wormhole_fee;
         }
 
@@ -290,24 +260,22 @@ impl EvmBridgeClient {
             value += U256::from(amount);
         }
 
-        let omni_bridge = OmniBridge::new(omni_bridge_address, provider);
-        let mut transfer_call = omni_bridge.initTransfer(
-            token,
-            amount,
-            fee.fee.into(),
-            fee.native_fee.into(),
-            receiver.to_string(),
-            message,
-        ).value(value);
-        
+        let mut transfer_call = omni_bridge
+            .initTransfer(
+                token,
+                amount,
+                fee.fee.into(),
+                fee.native_fee.into(),
+                receiver.to_string(),
+                message,
+            )
+            .value(value);
+
         if let Some(nonce) = tx_nonce {
             transfer_call = transfer_call.nonce(nonce.to::<u64>());
         }
 
-        let receipt = transfer_call.send().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to send transfer: {e}")))?
-            .get_receipt().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get transfer receipt: {e}")))?;
+        let receipt = transfer_call.send().await?.get_receipt().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
@@ -324,81 +292,42 @@ impl EvmBridgeClient {
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        let provider = self.signer_provider().await?;
-        let omni_bridge_address = self.omni_bridge_address()?;
-        
+        let omni_bridge = self.omni_bridge()?;
+
         let OmniBridgeEvent::SignTransferEvent {
             message_payload,
             signature,
         } = transfer_log
         else {
-            return Err(BridgeSdkError::InvalidArgument(format!(
+            return Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Expected SignTransferEvent but got {transfer_log:?}"
             )));
-        };
-
-        let token_address = match message_payload.token_address {
-            OmniAddress::Eth(addr)
-            | OmniAddress::Base(addr)
-            | OmniAddress::Arb(addr)
-            | OmniAddress::Bnb(addr) => Address::from_slice(&addr.0),
-            OmniAddress::Near(_)
-            | OmniAddress::Sol(_)
-            | OmniAddress::Btc(_)
-            | OmniAddress::Zcash(_) => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Unsupported token address type in SignTransferEvent: {:?}",
-                    message_payload.token_address
-                )))
-            }
-        };
-        
-        let recipient = match message_payload.recipient {
-            OmniAddress::Eth(addr)
-            | OmniAddress::Base(addr)
-            | OmniAddress::Arb(addr)
-            | OmniAddress::Bnb(addr) => Address::from_slice(&addr.0),
-            OmniAddress::Near(_)
-            | OmniAddress::Sol(_)
-            | OmniAddress::Btc(_)
-            | OmniAddress::Zcash(_) => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Unsupported recipient address type in SignTransferEvent: {:?}",
-                    message_payload.recipient
-                )))
-            }
         };
 
         let bridge_deposit = OmniBridge::TransferMessagePayload {
             destinationNonce: message_payload.destination_nonce,
             originChain: message_payload.transfer_id.origin_chain.into(),
             originNonce: message_payload.transfer_id.origin_nonce,
-            tokenAddress: token_address,
+            tokenAddress: Self::convert_omni_address(message_payload.token_address)?,
             amount: message_payload.amount.into(),
-            recipient,
+            recipient: Self::convert_omni_address(message_payload.recipient)?,
             feeRecipient: message_payload
                 .fee_recipient
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let omni_bridge = OmniBridge::new(omni_bridge_address, &provider);
-        let mut call_builder = omni_bridge.finTransfer(
-            Bytes::from(signature.to_bytes().to_vec()), 
-            bridge_deposit
-        );
+        let mut call_builder =
+            omni_bridge.finTransfer(Bytes::from(signature.to_bytes().to_vec()), bridge_deposit);
 
-        if let Ok(wormhole_fee) = self.get_wormhole_fee(&provider).await {
+        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
             call_builder = call_builder.value(wormhole_fee);
         }
-        
+
         if let Some(nonce) = tx_nonce {
             call_builder = call_builder.nonce(nonce.to::<u64>());
         }
 
-        let receipt = call_builder.send().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to send fin transfer: {e}")))?
-            .get_receipt().await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get fin transfer receipt: {e}")))?;
+        let receipt = call_builder.send().await?.get_receipt().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
@@ -413,8 +342,6 @@ impl EvmBridgeClient {
         tx_hash: TxHash,
         proof_kind: ProofKind,
     ) -> Result<EvmProof> {
-        let endpoint = self.endpoint()?;
-
         let event_signature = match proof_kind {
             ProofKind::DeployToken => "DeployToken(address,string,string,string,uint8,uint8)",
             ProofKind::InitTransfer => {
@@ -423,57 +350,54 @@ impl EvmBridgeClient {
             ProofKind::FinTransfer => "FinTransfer(uint8,uint64,address,uint128,address,string)",
             ProofKind::LogMetadata => "LogMetadata(address,string,string,uint8)",
         };
-        
+
         let hash_bytes = Keccak256::digest(event_signature.as_bytes());
         let event_topic = EthH256::from_slice(&hash_bytes);
-        
+
         // Convert TxHash (B256) to ethereum_types::H256
         let tx_hash_primitive = EthH256::from_slice(tx_hash.as_slice());
 
-        let proof = eth_proof::get_proof_for_event(tx_hash_primitive, event_topic, endpoint).await?;
+        let proof =
+            eth_proof::get_proof_for_event(tx_hash_primitive, event_topic, &self.endpoint).await?;
 
         Ok(proof)
     }
 
     pub async fn get_transfer_event(&self, tx_hash: TxHash) -> Result<InitTransferFilter> {
-        let provider = self.provider()?;
-
-        let receipt = provider.get_transaction_receipt(tx_hash).await
-            .map_err(|e| BridgeSdkError::UnknownError(format!("Failed to get receipt: {e}")))?
-            .ok_or(BridgeSdkError::InvalidArgument("Transaction receipt not found".to_string()))?;
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await?
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "Transaction receipt missing".to_string(),
+            ))?;
 
         let _event_signature = OmniBridge::InitTransfer::SIGNATURE;
-        
+
         let rpc_log = receipt
             .inner
-            .logs()
-            .iter()
+            .into_logs()
+            .into_iter()
             .find(|log| {
                 if let Some(topic) = log.topics().first() {
                     // SIGNATURE is a &str constant, need to compare topics properly
-                    let sig_hash = alloy::primitives::keccak256(OmniBridge::InitTransfer::SIGNATURE.as_bytes());
+                    let sig_hash = alloy::primitives::keccak256(
+                        OmniBridge::InitTransfer::SIGNATURE.as_bytes(),
+                    );
                     topic.0 == sig_hash.0
                 } else {
                     false
                 }
             })
-            .ok_or(BridgeSdkError::InvalidArgument(
-                "Transfer event not found".to_string(),
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "Transfer event missing".to_string(),
             ))?;
 
-        // Convert RPC log to alloy primitive log for decoding
-        let log_data = alloy::primitives::Log {
-            address: rpc_log.address(),
-            data: alloy::primitives::LogData::new_unchecked(
-                rpc_log.topics().to_vec(),
-                rpc_log.data().data.clone(),
-            ),
-        };
+        let log_data = rpc_log.into_inner();
 
-        let decoded = OmniBridge::InitTransfer::decode_log(&log_data)
-            .map_err(|err| {
-                BridgeSdkError::UnknownError(format!("Failed to decode event log: {err}"))
-            })?;
+        let decoded = OmniBridge::InitTransfer::decode_log(&log_data).map_err(|err| {
+            EvmBridgeClientError::BlockchainDataError(format!("Failed to decode event log: {err}"))
+        })?;
 
         Ok(InitTransferFilter {
             sender: decoded.sender,
@@ -487,85 +411,68 @@ impl EvmBridgeClient {
         })
     }
 
-    pub fn endpoint(&self) -> Result<&str> {
-        Ok(self.endpoint.as_ref().ok_or(BridgeSdkError::ConfigError(
-            "EVM rpc endpoint is not set".to_string(),
-        ))?)
+    async fn get_wormhole_fee(&self) -> Result<U256> {
+        let wormhole_address = self.wormhole_core_address()?;
+        let wormhole = WormholeCore::new(wormhole_address, &self.provider);
+        let fee = wormhole.messageFee().call().await?;
+        Ok(fee)
     }
 
     pub fn omni_bridge_address(&self) -> Result<Address> {
         self.omni_bridge_address
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
+            .ok_or(EvmBridgeClientError::ConfigError(
                 "OmniBridge address is not set".to_string(),
             ))
-            .and_then(|addr| {
-                Address::from_str(addr).map_err(|_| {
-                    BridgeSdkError::ConfigError(
-                        "omni_bridge_address is not a valid EVM address".to_string(),
-                    )
-                })
-            })
     }
 
     pub fn wormhole_core_address(&self) -> Result<Address> {
         self.wormhole_core_address
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
+            .ok_or(EvmBridgeClientError::ConfigError(
                 "Wormhole core address is not set".to_string(),
             ))
-            .and_then(|addr| {
-                Address::from_str(addr).map_err(|_| {
-                    BridgeSdkError::ConfigError(
-                        "wormhole_core_address is not a valid EVM address".to_string(),
-                    )
-                })
-            })
     }
 
-    fn provider(&self) -> Result<impl Provider<Ethereum>> {
-        let endpoint = self.endpoint()?;
-        let url = endpoint.parse()
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
-        let provider = ProviderBuilder::new()
-            .on_http(url);
-        Ok(provider)
+    fn omni_bridge(&self) -> Result<OmniBridge::OmniBridgeInstance<&DynProvider>> {
+        let omni_bridge_address = self.omni_bridge_address()?;
+        Ok(OmniBridge::new(
+            omni_bridge_address,
+            self.signer_provider()?,
+        ))
     }
 
-    async fn signer_provider(&self) -> Result<impl Provider<Ethereum>> {
-        let endpoint = self.endpoint()?;
-        let private_key = self.private_key.as_ref()
-            .ok_or(BridgeSdkError::ConfigError("EVM private key is not set".to_string()))?;
-        
-        let signer = PrivateKeySigner::from_str(private_key)
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM private key".to_string()))?;
-        
-        let url = endpoint.parse()
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM rpc endpoint url".to_string()))?;
-        let provider = ProviderBuilder::new()
-            .wallet(EthereumWallet::from(signer))
-            .on_http(url);
-        
-        Ok(provider)
+    fn signer_provider(&self) -> Result<&DynProvider> {
+        Ok(self
+            .signer_provider
+            .as_ref()
+            .ok_or(EvmBridgeClientError::ConfigError(
+                "EVM private key is not set".to_string(),
+            ))?)
     }
 
-    fn signer_address(&self) -> Result<Address> {
-        let private_key = self.private_key.as_ref()
-            .ok_or(BridgeSdkError::ConfigError("EVM private key is not set".to_string()))?;
-        
-        let signer = PrivateKeySigner::from_str(private_key)
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid EVM private key".to_string()))?;
-        
-        Ok(signer.address())
+    fn signer_address(&self) -> Result<&Address> {
+        Ok(self
+            .signer_address
+            .as_ref()
+            .ok_or(EvmBridgeClientError::ConfigError(
+                "EVM private key is not set".to_string(),
+            ))?)
     }
 
-    async fn get_wormhole_fee<P>(&self, provider: &P) -> Result<U256> 
-    where
-        P: Provider<Ethereum>
-    {
-        let wormhole_address = self.wormhole_core_address()?;
-        let wormhole = WormholeCore::new(wormhole_address, provider);
-        let fee = wormhole.messageFee().call().await?;
-        Ok(fee)
+    fn convert_omni_address(address: OmniAddress) -> Result<Address> {
+        match address {
+            OmniAddress::Eth(addr)
+            | OmniAddress::Base(addr)
+            | OmniAddress::Arb(addr)
+            | OmniAddress::Bnb(addr) => Ok(Address::from_slice(&addr.0)),
+            OmniAddress::Near(_)
+            | OmniAddress::Sol(_)
+            | OmniAddress::Btc(_)
+            | OmniAddress::Zcash(_) => {
+                return Err(EvmBridgeClientError::InvalidArgument(format!(
+                    "Unsupported address type in SignTransferEvent: {:?}",
+                    address
+                )))
+            }
+        }
     }
 }

@@ -1,8 +1,9 @@
-use eth_proof::{EthClientError, EthProofError};
 use alloy::{
-    contract::Error as ContractError,
-    transports::{TransportError, RpcError},
+    providers::PendingTransactionError,
+    transports::{RpcError, TransportErrorKind},
 };
+use eth_proof::{EthClientError, EthProofError};
+use evm_bridge_client::error::EvmBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
@@ -74,37 +75,27 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
 #[derive(thiserror::Error, Debug)]
 #[error("{0}")]
 pub enum EthRpcError {
-    ContractError(#[source] ContractError),
-    EthClientError(#[source] EthClientError),
-    RpcError(#[source] RpcError<TransportError>),
-    TransportError(#[source] TransportError),
+    RpcError(#[source] RpcError<TransportErrorKind>),
+    PendingTransactionError(#[source] PendingTransactionError),
+    ContractError(String),
+    BlockchainDataError(String),
 }
 
 impl From<EthProofError> for BridgeSdkError {
     fn from(error: EthProofError) -> Self {
         match error {
             EthProofError::TrieError(e) => Self::EthProofError(e.to_string()),
-            EthProofError::EthClientError(e) => Self::EthRpcError(EthRpcError::EthClientError(e)),
+            EthProofError::EthClientError(EthClientError::ParseError(e)) => {
+                Self::EthRpcError(EthRpcError::RpcError(RpcError::DeserError {
+                    err: e,
+                    text: "".to_string(),
+                }))
+            }
+            EthProofError::EthClientError(EthClientError::TransportError(e)) => Self::EthRpcError(
+                EthRpcError::RpcError(RpcError::Transport(TransportErrorKind::Custom(Box::new(e)))),
+            ),
             EthProofError::Other(e) => Self::EthProofError(e),
         }
-    }
-}
-
-impl From<ContractError> for BridgeSdkError {
-    fn from(error: ContractError) -> Self {
-        Self::EthRpcError(EthRpcError::ContractError(error))
-    }
-}
-
-impl From<RpcError<TransportError>> for BridgeSdkError {
-    fn from(error: RpcError<TransportError>) -> Self {
-        Self::EthRpcError(EthRpcError::RpcError(error))
-    }
-}
-
-impl From<TransportError> for BridgeSdkError {
-    fn from(error: TransportError) -> Self {
-        Self::EthRpcError(EthRpcError::TransportError(error))
     }
 }
 
@@ -113,6 +104,26 @@ impl From<UtxoClientError> for BridgeSdkError {
         match error {
             UtxoClientError::RpcError(e) => Self::UtxoRpcError(e),
             UtxoClientError::Other(e) => Self::UtxoClientError(e),
+        }
+    }
+}
+
+impl From<EvmBridgeClientError> for BridgeSdkError {
+    fn from(error: EvmBridgeClientError) -> Self {
+        match error {
+            EvmBridgeClientError::RpcError(e) => Self::EthRpcError(EthRpcError::RpcError(e)),
+            EvmBridgeClientError::PendingTransactionError(e) => {
+                Self::EthRpcError(EthRpcError::PendingTransactionError(e))
+            }
+            EvmBridgeClientError::ContractError(e) => {
+                Self::EthRpcError(EthRpcError::ContractError(e))
+            }
+            EvmBridgeClientError::BlockchainDataError(e) => {
+                Self::EthRpcError(EthRpcError::BlockchainDataError(e))
+            }
+            EvmBridgeClientError::EthProofError(e) => Self::EthProofError(e.to_string()),
+            EvmBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            EvmBridgeClientError::ConfigError(e) => Self::ConfigError(e),
         }
     }
 }
