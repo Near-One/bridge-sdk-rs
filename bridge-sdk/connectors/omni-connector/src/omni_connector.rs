@@ -1032,7 +1032,7 @@ impl OmniConnector {
         })?;
 
         let transfer_event = self.evm_get_transfer_event(chain_kind, tx_hash).await?;
-println!("transfer_event: {:?}", transfer_event);
+
         let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
                 "Failed to parse recipient: {}",
@@ -1754,7 +1754,7 @@ println!("transfer_event: {:?}", transfer_event);
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(ethers::abi::AbiEncode::encode_hex),
+                .map(alloy::hex::encode_prefixed),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1762,7 +1762,7 @@ println!("transfer_event: {:?}", transfer_event);
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(ethers::abi::AbiEncode::encode_hex),
+                .map(alloy::hex::encode_prefixed),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,

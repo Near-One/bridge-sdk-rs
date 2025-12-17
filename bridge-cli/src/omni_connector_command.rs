@@ -1088,7 +1088,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let pol_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.pol_rpc)
-        .chain_id(combined_config.pol_chain_id)
         .private_key(combined_config.pol_private_key)
         .omni_bridge_address(combined_config.pol_bridge_token_factory_address)
         .wormhole_core_address(combined_config.pol_wormhole_address)
