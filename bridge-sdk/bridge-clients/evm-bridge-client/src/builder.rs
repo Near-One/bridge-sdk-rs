@@ -11,13 +11,13 @@ use crate::EvmBridgeClient;
 
 #[derive(Default)]
 pub struct EvmBridgeClientBuilder {
-    #[doc = r"EVM RPC endpoint"]
+    #[doc = r"Required. EVM RPC endpoint."]
     endpoint: Option<String>,
-    #[doc = r"EVM private key. Required for `deploy_token`, `mint`, `burn`"]
+    #[doc = r"Optional. EVM private key. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     private_key: Option<String>,
-    #[doc = r"`OmniBridge` address on EVM. Required for `deploy_token`, `mint`, `burn`"]
+    #[doc = r"Optional. `OmniBridge` address on EVM. Needed for all read/write OmniBridge operations"]
     omni_bridge_address: Option<String>,
-    #[doc = r"Wormhole core address on EVM. Required to get wormhole fee"]
+    #[doc = r"Optional. Wormhole core address on EVM. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     wormhole_core_address: Option<String>,
 }
 
