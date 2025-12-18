@@ -22,21 +22,25 @@ pub struct EvmBridgeClientBuilder {
 }
 
 impl EvmBridgeClientBuilder {
+    #[must_use]
     pub fn endpoint(mut self, endpoint: Option<String>) -> Self {
         self.endpoint = endpoint;
         self
     }
 
+    #[must_use]
     pub fn private_key(mut self, private_key: Option<String>) -> Self {
         self.private_key = private_key;
         self
     }
 
+    #[must_use]
     pub fn omni_bridge_address(mut self, omni_bridge_address: Option<String>) -> Self {
         self.omni_bridge_address = omni_bridge_address;
         self
     }
 
+    #[must_use]
     pub fn wormhole_core_address(mut self, wormhole_core_address: Option<String>) -> Self {
         self.wormhole_core_address = wormhole_core_address;
         self

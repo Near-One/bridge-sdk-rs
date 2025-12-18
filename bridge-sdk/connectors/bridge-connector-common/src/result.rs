@@ -88,7 +88,7 @@ impl From<EthProofError> for BridgeSdkError {
             EthProofError::EthClientError(EthClientError::ParseError(e)) => {
                 Self::EthRpcError(EthRpcError::RpcError(RpcError::DeserError {
                     err: e,
-                    text: "".to_string(),
+                    text: String::new(),
                 }))
             }
             EthProofError::EthClientError(EthClientError::TransportError(e)) => Self::EthRpcError(

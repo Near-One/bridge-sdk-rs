@@ -55,7 +55,7 @@ sol! {
     #[allow(missing_docs)]
     #[sol(rpc)]
     interface ERC20 {
-        function allowance(address _owner, address _spender) public view returns (uint256 remaining);
+        function allowance(address owner, address spender) public view returns (uint256 remaining);
         function approve(address spender, uint256 amount) external returns (bool);
     }
 }
@@ -191,7 +191,7 @@ impl EvmBridgeClient {
         assert!(serialized_signature.len() == 65);
 
         let mut call_builder = omni_bridge
-            .deployToken(Bytes::from(serialized_signature.to_vec()), payload)
+            .deployToken(Bytes::from(serialized_signature), payload)
             .gas(500_000);
 
         if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
@@ -317,7 +317,7 @@ impl EvmBridgeClient {
         };
 
         let mut call_builder =
-            omni_bridge.finTransfer(Bytes::from(signature.to_bytes().to_vec()), bridge_deposit);
+            omni_bridge.finTransfer(Bytes::from(signature.to_bytes()), bridge_deposit);
 
         if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
             call_builder = call_builder.value(wormhole_fee);
@@ -371,8 +371,6 @@ impl EvmBridgeClient {
             .ok_or(EvmBridgeClientError::BlockchainDataError(
                 "Transaction receipt missing".to_string(),
             ))?;
-
-        let _event_signature = OmniBridge::InitTransfer::SIGNATURE;
 
         let rpc_log = receipt
             .inner
