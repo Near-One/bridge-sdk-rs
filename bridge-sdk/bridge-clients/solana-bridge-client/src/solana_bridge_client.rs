@@ -1142,7 +1142,7 @@ impl SolanaBridgeClient {
                     AccountMeta::new(config, false),
                     AccountMeta::new(used_nonces, false),
                     AccountMeta::new(authority, false),
-                    AccountMeta::new_readonly(recipient, false),
+                    AccountMeta::new(recipient, false),
                     AccountMeta::new(sol_vault, false),
                     AccountMeta::new_readonly(config, false),
                     AccountMeta::new(wormhole_bridge, false),
