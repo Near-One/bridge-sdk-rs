@@ -462,10 +462,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let instruction_data = LogMetadata {
             override_name: String::new(),
@@ -537,10 +535,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let instruction_data = DeployToken { data };
 
@@ -612,10 +608,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let is_bridged_token = match self.get_token_owner(token).await? {
             COption::Some(owner) => owner == authority,
@@ -740,10 +734,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let instruction_data = InitTransferSol {
             amount,
@@ -823,10 +815,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let instruction_data = FinalizeTransfer {
             payload: FinalizeTransferInstructionPayload {
@@ -912,10 +902,8 @@ impl SolanaBridgeClient {
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
         let wormhole_post_message_shim_event_authority =
             self.wormhole_post_message_shim_event_authority()?;
-        let (shim_message, _) = Pubkey::find_program_address(
-            &[config.as_ref()],
-            wormhole_post_message_shim_program_id,
-        );
+        let (shim_message, _) =
+            Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
         let instruction_data = FinalizeTransferSol {
             payload: FinalizeTransferInstructionPayload {
