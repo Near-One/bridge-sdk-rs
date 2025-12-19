@@ -2,6 +2,7 @@
 name = "evm-bridge-client"
 version = "0.2.7"
 edition = "2021"
+rust-version = "1.88.0"
 
 [dependencies]
 sha3.workspace = true
