@@ -14,6 +14,8 @@ use crate::types::{TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeTransactionData
 pub mod error;
 pub mod types;
 
+const SATS_PER_BTC: f64 = 100_000_000.0;
+
 pub enum AuthOptions {
     None,
     XApiKey(String),
@@ -155,7 +157,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             ))
         })?;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
-        let amount = (amount_btc * 100_000_000.0) as u64;
+        let amount = (amount_btc * SATS_PER_BTC) as u64;
 
         let vout: u32 = output_index.try_into().map_err(|_| {
             UtxoClientError::RpcError(format!("Output index too large: {output_index}"))
