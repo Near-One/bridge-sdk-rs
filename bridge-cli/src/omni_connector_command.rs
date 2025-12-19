@@ -3,7 +3,7 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use ethers_core::types::TxHash;
+use alloy::primitives::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -1056,7 +1056,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let eth_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.eth_rpc)
-        .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
         .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
         .wormhole_core_address(None)
@@ -1065,7 +1064,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let base_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.base_rpc)
-        .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
         .omni_bridge_address(combined_config.base_bridge_token_factory_address)
         .wormhole_core_address(combined_config.base_wormhole_address)
@@ -1074,7 +1072,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let arb_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.arb_rpc)
-        .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
         .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
         .wormhole_core_address(combined_config.arb_wormhole_address)
@@ -1083,7 +1080,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let bnb_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.bnb_rpc)
-        .chain_id(combined_config.bnb_chain_id)
         .private_key(combined_config.bnb_private_key)
         .omni_bridge_address(combined_config.bnb_bridge_token_factory_address)
         .wormhole_core_address(combined_config.bnb_wormhole_address)
@@ -1092,7 +1088,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let pol_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.pol_rpc)
-        .chain_id(combined_config.pol_chain_id)
         .private_key(combined_config.pol_private_key)
         .omni_bridge_address(combined_config.pol_bridge_token_factory_address)
         .wormhole_core_address(combined_config.pol_wormhole_address)

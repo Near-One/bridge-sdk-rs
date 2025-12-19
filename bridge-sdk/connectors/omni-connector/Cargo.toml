@@ -2,12 +2,13 @@
 name = "omni-connector"
 version = "0.2.22"
 edition = "2021"
+rust-version = "1.88.0"
 
 [dependencies]
 sha3.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-ethers.workspace = true
+alloy.workspace = true
 derive_builder.workspace = true
 hex.workspace = true
 near-crypto.workspace = true
