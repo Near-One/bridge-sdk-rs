@@ -601,8 +601,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     token,
                     amount,
                     recipient,
-                    fee: fee.unwrap_or(0),
-                    native_fee: native_fee.unwrap_or(0),
+                    fee,
+                    native_fee,
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
@@ -1051,6 +1051,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .map(|account| account.parse().unwrap()),
         )
         .utxo_bridges(utxo_bridges)
+        .bridge_indexer_api_url(combined_config.bridge_indexer_api_url)
         .build()
         .unwrap();
 

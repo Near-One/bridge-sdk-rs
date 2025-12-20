@@ -16,12 +16,17 @@ near-sdk.workspace = true
 omni-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 serde_with.workspace = true
 tracing.workspace = true
 near-rpc-client = { path = "../../near-rpc-client" }
 bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 utxo-utils = { path = "../../utxo-utils" }
 futures = "0.3.31"
+
+[dev-dependencies]
+httpmock = "0.7.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [lib]
 path = "src/near_bridge_client.rs"
