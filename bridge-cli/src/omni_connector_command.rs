@@ -19,7 +19,7 @@ use solana_sdk::{signature::Keypair, signer::EncodableKey};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
-use crate::{combined_config, CliConfig, Network};
+use crate::{combined_config, fee, CliConfig, Network};
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "chain")]
@@ -596,13 +596,75 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             native_fee,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee) = if let (Some(fee), Some(native_fee)) = (fee, native_fee) {
+                (fee, native_fee)
+            } else {
+                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
+                    Some(url) => url,
+                    None => {
+                        eprintln!(
+                            "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                        );
+                        return;
+                    }
+                };
+
+                let sender = match combined_config.near_signer.as_deref() {
+                    Some(signer) => signer,
+                    None => {
+                        eprintln!(
+                            "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                        );
+                        return;
+                    }
+                };
+
+                let sender = match sender.parse() {
+                    Ok(addr) => OmniAddress::Near(addr),
+                    Err(err) => {
+                        eprintln!("Failed to parse near_signer for fee calculation: {err}");
+                        return;
+                    }
+                };
+                let token_addr = match token.parse() {
+                    Ok(addr) => OmniAddress::Near(addr),
+                    Err(err) => {
+                        eprintln!("Failed to parse token for fee calculation: {err}");
+                        return;
+                    }
+                };
+
+                let fee_quote = match fee::fetch_transfer_fee(
+                    api_url,
+                    &sender.to_string(),
+                    &recipient.to_string(),
+                    &token_addr.to_string(),
+                    Some(amount),
+                )
+                .await
+                {
+                    Ok(quote) => quote,
+                    Err(err) => {
+                        eprintln!("Failed to fetch transfer fee: {err}");
+                        return;
+                    }
+                };
+
+                (
+                    fee.unwrap_or(fee_quote.transferred_fee),
+                    native_fee.unwrap_or(fee_quote.native_fee),
+                )
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::NearInitTransfer {
                     token,
                     amount,
                     recipient,
-                    fee,
-                    native_fee,
+                    fee: Some(fee),
+                    native_fee: Some(native_fee),
                     transaction_options: TransactionOptions::default(),
                 })
                 .await

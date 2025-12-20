@@ -6,6 +6,7 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{field::MakeExt, fmt::format, EnvFilter, FmtSubscriber};
 
 mod defaults;
+mod fee;
 mod omni_connector_command;
 
 #[derive(Args, Debug, Clone, Deserialize, Default)]

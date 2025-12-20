@@ -1167,6 +1167,7 @@ dependencies = [
  "light-client",
  "near-bridge-client",
  "near-primitives",
+ "near-sdk",
  "omni-connector",
  "omni-types",
  "reqwest 0.12.23",
