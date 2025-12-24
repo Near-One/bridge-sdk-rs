@@ -6,7 +6,6 @@ use derive_builder::Builder;
 use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::{SecretKey, Signer};
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
-use near_sdk::json_types::U128;
 use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
@@ -90,15 +89,6 @@ pub struct UTXOChainAccounts {
     pub satoshi_relayer: Option<AccountId>,
 }
 
-/// Bridging NEAR-originated NEP-141 tokens
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct TransferFee {
-    pub native_token_fee: U128,
-    pub transferred_token_fee: Option<U128>,
-    pub gas_fee: Option<U128>,
-    pub usd_fee: Option<f64>,
-}
-
 #[derive(Builder, Default, Clone)]
 pub struct NearBridgeClient {
     #[doc = r"NEAR RPC endpoint"]
@@ -111,7 +101,6 @@ pub struct NearBridgeClient {
     omni_bridge_id: Option<AccountId>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
     pub utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
-    pub bridge_indexer_api_url: Option<String>,
 }
 
 impl NearBridgeClient {
@@ -606,54 +595,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Fetches the transfer fee from the Bridge Indexer API
-    pub async fn get_transfer_fee(
-        &self,
-        sender: &OmniAddress,
-        recipient: &OmniAddress,
-        token: &OmniAddress,
-    ) -> Result<(u128, u128)> {
-        let Some(api_url) = &self.bridge_indexer_api_url else {
-            return Err(BridgeSdkError::ConfigError(
-                "Bridge indexer API URL is not configured; provide it or specify fees".to_string(),
-            ));
-        };
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
-        let response = client
-            .get(format!("{}/api/v3/transfer-fee", api_url))
-            .query(&[
-                ("sender", sender.to_string()),
-                ("recipient", recipient.to_string()),
-                ("token", token.to_string()),
-            ])
-            .send()
-            .await
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
-
-        let transfer_fee: TransferFee = response
-            .error_for_status()
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?
-            .json()
-            .await
-            .map_err(|e| BridgeSdkError::UnknownError(e.to_string()))?;
-
-        let fee = transfer_fee
-            .transferred_token_fee
-            .ok_or_else(|| {
-                BridgeSdkError::UnknownError(
-                    "Missing transferred_token_fee in indexer response".to_string(),
-                )
-            })?
-            .0;
-        let native_fee = transfer_fee.native_token_fee.0;
-
-        Ok((fee, native_fee))
-    }
-
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -668,22 +609,13 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let sender = OmniAddress::Near(self.account_id()?);
-        let token = OmniAddress::Near(token_id.parse().map_err(|err| {
-            BridgeSdkError::ConfigError(format!("Failed to parse token_id: {err}"))
-        })?);
-
-        // Optimization: Skip API call if both fees are provided
-        let (fee, native_fee) = if let (Some(fee), Some(native_fee)) = (fee, native_fee) {
-            (fee, native_fee)
-        } else {
-            let (calculated_fee, calculated_native_fee) = self
-                .get_transfer_fee(&sender, &receiver, &token)
-                .await?;
-            (
-                fee.unwrap_or(calculated_fee),
-                native_fee.unwrap_or(calculated_native_fee),
-            )
+        let (fee, native_fee) = match (fee, native_fee) {
+            (Some(fee), Some(native_fee)) => (fee, native_fee),
+            _ => {
+                return Err(BridgeSdkError::ConfigError(
+                    "fee and native_fee must be provided".to_string(),
+                ))
+            }
         };
 
         if amount == 0 {
@@ -1048,69 +980,5 @@ impl NearBridgeClient {
             ))
             .map_err(|_| BridgeSdkError::ConfigError("Invalid omni bridge account id".to_string()))
             .cloned()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use httpmock::prelude::*;
-
-    #[test]
-    fn test_bridge_indexer_fee_response_parsing() {
-        let json_response = r#"{
-            "native_token_fee": "1000",
-            "transferred_token_fee": "500",
-            "gas_fee": "250",
-            "usd_fee": 0.1
-        }"#;
-
-        let fee: TransferFee = serde_json::from_str(json_response).expect("Failed to deserialize TransferFee");
-
-        assert_eq!(fee.native_token_fee.0, 1000);
-        assert_eq!(fee.transferred_token_fee.unwrap().0, 500);
-        assert_eq!(fee.gas_fee.unwrap().0, 250);
-        assert!((fee.usd_fee.unwrap() - 0.1).abs() < f64::EPSILON);
-    }
-
-    #[tokio::test]
-    async fn test_get_transfer_fee_from_indexer() {
-        let server = MockServer::start();
-
-        let mock = server.mock(|when, then| {
-            when.method(GET)
-                .path("/api/v3/transfer-fee")
-                .query_param("sender", "near:alice.near")
-                .query_param("recipient", "near:bob.near")
-                .query_param("token", "near:wrap.near");
-            then.status(200)
-                .header("content-type", "application/json")
-                .body(
-                    r#"{
-                        "native_token_fee": "1000",
-                        "transferred_token_fee": "500",
-                        "gas_fee": "250",
-                        "usd_fee": 0.1
-                    }"#,
-                );
-        });
-
-        let client = NearBridgeClient {
-            bridge_indexer_api_url: Some(server.base_url()),
-            ..Default::default()
-        };
-
-        let sender = OmniAddress::Near("alice.near".parse().unwrap());
-        let recipient = OmniAddress::Near("bob.near".parse().unwrap());
-        let token = OmniAddress::Near("wrap.near".parse().unwrap());
-
-        let (fee, native_fee) = client
-            .get_transfer_fee(&sender, &recipient, &token)
-            .await
-            .expect("Expected fee fetch to succeed");
-
-        assert_eq!(fee, 500);
-        assert_eq!(native_fee, 1000);
-        mock.assert();
     }
 }

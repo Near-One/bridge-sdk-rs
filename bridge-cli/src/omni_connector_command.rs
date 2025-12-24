@@ -1113,7 +1113,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .map(|account| account.parse().unwrap()),
         )
         .utxo_bridges(utxo_bridges)
-        .bridge_indexer_api_url(combined_config.bridge_indexer_api_url)
         .build()
         .unwrap();
 
