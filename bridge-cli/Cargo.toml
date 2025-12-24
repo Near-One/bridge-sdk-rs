@@ -9,6 +9,7 @@ clap.workspace = true
 dotenv.workspace = true
 tokio.workspace = true
 ethers-core.workspace = true
+ethers.workspace = true
 near-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -3,6 +3,7 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
+use ethers::signers::{LocalWallet, Signer};
 use ethers_core::types::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
@@ -15,7 +16,7 @@ use omni_connector::{
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{signature::Keypair, signer::EncodableKey};
+use solana_sdk::{signature::Keypair, signer::EncodableKey, signature::Signer as SolanaSigner};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
@@ -44,6 +45,49 @@ impl From<Network> for utxo_utils::address::Network {
             Network::Testnet | Network::Devnet => utxo_utils::address::Network::Testnet,
         }
     }
+}
+
+fn chain_prefix(chain: ChainKind) -> Result<&'static str, String> {
+    match chain {
+        ChainKind::Eth => Ok("eth"),
+        ChainKind::Base => Ok("base"),
+        ChainKind::Arb => Ok("arb"),
+        ChainKind::Bnb => Ok("bnb"),
+        ChainKind::Pol => Ok("pol"),
+        ChainKind::Sol => Ok("sol"),
+        ChainKind::Near => Ok("near"),
+        other => Err(format!("Unsupported chain for fee fetch: {:?}", other)),
+    }
+}
+
+fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, String> {
+    let pk = match chain {
+        ChainKind::Eth => &config.eth_private_key,
+        ChainKind::Base => &config.base_private_key,
+        ChainKind::Arb => &config.arb_private_key,
+        ChainKind::Bnb => &config.bnb_private_key,
+        ChainKind::Pol => &config.pol_private_key,
+        _ => return Err(format!("Unsupported EVM chain: {:?}", chain)),
+    }
+    .as_ref()
+    .ok_or("Private key not configured")?;
+
+    let wallet: LocalWallet = pk.parse().map_err(|e| format!("Invalid key: {e}"))?;
+    let prefix = chain_prefix(chain)?;
+    Ok(format!("{}:{:#x}", prefix, wallet.address()))
+}
+
+fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
+    let kp = config
+        .solana_keypair
+        .as_ref()
+        .ok_or("solana_keypair not set")?;
+    let keypair = extract_solana_keypair(kp);
+    Ok(format!("sol:{}", keypair.pubkey()))
+}
+
+fn native_fee_to_u64(fee: u128) -> Result<u64, String> {
+    u64::try_from(fee).map_err(|_| format!("native_fee {} exceeds u64::MAX", fee))
 }
 
 #[derive(Subcommand, Debug)]
@@ -170,9 +214,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u128,
+        native_fee: Option<u128>,
         #[clap(short, long, help = "Additional message")]
         message: Option<String>,
         #[command(flatten)]
@@ -217,9 +261,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u64,
+        native_fee: Option<u64>,
         #[clap(short, long, help = "Additional message")]
         message: Option<String>,
         #[command(flatten)]
@@ -232,9 +276,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u64,
+        native_fee: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -748,6 +792,54 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             message,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee) = if let (Some(f), Some(nf)) = (fee, native_fee) {
+                (f, nf)
+            } else {
+                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
+                    Some(url) => url,
+                    None => {
+                        eprintln!("bridge_indexer_api_url required for auto-fee");
+                        return;
+                    }
+                };
+
+                let sender = match derive_evm_sender(chain, &combined_config) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to derive sender: {e}");
+                        return;
+                    }
+                };
+
+                let token_addr = match chain_prefix(chain) {
+                    Ok(prefix) => format!("{}:{}", prefix, token),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
+                    }
+                };
+
+                let quote = match fee::fetch_transfer_fee(
+                    api_url,
+                    &sender,
+                    &recipient.to_string(),
+                    &token_addr,
+                    Some(amount),
+                )
+                .await
+                {
+                    Ok(q) => q,
+                    Err(e) => {
+                        eprintln!("Failed to fetch fee: {e}");
+                        return;
+                    }
+                };
+
+                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(quote.native_fee))
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::EvmInitTransfer {
                     chain_kind: chain,
@@ -803,6 +895,56 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             message,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee): (u128, u64) = if let (Some(f), Some(nf)) = (fee, native_fee) {
+                (f, nf)
+            } else {
+                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
+                    Some(url) => url,
+                    None => {
+                        eprintln!("bridge_indexer_api_url required for auto-fee");
+                        return;
+                    }
+                };
+
+                let sender = match derive_solana_sender(&combined_config) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to derive sender: {e}");
+                        return;
+                    }
+                };
+
+                let token_addr = "sol:".to_owned() + &token;
+
+                let quote = match fee::fetch_transfer_fee(
+                    api_url,
+                    &sender,
+                    &recipient.to_string(),
+                    &token_addr,
+                    Some(amount),
+                )
+                .await
+                {
+                    Ok(q) => q,
+                    Err(e) => {
+                        eprintln!("Failed to fetch fee: {e}");
+                        return;
+                    }
+                };
+
+                let nf = match native_fee_to_u64(quote.native_fee) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
+                    }
+                };
+
+                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(nf))
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::SolanaInitTransfer {
                     token: token.parse().unwrap(),
@@ -822,6 +964,56 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             native_fee,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee): (u128, u64) = if let (Some(f), Some(nf)) = (fee, native_fee) {
+                (f, nf)
+            } else {
+                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
+                    Some(url) => url,
+                    None => {
+                        eprintln!("bridge_indexer_api_url required for auto-fee");
+                        return;
+                    }
+                };
+
+                let sender = match derive_solana_sender(&combined_config) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("Failed to derive sender: {e}");
+                        return;
+                    }
+                };
+
+                let token_addr = "sol:So11111111111111111111111111111111111111112".to_string();
+
+                let quote = match fee::fetch_transfer_fee(
+                    api_url,
+                    &sender,
+                    &recipient.to_string(),
+                    &token_addr,
+                    Some(amount),
+                )
+                .await
+                {
+                    Ok(q) => q,
+                    Err(e) => {
+                        eprintln!("Failed to fetch fee: {e}");
+                        return;
+                    }
+                };
+
+                let nf = match native_fee_to_u64(quote.native_fee) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
+                    }
+                };
+
+                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(nf))
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::SolanaInitTransferSol {
                     amount,
