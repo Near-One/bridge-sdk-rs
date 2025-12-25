@@ -16,7 +16,7 @@ use omni_connector::{
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{signature::Keypair, signer::EncodableKey, signature::Signer as SolanaSigner};
+use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
@@ -88,6 +88,129 @@ fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
 
 fn native_fee_to_u64(fee: u128) -> Result<u64, String> {
     u64::try_from(fee).map_err(|_| format!("native_fee {} exceeds u64::MAX", fee))
+}
+
+async fn resolve_near_fees(
+    fee: Option<u128>,
+    native_fee: Option<u128>,
+    combined_config: &CliConfig,
+    token: &str,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u128), String> {
+    if let (Some(f), Some(nf)) = (fee, native_fee) {
+        return Ok((f, nf));
+    }
+
+    let api_url = combined_config
+        .bridge_indexer_api_url
+        .as_deref()
+        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
+
+    let sender = combined_config.near_signer.as_deref().ok_or_else(|| {
+        "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
+            .to_string()
+    })?;
+
+    let sender = OmniAddress::Near(
+        sender
+            .parse()
+            .map_err(|err| format!("Failed to parse near_signer for fee calculation: {err}"))?,
+    );
+    let token_addr = OmniAddress::Near(
+        token
+            .parse()
+            .map_err(|err| format!("Failed to parse token for fee calculation: {err}"))?,
+    );
+
+    let quote = fee::fetch_transfer_fee(
+        api_url,
+        &sender.to_string(),
+        &recipient.to_string(),
+        &token_addr.to_string(),
+        Some(amount),
+    )
+    .await
+    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+
+    Ok((
+        fee.unwrap_or(quote.transferred_fee),
+        native_fee.unwrap_or(quote.native_fee),
+    ))
+}
+
+async fn resolve_evm_fees(
+    chain: ChainKind,
+    fee: Option<u128>,
+    native_fee: Option<u128>,
+    combined_config: &CliConfig,
+    token: &str,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u128), String> {
+    if let (Some(f), Some(nf)) = (fee, native_fee) {
+        return Ok((f, nf));
+    }
+
+    let api_url = combined_config
+        .bridge_indexer_api_url
+        .as_deref()
+        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
+
+    let sender = derive_evm_sender(chain, combined_config)?;
+    let token_addr = format!("{}:{}", chain_prefix(chain)?, token);
+
+    let quote = fee::fetch_transfer_fee(
+        api_url,
+        &sender,
+        &recipient.to_string(),
+        &token_addr,
+        Some(amount),
+    )
+    .await
+    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+
+    Ok((
+        fee.unwrap_or(quote.transferred_fee),
+        native_fee.unwrap_or(quote.native_fee),
+    ))
+}
+
+async fn resolve_solana_fees(
+    fee: Option<u128>,
+    native_fee: Option<u64>,
+    combined_config: &CliConfig,
+    token_addr: &str,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u64), String> {
+    if let (Some(f), Some(nf)) = (fee, native_fee) {
+        return Ok((f, nf));
+    }
+
+    let api_url = combined_config
+        .bridge_indexer_api_url
+        .as_deref()
+        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
+
+    let sender = derive_solana_sender(combined_config)?;
+
+    let quote = fee::fetch_transfer_fee(
+        api_url,
+        &sender,
+        &recipient.to_string(),
+        token_addr,
+        Some(amount),
+    )
+    .await
+    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+
+    let nf = native_fee_to_u64(quote.native_fee)?;
+
+    Ok((
+        fee.unwrap_or(quote.transferred_fee),
+        native_fee.unwrap_or(nf),
+    ))
 }
 
 #[derive(Subcommand, Debug)]
@@ -642,64 +765,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee) = if let (Some(fee), Some(native_fee)) = (fee, native_fee) {
-                (fee, native_fee)
-            } else {
-                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
-                    Some(url) => url,
-                    None => {
-                        eprintln!(
-                            "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly"
-                        );
-                        return;
-                    }
-                };
-
-                let sender = match combined_config.near_signer.as_deref() {
-                    Some(signer) => signer,
-                    None => {
-                        eprintln!(
-                            "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
-                        );
-                        return;
-                    }
-                };
-
-                let sender = match sender.parse() {
-                    Ok(addr) => OmniAddress::Near(addr),
-                    Err(err) => {
-                        eprintln!("Failed to parse near_signer for fee calculation: {err}");
-                        return;
-                    }
-                };
-                let token_addr = match token.parse() {
-                    Ok(addr) => OmniAddress::Near(addr),
-                    Err(err) => {
-                        eprintln!("Failed to parse token for fee calculation: {err}");
-                        return;
-                    }
-                };
-
-                let fee_quote = match fee::fetch_transfer_fee(
-                    api_url,
-                    &sender.to_string(),
-                    &recipient.to_string(),
-                    &token_addr.to_string(),
-                    Some(amount),
-                )
-                .await
-                {
-                    Ok(quote) => quote,
-                    Err(err) => {
-                        eprintln!("Failed to fetch transfer fee: {err}");
-                        return;
-                    }
-                };
-
-                (
-                    fee.unwrap_or(fee_quote.transferred_fee),
-                    native_fee.unwrap_or(fee_quote.native_fee),
-                )
+            let (fee, native_fee) = match resolve_near_fees(
+                fee,
+                native_fee,
+                &combined_config,
+                &token,
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return;
+                }
             };
 
             omni_connector(network, config_cli)
@@ -794,50 +874,22 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee) = if let (Some(f), Some(nf)) = (fee, native_fee) {
-                (f, nf)
-            } else {
-                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
-                    Some(url) => url,
-                    None => {
-                        eprintln!("bridge_indexer_api_url required for auto-fee");
-                        return;
-                    }
-                };
-
-                let sender = match derive_evm_sender(chain, &combined_config) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("Failed to derive sender: {e}");
-                        return;
-                    }
-                };
-
-                let token_addr = match chain_prefix(chain) {
-                    Ok(prefix) => format!("{}:{}", prefix, token),
-                    Err(e) => {
-                        eprintln!("{e}");
-                        return;
-                    }
-                };
-
-                let quote = match fee::fetch_transfer_fee(
-                    api_url,
-                    &sender,
-                    &recipient.to_string(),
-                    &token_addr,
-                    Some(amount),
-                )
-                .await
-                {
-                    Ok(q) => q,
-                    Err(e) => {
-                        eprintln!("Failed to fetch fee: {e}");
-                        return;
-                    }
-                };
-
-                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(quote.native_fee))
+            let (fee, native_fee) = match resolve_evm_fees(
+                chain,
+                fee,
+                native_fee,
+                &combined_config,
+                &token,
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return;
+                }
             };
 
             omni_connector(network, config_cli)
@@ -897,52 +949,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee): (u128, u64) = if let (Some(f), Some(nf)) = (fee, native_fee) {
-                (f, nf)
-            } else {
-                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
-                    Some(url) => url,
-                    None => {
-                        eprintln!("bridge_indexer_api_url required for auto-fee");
-                        return;
-                    }
-                };
-
-                let sender = match derive_solana_sender(&combined_config) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("Failed to derive sender: {e}");
-                        return;
-                    }
-                };
-
-                let token_addr = "sol:".to_owned() + &token;
-
-                let quote = match fee::fetch_transfer_fee(
-                    api_url,
-                    &sender,
-                    &recipient.to_string(),
-                    &token_addr,
-                    Some(amount),
-                )
-                .await
-                {
-                    Ok(q) => q,
-                    Err(e) => {
-                        eprintln!("Failed to fetch fee: {e}");
-                        return;
-                    }
-                };
-
-                let nf = match native_fee_to_u64(quote.native_fee) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{e}");
-                        return;
-                    }
-                };
-
-                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(nf))
+            let (fee, native_fee): (u128, u64) = match resolve_solana_fees(
+                fee,
+                native_fee,
+                &combined_config,
+                &("sol:".to_owned() + &token),
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return;
+                }
             };
 
             omni_connector(network, config_cli)
@@ -966,52 +987,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee): (u128, u64) = if let (Some(f), Some(nf)) = (fee, native_fee) {
-                (f, nf)
-            } else {
-                let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
-                    Some(url) => url,
-                    None => {
-                        eprintln!("bridge_indexer_api_url required for auto-fee");
-                        return;
-                    }
-                };
-
-                let sender = match derive_solana_sender(&combined_config) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        eprintln!("Failed to derive sender: {e}");
-                        return;
-                    }
-                };
-
-                let token_addr = "sol:So11111111111111111111111111111111111111112".to_string();
-
-                let quote = match fee::fetch_transfer_fee(
-                    api_url,
-                    &sender,
-                    &recipient.to_string(),
-                    &token_addr,
-                    Some(amount),
-                )
-                .await
-                {
-                    Ok(q) => q,
-                    Err(e) => {
-                        eprintln!("Failed to fetch fee: {e}");
-                        return;
-                    }
-                };
-
-                let nf = match native_fee_to_u64(quote.native_fee) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("{e}");
-                        return;
-                    }
-                };
-
-                (fee.unwrap_or(quote.transferred_fee), native_fee.unwrap_or(nf))
+            let (fee, native_fee): (u128, u64) = match resolve_solana_fees(
+                fee,
+                native_fee,
+                &combined_config,
+                "sol:So11111111111111111111111111111111111111112",
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return;
+                }
             };
 
             omni_connector(network, config_cli)
