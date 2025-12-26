@@ -9,9 +9,11 @@ clap.workspace = true
 dotenv.workspace = true
 tokio.workspace = true
 ethers-core.workspace = true
+ethers.workspace = true
 near-primitives.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 omni-types.workspace = true
@@ -25,3 +27,4 @@ solana-bridge-client = { path = "../bridge-sdk/bridge-clients/solana-bridge-clie
 wormhole-bridge-client = { path = "../bridge-sdk/bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../bridge-sdk/bridge-clients/utxo-bridge-client" }
 utxo-utils = { path = "../bridge-sdk/utxo-utils" }
+near-sdk.workspace = true
