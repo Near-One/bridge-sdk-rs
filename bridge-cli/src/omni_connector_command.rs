@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
 use ethers::signers::{LocalWallet, Signer};
-use ethers_core::types::TxHash;
+use ethers_core::types::{H160 as EvmH160, TxHash};
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -47,19 +47,6 @@ impl From<Network> for utxo_utils::address::Network {
     }
 }
 
-fn chain_prefix(chain: ChainKind) -> Result<&'static str, String> {
-    match chain {
-        ChainKind::Eth => Ok("eth"),
-        ChainKind::Base => Ok("base"),
-        ChainKind::Arb => Ok("arb"),
-        ChainKind::Bnb => Ok("bnb"),
-        ChainKind::Pol => Ok("pol"),
-        ChainKind::Sol => Ok("sol"),
-        ChainKind::Near => Ok("near"),
-        other => Err(format!("Unsupported chain for fee fetch: {:?}", other)),
-    }
-}
-
 fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, String> {
     let pk = match chain {
         ChainKind::Eth => &config.eth_private_key,
@@ -73,8 +60,19 @@ fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, Str
     .ok_or("Private key not configured")?;
 
     let wallet: LocalWallet = pk.parse().map_err(|e| format!("Invalid key: {e}"))?;
-    let prefix = chain_prefix(chain)?;
-    Ok(format!("{}:{:#x}", prefix, wallet.address()))
+    let evm_addr = omni_types::H160(wallet.address().0);
+    let omni_addr = OmniAddress::new_from_evm_address(chain, evm_addr)
+        .map_err(|e| format!("Unsupported EVM chain for sender derivation: {e}"))?;
+    Ok(omni_addr.to_string())
+}
+
+fn evm_address_to_omni(chain: ChainKind, address: &str) -> Result<String, String> {
+    let evm: EvmH160 = address
+        .parse()
+        .map_err(|e| format!("Invalid EVM address {address}: {e}"))?;
+    let omni = OmniAddress::new_from_evm_address(chain, omni_types::H160(evm.0))
+        .map_err(|e| format!("Unsupported EVM chain for address: {e}"))?;
+    Ok(omni.to_string())
 }
 
 fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
@@ -86,8 +84,9 @@ fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
     Ok(format!("sol:{}", keypair.pubkey()))
 }
 
-fn native_fee_to_u64(fee: u128) -> Result<u64, String> {
-    u64::try_from(fee).map_err(|_| format!("native_fee {} exceeds u64::MAX", fee))
+/// Convert Solana native fee (u128 from indexer) to u64, erroring if it doesn't fit.
+fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
+    u64::try_from(fee).map_err(|_| format!("Solana native_fee {} exceeds u64::MAX", fee))
 }
 
 async fn resolve_near_fees(
@@ -158,7 +157,7 @@ async fn resolve_evm_fees(
         .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
 
     let sender = derive_evm_sender(chain, combined_config)?;
-    let token_addr = format!("{}:{}", chain_prefix(chain)?, token);
+    let token_addr = evm_address_to_omni(chain, token)?;
 
     let quote = fee::fetch_transfer_fee(
         api_url,
@@ -205,7 +204,7 @@ async fn resolve_solana_fees(
     .await
     .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
 
-    let nf = native_fee_to_u64(quote.native_fee)?;
+    let nf = solana_native_fee_to_u64(quote.native_fee)?;
 
     Ok((
         fee.unwrap_or(quote.transferred_fee),
