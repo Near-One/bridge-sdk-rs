@@ -144,6 +144,7 @@ pub enum InitTransferArgs {
         recipient: OmniAddress,
         fee: Option<u128>,
         native_fee: Option<u128>,
+        message: String,
         transaction_options: TransactionOptions,
     },
     EvmInitTransfer {
@@ -379,6 +380,7 @@ impl OmniConnector {
         receiver: OmniAddress,
         fee: Option<u128>,
         native_fee: Option<u128>,
+        message: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -389,6 +391,7 @@ impl OmniConnector {
                 receiver,
                 fee,
                 native_fee,
+                message,
                 transaction_options,
             )
             .await
@@ -1641,6 +1644,7 @@ impl OmniConnector {
                 recipient,
                 fee,
                 native_fee,
+                message,
                 transaction_options,
             } => self
                 .near_init_transfer(
@@ -1649,6 +1653,7 @@ impl OmniConnector {
                     recipient,
                     fee,
                     native_fee,
+                    message,
                     transaction_options,
                 )
                 .await

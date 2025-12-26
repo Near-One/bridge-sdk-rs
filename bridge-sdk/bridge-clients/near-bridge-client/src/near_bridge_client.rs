@@ -604,6 +604,7 @@ impl NearBridgeClient {
         receiver: OmniAddress,
         fee: Option<u128>,
         native_fee: Option<u128>,
+        message: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -625,7 +626,9 @@ impl NearBridgeClient {
         }
 
         if fee == 0 && native_fee == 0 {
-            tracing::warn!("Transfer initiated with 0 fee. This transaction may be rejected by the relayer.");
+            tracing::warn!(
+                "Transfer initiated with 0 fee. This transaction may be rejected by the relayer."
+            );
         }
 
         let required_balance = self
@@ -642,6 +645,17 @@ impl NearBridgeClient {
             transaction_options.nonce
         };
 
+        let mut init_transfer_msg = serde_json::Map::new();
+        init_transfer_msg.insert("recipient".to_string(), serde_json::json!(receiver));
+        init_transfer_msg.insert("fee".to_string(), serde_json::json!(fee.to_string()));
+        init_transfer_msg.insert(
+            "native_token_fee".to_string(),
+            serde_json::json!(native_fee.to_string()),
+        );
+        if !message.is_empty() {
+            init_transfer_msg.insert("msg".to_string(), serde_json::json!(message));
+        }
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -654,12 +668,7 @@ impl NearBridgeClient {
                 args: serde_json::json!({
                     "receiver_id": omni_bridge_id,
                     "amount": amount.to_string(),
-                    "msg": serde_json::json!({
-                        "recipient": receiver,
-                        "fee": fee.to_string(),
-                        "native_token_fee": native_fee.to_string()
-                    })
-                    .to_string()
+                    "msg": serde_json::Value::Object(init_transfer_msg).to_string(),
                 })
                 .to_string()
                 .into_bytes(),

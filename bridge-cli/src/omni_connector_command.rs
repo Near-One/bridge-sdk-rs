@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
 use ethers::signers::{LocalWallet, Signer};
-use ethers_core::types::{H160 as EvmH160, TxHash};
+use ethers_core::types::{TxHash, H160 as EvmH160};
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -89,52 +89,77 @@ fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
     u64::try_from(fee).map_err(|_| format!("Solana native_fee {} exceeds u64::MAX", fee))
 }
 
-async fn resolve_near_fees(
+enum NativeFeeConversion<T> {
+    Identity,
+    Custom(fn(u128) -> Result<T, String>),
+}
+
+impl<T> NativeFeeConversion<T>
+where
+    T: TryFrom<u128>,
+    <T as TryFrom<u128>>::Error: std::fmt::Display,
+{
+    fn apply(self, value: u128) -> Result<T, String> {
+        match self {
+            NativeFeeConversion::Identity => {
+                T::try_from(value).map_err(|err| format!("Failed to convert native fee: {err}"))
+            }
+            NativeFeeConversion::Custom(func) => func(value),
+        }
+    }
+}
+
+struct FeeRequest<'a, T, FSender, FToken> {
     fee: Option<u128>,
-    native_fee: Option<u128>,
-    combined_config: &CliConfig,
-    token: &str,
-    amount: u128,
-    recipient: &OmniAddress,
-) -> Result<(u128, u128), String> {
+    native_fee: Option<T>,
+    api_url: Option<&'a str>,
+    sender_fn: FSender,
+    token_fn: FToken,
+    native_conv: NativeFeeConversion<T>,
+    amount: Option<u128>,
+    recipient: &'a OmniAddress,
+}
+
+async fn resolve_fees<T, FSender, FToken>(
+    request: FeeRequest<'_, T, FSender, FToken>,
+) -> Result<(u128, T), String>
+where
+    T: Copy + TryFrom<u128>,
+    <T as TryFrom<u128>>::Error: std::fmt::Display,
+    FSender: FnOnce() -> Result<String, String>,
+    FToken: FnOnce() -> Result<String, String>,
+{
+    let FeeRequest {
+        fee,
+        native_fee,
+        api_url,
+        sender_fn,
+        token_fn,
+        native_conv,
+        amount,
+        recipient,
+    } = request;
+
     if let (Some(f), Some(nf)) = (fee, native_fee) {
         return Ok((f, nf));
     }
 
-    let api_url = combined_config
-        .bridge_indexer_api_url
-        .as_deref()
-        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
-
-    let sender = combined_config.near_signer.as_deref().ok_or_else(|| {
-        "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
-            .to_string()
+    let api_url = api_url.ok_or_else(|| {
+        "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string()
     })?;
 
-    let sender = OmniAddress::Near(
-        sender
-            .parse()
-            .map_err(|err| format!("Failed to parse near_signer for fee calculation: {err}"))?,
-    );
-    let token_addr = OmniAddress::Near(
-        token
-            .parse()
-            .map_err(|err| format!("Failed to parse token for fee calculation: {err}"))?,
-    );
+    let sender = sender_fn()?;
+    let token = token_fn()?;
 
-    let quote = fee::fetch_transfer_fee(
-        api_url,
-        &sender.to_string(),
-        &recipient.to_string(),
-        &token_addr.to_string(),
-        Some(amount),
-    )
-    .await
-    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+    let quote = fee::fetch_transfer_fee(api_url, &sender, &recipient.to_string(), &token, amount)
+        .await
+        .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+
+    let nf = native_conv.apply(quote.native_fee)?;
 
     Ok((
         fee.unwrap_or(quote.transferred_fee),
-        native_fee.unwrap_or(quote.native_fee),
+        native_fee.unwrap_or(nf),
     ))
 }
 
@@ -142,74 +167,48 @@ async fn resolve_evm_fees(
     chain: ChainKind,
     fee: Option<u128>,
     native_fee: Option<u128>,
-    combined_config: &CliConfig,
+    config: &CliConfig,
     token: &str,
     amount: u128,
     recipient: &OmniAddress,
 ) -> Result<(u128, u128), String> {
-    if let (Some(f), Some(nf)) = (fee, native_fee) {
-        return Ok((f, nf));
-    }
-
-    let api_url = combined_config
-        .bridge_indexer_api_url
-        .as_deref()
-        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
-
-    let sender = derive_evm_sender(chain, combined_config)?;
-    let token_addr = evm_address_to_omni(chain, token)?;
-
-    let quote = fee::fetch_transfer_fee(
-        api_url,
-        &sender,
-        &recipient.to_string(),
-        &token_addr,
-        Some(amount),
-    )
+    resolve_fees(FeeRequest {
+        fee,
+        native_fee,
+        api_url: config.bridge_indexer_api_url.as_deref(),
+        sender_fn: || derive_evm_sender(chain, config),
+        token_fn: || evm_address_to_omni(chain, token),
+        native_conv: NativeFeeConversion::Identity,
+        amount: Some(amount),
+        recipient,
+    })
     .await
-    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
-
-    Ok((
-        fee.unwrap_or(quote.transferred_fee),
-        native_fee.unwrap_or(quote.native_fee),
-    ))
 }
 
 async fn resolve_solana_fees(
     fee: Option<u128>,
     native_fee: Option<u64>,
-    combined_config: &CliConfig,
-    token_addr: &str,
+    config: &CliConfig,
+    token: &str,
     amount: u128,
     recipient: &OmniAddress,
 ) -> Result<(u128, u64), String> {
-    if let (Some(f), Some(nf)) = (fee, native_fee) {
-        return Ok((f, nf));
-    }
-
-    let api_url = combined_config
-        .bridge_indexer_api_url
-        .as_deref()
-        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string())?;
-
-    let sender = derive_solana_sender(combined_config)?;
-
-    let quote = fee::fetch_transfer_fee(
-        api_url,
-        &sender,
-        &recipient.to_string(),
-        token_addr,
-        Some(amount),
-    )
+    resolve_fees(FeeRequest {
+        fee,
+        native_fee,
+        api_url: config.bridge_indexer_api_url.as_deref(),
+        sender_fn: || derive_solana_sender(config),
+        token_fn: || {
+            let addr: OmniAddress = token.parse().map_err(|err| {
+                format!("Failed to parse token address for fee calculation: {err}")
+            })?;
+            Ok(addr.to_string())
+        },
+        native_conv: NativeFeeConversion::Custom(solana_native_fee_to_u64),
+        amount: Some(amount),
+        recipient,
+    })
     .await
-    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
-
-    let nf = solana_native_fee_to_u64(quote.native_fee)?;
-
-    Ok((
-        fee.unwrap_or(quote.transferred_fee),
-        native_fee.unwrap_or(nf),
-    ))
 }
 
 #[derive(Subcommand, Debug)]
@@ -292,6 +291,8 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u128>,
+        #[clap(short, long, help = "Additional message")]
+        message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -760,18 +761,36 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient,
             fee,
             native_fee,
+            message,
             config_cli,
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee) = match resolve_near_fees(
+            let (fee, native_fee) = match resolve_fees(FeeRequest {
                 fee,
                 native_fee,
-                &combined_config,
-                &token,
-                amount,
-                &recipient,
-            )
+                api_url: combined_config.bridge_indexer_api_url.as_deref(),
+                sender_fn: || {
+                    let signer = combined_config.near_signer.as_deref().ok_or_else(|| {
+                        "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                            .to_string()
+                    })?;
+
+                    let addr = signer.parse().map_err(|err| {
+                        format!("Failed to parse near_signer for fee calculation: {err}")
+                    })?;
+                    Ok(OmniAddress::Near(addr).to_string())
+                },
+                token_fn: || {
+                    let addr = token
+                        .parse()
+                        .map_err(|err| format!("Failed to parse token for fee calculation: {err}"))?;
+                    Ok(OmniAddress::Near(addr).to_string())
+                },
+                native_conv: NativeFeeConversion::Identity,
+                amount: Some(amount),
+                recipient: &recipient,
+            })
             .await
             {
                 Ok(values) => values,
@@ -788,6 +807,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient,
                     fee: Some(fee),
                     native_fee: Some(native_fee),
+                    message: message.unwrap_or_default(),
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
