@@ -7,7 +7,7 @@ use near_sdk::json_types::U128;
 pub struct TransferFeeDto {
     pub native_token_fee: U128,
     pub transferred_token_fee: Option<U128>,
-    // pub gas_fee: Option<U128>,
+    pub gas_fee: Option<U128>,
     // pub usd_fee: Option<f64>,
 }
 
@@ -15,6 +15,7 @@ pub struct TransferFeeDto {
 pub struct FeeQuote {
     pub native_fee: u128,
     pub transferred_fee: u128,
+    pub gas_fee: Option<u128>,
 }
 
 pub async fn fetch_transfer_fee(
@@ -62,5 +63,6 @@ pub async fn fetch_transfer_fee(
     Ok(FeeQuote {
         native_fee,
         transferred_fee,
+        gas_fee: dto.gas_fee.map(|v| v.0),
     })
 }

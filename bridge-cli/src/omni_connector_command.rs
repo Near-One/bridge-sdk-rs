@@ -122,7 +122,7 @@ struct FeeRequest<'a, T, FSender, FToken> {
 
 async fn resolve_fees<T, FSender, FToken>(
     request: FeeRequest<'_, T, FSender, FToken>,
-) -> Result<(u128, T), String>
+) -> Result<(u128, T, Option<u128>), String>
 where
     T: Copy + TryFrom<u128>,
     <T as TryFrom<u128>>::Error: std::fmt::Display,
@@ -141,7 +141,7 @@ where
     } = request;
 
     if let (Some(f), Some(nf)) = (fee, native_fee) {
-        return Ok((f, nf));
+        return Ok((f, nf, None));
     }
 
     let api_url = api_url.ok_or_else(|| {
@@ -160,6 +160,7 @@ where
     Ok((
         fee.unwrap_or(quote.transferred_fee),
         native_fee.unwrap_or(nf),
+        quote.gas_fee,
     ))
 }
 
@@ -171,7 +172,7 @@ async fn resolve_evm_fees(
     token: &str,
     amount: u128,
     recipient: &OmniAddress,
-) -> Result<(u128, u128), String> {
+) -> Result<(u128, u128, Option<u128>), String> {
     resolve_fees(FeeRequest {
         fee,
         native_fee,
@@ -192,7 +193,7 @@ async fn resolve_solana_fees(
     token: &str,
     amount: u128,
     recipient: &OmniAddress,
-) -> Result<(u128, u64), String> {
+) -> Result<(u128, u64, Option<u128>), String> {
     resolve_fees(FeeRequest {
         fee,
         native_fee,
@@ -766,7 +767,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee) = match resolve_fees(FeeRequest {
+            let (fee, native_fee, gas_fee) = match resolve_fees(FeeRequest {
                 fee,
                 native_fee,
                 api_url: combined_config.bridge_indexer_api_url.as_deref(),
@@ -800,6 +801,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 }
             };
 
+            let mut message = message.unwrap_or_default();
+            if message.is_empty()
+                && matches!(recipient.get_chain(), ChainKind::Btc | ChainKind::Zcash)
+            {
+                if let Some(gas_fee) = gas_fee {
+                    message = format!("{{\"MaxGasFee\": \"{gas_fee}\"}}");
+                }
+            }
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::NearInitTransfer {
                     token,
@@ -807,7 +817,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient,
                     fee: Some(fee),
                     native_fee: Some(native_fee),
-                    message: message.unwrap_or_default(),
+                    message,
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
@@ -893,7 +903,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee) = match resolve_evm_fees(
+            let (fee, native_fee, _) = match resolve_evm_fees(
                 chain,
                 fee,
                 native_fee,
@@ -968,7 +978,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee): (u128, u64) = match resolve_solana_fees(
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
                 fee,
                 native_fee,
                 &combined_config,
@@ -1006,7 +1016,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee): (u128, u64) = match resolve_solana_fees(
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
                 fee,
                 native_fee,
                 &combined_config,
