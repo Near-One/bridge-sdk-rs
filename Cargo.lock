@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.27"
+version = "0.3.28"
 dependencies = [
  "clap",
  "dotenv",
@@ -4429,7 +4429,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "bitcoin",
  "borsh 1.5.7",
@@ -5028,7 +5028,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "bitcoin",
  "borsh 1.5.7",
@@ -10248,7 +10248,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
