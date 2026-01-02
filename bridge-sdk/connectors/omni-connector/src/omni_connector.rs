@@ -47,6 +47,7 @@ pub struct OmniConnector {
     base_bridge_client: Option<EvmBridgeClient>,
     arb_bridge_client: Option<EvmBridgeClient>,
     bnb_bridge_client: Option<EvmBridgeClient>,
+    pol_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
@@ -189,10 +190,10 @@ pub enum FinTransferArgs {
         transaction_options: TransactionOptions,
     },
     NearFinTransferBTC {
+        chain_kind: ChainKind,
         btc_tx_hash: String,
         vout: usize,
-        recipient_id: OmniAddress,
-        fee: u128,
+        btc_deposit_args: BtcDepositArgs,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -1570,7 +1571,8 @@ impl OmniConnector {
             OmniAddress::Eth(address)
             | OmniAddress::Arb(address)
             | OmniAddress::Base(address)
-            | OmniAddress::Bnb(address) => self
+            | OmniAddress::Bnb(address)
+            | OmniAddress::Pol(address) => self
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
@@ -1785,17 +1787,17 @@ impl OmniConnector {
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::NearFinTransferBTC {
+                chain_kind,
                 btc_tx_hash,
                 vout,
-                recipient_id,
-                fee,
+                btc_deposit_args,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
-                    ChainKind::Btc,
+                    chain_kind,
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    btc_deposit_args,
                     transaction_options,
                 )
                 .await
@@ -1807,7 +1809,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1815,7 +1817,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(ethers::abi::AbiEncode::encode_hex),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,
@@ -1860,7 +1862,7 @@ impl OmniConnector {
                 })
                 .await
             }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -1920,6 +1922,7 @@ impl OmniConnector {
             ChainKind::Base => self.base_bridge_client.as_ref(),
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
+            ChainKind::Pol => self.pol_bridge_client.as_ref(),
             ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
                 unreachable!("Unsupported chain kind")
             }
@@ -1988,6 +1991,7 @@ impl OmniConnector {
             | ChainKind::Base
             | ChainKind::Arb
             | ChainKind::Bnb
+            | ChainKind::Pol
             | ChainKind::Sol => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
@@ -2022,7 +2026,7 @@ impl OmniConnector {
         tx_hash: String,
     ) -> Result<Vec<StorageDepositAction>> {
         match chain {
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb => {
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;

@@ -515,7 +515,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .unwrap();
                 }
             },
-            ChainKind::Eth | ChainKind::Arb | ChainKind::Base | ChainKind::Bnb => {
+            ChainKind::Eth | ChainKind::Arb | ChainKind::Base | ChainKind::Bnb | ChainKind::Pol => {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
@@ -655,7 +655,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Arb | ChainKind::Base | ChainKind::Bnb | ChainKind::Sol => {
+                ChainKind::Arb
+                | ChainKind::Base
+                | ChainKind::Bnb
+                | ChainKind::Pol
+                | ChainKind::Sol => {
                     let vaa = connector
                         .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
                         .await
@@ -916,13 +920,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .near_fin_transfer_btc(
-                    chain.into(),
+                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
+                    chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
-                    TransactionOptions::default(),
-                )
+                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    transaction_options: TransactionOptions::default(),
+                })
                 .await
                 .unwrap();
         }
@@ -1121,6 +1125,15 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let pol_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.pol_rpc)
+        .chain_id(combined_config.pol_chain_id)
+        .private_key(combined_config.pol_private_key)
+        .omni_bridge_address(combined_config.pol_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.pol_wormhole_address)
+        .build()
+        .unwrap();
+
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
         .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
         .program_id(
@@ -1221,6 +1234,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .base_bridge_client(Some(base_bridge_client))
         .arb_bridge_client(Some(arb_bridge_client))
         .bnb_bridge_client(Some(bnb_bridge_client))
+        .pol_bridge_client(Some(pol_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
