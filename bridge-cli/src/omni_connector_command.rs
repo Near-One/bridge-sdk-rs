@@ -3,7 +3,8 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use ethers_core::types::TxHash;
+use ethers::signers::{LocalWallet, Signer};
+use ethers_core::types::{TxHash, H160 as EvmH160};
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -15,11 +16,11 @@ use omni_connector::{
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{signature::Keypair, signer::EncodableKey};
+use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
-use crate::{combined_config, CliConfig, Network};
+use crate::{combined_config, fee, CliConfig, Network};
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "chain")]
@@ -44,6 +45,171 @@ impl From<Network> for utxo_utils::address::Network {
             Network::Testnet | Network::Devnet => utxo_utils::address::Network::Testnet,
         }
     }
+}
+
+fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, String> {
+    let pk = match chain {
+        ChainKind::Eth => &config.eth_private_key,
+        ChainKind::Base => &config.base_private_key,
+        ChainKind::Arb => &config.arb_private_key,
+        ChainKind::Bnb => &config.bnb_private_key,
+        ChainKind::Pol => &config.pol_private_key,
+        _ => return Err(format!("Unsupported EVM chain: {:?}", chain)),
+    }
+    .as_ref()
+    .ok_or("Private key not configured")?;
+
+    let wallet: LocalWallet = pk.parse().map_err(|e| format!("Invalid key: {e}"))?;
+    let evm_addr = omni_types::H160(wallet.address().0);
+    let omni_addr = OmniAddress::new_from_evm_address(chain, evm_addr)
+        .map_err(|e| format!("Unsupported EVM chain for sender derivation: {e}"))?;
+    Ok(omni_addr.to_string())
+}
+
+fn evm_address_to_omni(chain: ChainKind, address: &str) -> Result<String, String> {
+    let evm: EvmH160 = address
+        .parse()
+        .map_err(|e| format!("Invalid EVM address {address}: {e}"))?;
+    let omni = OmniAddress::new_from_evm_address(chain, omni_types::H160(evm.0))
+        .map_err(|e| format!("Unsupported EVM chain for address: {e}"))?;
+    Ok(omni.to_string())
+}
+
+fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
+    let kp = config
+        .solana_keypair
+        .as_ref()
+        .ok_or("solana_keypair not set")?;
+    let keypair = extract_solana_keypair(kp);
+    Ok(format!("sol:{}", keypair.pubkey()))
+}
+
+/// Convert Solana native fee (u128 from indexer) to u64, erroring if it doesn't fit.
+fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
+    u64::try_from(fee).map_err(|_| format!("Solana native_fee {} exceeds u64::MAX", fee))
+}
+
+enum NativeFeeConversion<T> {
+    Identity,
+    Custom(fn(u128) -> Result<T, String>),
+}
+
+impl<T> NativeFeeConversion<T>
+where
+    T: TryFrom<u128>,
+    <T as TryFrom<u128>>::Error: std::fmt::Display,
+{
+    fn apply(self, value: u128) -> Result<T, String> {
+        match self {
+            NativeFeeConversion::Identity => {
+                T::try_from(value).map_err(|err| format!("Failed to convert native fee: {err}"))
+            }
+            NativeFeeConversion::Custom(func) => func(value),
+        }
+    }
+}
+
+struct FeeRequest<'a, T, FSender, FToken> {
+    fee: Option<u128>,
+    native_fee: Option<T>,
+    api_url: Option<&'a str>,
+    sender_fn: FSender,
+    token_fn: FToken,
+    native_conv: NativeFeeConversion<T>,
+    amount: Option<u128>,
+    recipient: &'a OmniAddress,
+}
+
+async fn resolve_fees<T, FSender, FToken>(
+    request: FeeRequest<'_, T, FSender, FToken>,
+) -> Result<(u128, T, Option<u128>), String>
+where
+    T: Copy + TryFrom<u128>,
+    <T as TryFrom<u128>>::Error: std::fmt::Display,
+    FSender: FnOnce() -> Result<String, String>,
+    FToken: FnOnce() -> Result<String, String>,
+{
+    let FeeRequest {
+        fee,
+        native_fee,
+        api_url,
+        sender_fn,
+        token_fn,
+        native_conv,
+        amount,
+        recipient,
+    } = request;
+
+    if let (Some(f), Some(nf)) = (fee, native_fee) {
+        return Ok((f, nf, None));
+    }
+
+    let api_url = api_url.ok_or_else(|| {
+        "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string()
+    })?;
+
+    let sender = sender_fn()?;
+    let token = token_fn()?;
+
+    let quote = fee::fetch_transfer_fee(api_url, &sender, &recipient.to_string(), &token, amount)
+        .await
+        .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+
+    let nf = native_conv.apply(quote.native_fee)?;
+
+    Ok((
+        fee.unwrap_or(quote.transferred_fee),
+        native_fee.unwrap_or(nf),
+        quote.gas_fee,
+    ))
+}
+
+async fn resolve_evm_fees(
+    chain: ChainKind,
+    fee: Option<u128>,
+    native_fee: Option<u128>,
+    config: &CliConfig,
+    token: &str,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u128, Option<u128>), String> {
+    resolve_fees(FeeRequest {
+        fee,
+        native_fee,
+        api_url: config.bridge_indexer_api_url.as_deref(),
+        sender_fn: || derive_evm_sender(chain, config),
+        token_fn: || evm_address_to_omni(chain, token),
+        native_conv: NativeFeeConversion::Identity,
+        amount: Some(amount),
+        recipient,
+    })
+    .await
+}
+
+async fn resolve_solana_fees(
+    fee: Option<u128>,
+    native_fee: Option<u64>,
+    config: &CliConfig,
+    token: &str,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u64, Option<u128>), String> {
+    resolve_fees(FeeRequest {
+        fee,
+        native_fee,
+        api_url: config.bridge_indexer_api_url.as_deref(),
+        sender_fn: || derive_solana_sender(config),
+        token_fn: || {
+            let addr: OmniAddress = token.parse().map_err(|err| {
+                format!("Failed to parse token address for fee calculation: {err}")
+            })?;
+            Ok(addr.to_string())
+        },
+        native_conv: NativeFeeConversion::Custom(solana_native_fee_to_u64),
+        amount: Some(amount),
+        recipient,
+    })
+    .await
 }
 
 #[derive(Subcommand, Debug)]
@@ -126,6 +292,8 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u128>,
+        #[clap(short, long, help = "Additional message")]
+        message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -193,9 +361,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u128,
+        native_fee: Option<u128>,
         #[clap(short, long, help = "Additional message")]
         message: Option<String>,
         #[command(flatten)]
@@ -240,9 +408,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u64,
+        native_fee: Option<u64>,
         #[clap(short, long, help = "Additional message")]
         message: Option<String>,
         #[command(flatten)]
@@ -255,9 +423,9 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
         #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: u128,
+        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
-        native_fee: u64,
+        native_fee: Option<u64>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -615,15 +783,62 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient,
             fee,
             native_fee,
+            message,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee, gas_fee) = match resolve_fees(FeeRequest {
+                fee,
+                native_fee,
+                api_url: combined_config.bridge_indexer_api_url.as_deref(),
+                sender_fn: || {
+                    let signer = combined_config.near_signer.as_deref().ok_or_else(|| {
+                        "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                            .to_string()
+                    })?;
+
+                    let addr = signer.parse().map_err(|err| {
+                        format!("Failed to parse near_signer for fee calculation: {err}")
+                    })?;
+                    Ok(OmniAddress::Near(addr).to_string())
+                },
+                token_fn: || {
+                    let addr = token
+                        .parse()
+                        .map_err(|err| format!("Failed to parse token for fee calculation: {err}"))?;
+                    Ok(OmniAddress::Near(addr).to_string())
+                },
+                native_conv: NativeFeeConversion::Identity,
+                amount: Some(amount),
+                recipient: &recipient,
+            })
+            .await
+            {
+                Ok(values) => values,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return;
+                }
+            };
+
+            let mut message = message.unwrap_or_default();
+            if message.is_empty()
+                && matches!(recipient.get_chain(), ChainKind::Btc | ChainKind::Zcash)
+            {
+                if let Some(gas_fee) = gas_fee {
+                    message = format!("{{\"MaxGasFee\": \"{gas_fee}\"}}");
+                }
+            }
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::NearInitTransfer {
                     token,
                     amount,
                     recipient,
-                    fee: fee.unwrap_or(0),
-                    native_fee: native_fee.unwrap_or(0),
+                    fee: Some(fee),
+                    native_fee: Some(native_fee),
+                    message,
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
@@ -727,6 +942,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             message,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee, _) = match resolve_evm_fees(
+                chain,
+                fee,
+                native_fee,
+                &combined_config,
+                &token,
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(err) => {
+                    eprintln!("{err}");
+                    return;
+                }
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::EvmInitTransfer {
                     chain_kind: chain,
@@ -782,6 +1017,25 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             message,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
+                fee,
+                native_fee,
+                &combined_config,
+                &("sol:".to_owned() + &token),
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return;
+                }
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::SolanaInitTransfer {
                     token: token.parse().unwrap(),
@@ -801,6 +1055,25 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             native_fee,
             config_cli,
         } => {
+            let combined_config = combined_config(config_cli.clone(), network);
+
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
+                fee,
+                native_fee,
+                &combined_config,
+                "sol:So11111111111111111111111111111111111111112",
+                amount,
+                &recipient,
+            )
+            .await
+            {
+                Ok(values) => values,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return;
+                }
+            };
+
             omni_connector(network, config_cli)
                 .init_transfer(InitTransferArgs::SolanaInitTransferSol {
                     amount,
