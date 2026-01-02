@@ -104,6 +104,7 @@ bridge-cli testnet evm-init-transfer \
 # 2. Wait for the transaction to be confirmed, then finalize on NEAR
 bridge-cli testnet near-fin-transfer \
     --chain eth \
+    --destination-chain near \
     --tx-hash 0xabc...def \
 ```
 
