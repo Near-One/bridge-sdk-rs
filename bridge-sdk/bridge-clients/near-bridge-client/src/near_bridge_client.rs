@@ -930,7 +930,6 @@ impl NearBridgeClient {
             .ok_or(BridgeSdkError::ConfigError(
                 "Near signer account id is not set".to_string(),
             ))
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid near signer account id".to_string()))
             .cloned()
     }
 

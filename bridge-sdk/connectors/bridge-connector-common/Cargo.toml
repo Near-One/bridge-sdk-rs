@@ -1,16 +1,18 @@
 [package]
 name = "bridge-connector-common"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.88.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 thiserror.workspace = true
-ethers.workspace = true
+alloy.workspace = true
 serde_json.workspace = true
 solana-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
+evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }

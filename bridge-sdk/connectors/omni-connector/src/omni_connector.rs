@@ -1,7 +1,7 @@
+use alloy::primitives::{Address, TxHash, U256};
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
-use ethers::prelude::*;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
@@ -1056,7 +1056,7 @@ impl OmniConnector {
             ))
         })?;
         let token_address =
-            OmniAddress::new_from_evm_address(chain_kind, H160(transfer_event.token_address.0))
+            OmniAddress::new_from_evm_address(chain_kind, H160(*transfer_event.token_address.0))
                 .map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Failed to parse token address: {}",
@@ -1166,12 +1166,12 @@ impl OmniConnector {
         nonce: u64,
     ) -> Result<bool> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.is_transfer_finalised(nonce).await
+        Ok(evm_bridge_client.is_transfer_finalised(nonce).await?)
     }
 
     pub async fn evm_get_last_block_number(&self, chain_kind: ChainKind) -> Result<u64> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.get_last_block_number().await
+        Ok(evm_bridge_client.get_last_block_number().await?)
     }
 
     pub async fn evm_get_transfer_event(
@@ -1180,7 +1180,8 @@ impl OmniConnector {
         tx_hash: TxHash,
     ) -> Result<InitTransferFilter> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.get_transfer_event(tx_hash).await
+        let transfer_event = evm_bridge_client.get_transfer_event(tx_hash).await?;
+        Ok(transfer_event)
     }
 
     pub async fn evm_log_metadata(
@@ -1190,7 +1191,7 @@ impl OmniConnector {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.log_metadata(address, tx_nonce).await
+        Ok(evm_bridge_client.log_metadata(address, tx_nonce).await?)
     }
 
     pub async fn evm_deploy_token(
@@ -1200,7 +1201,7 @@ impl OmniConnector {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.deploy_token(event, tx_nonce).await
+        Ok(evm_bridge_client.deploy_token(event, tx_nonce).await?)
     }
 
     pub async fn evm_deploy_token_with_tx_hash(
@@ -1216,9 +1217,11 @@ impl OmniConnector {
             .extract_transfer_log(near_tx_hash, None, "LogMetadataEvent")
             .await?;
 
-        evm_bridge_client
+        let tx_hash = evm_bridge_client
             .deploy_token(serde_json::from_str(&transfer_log)?, tx_nonce)
-            .await
+            .await?;
+
+        Ok(tx_hash)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1233,9 +1236,9 @@ impl OmniConnector {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client
+        let tx_hash = evm_bridge_client
             .init_transfer(
-                ethers::types::H160::from_str(&token).map_err(|_| {
+                Address::from_str(&token).map_err(|_| {
                     BridgeSdkError::InvalidArgument("Invalid token address".to_string())
                 })?,
                 amount,
@@ -1244,7 +1247,9 @@ impl OmniConnector {
                 message,
                 tx_nonce,
             )
-            .await
+            .await?;
+
+        Ok(tx_hash)
     }
 
     pub async fn evm_fin_transfer(
@@ -1254,7 +1259,8 @@ impl OmniConnector {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        evm_bridge_client.fin_transfer(event, tx_nonce).await
+        let tx_hash = evm_bridge_client.fin_transfer(event, tx_nonce).await?;
+        Ok(tx_hash)
     }
 
     pub async fn evm_fin_transfer_with_tx_hash(
@@ -1270,9 +1276,11 @@ impl OmniConnector {
             .extract_transfer_log(near_tx_hash, None, "SignTransferEvent")
             .await?;
 
-        evm_bridge_client
+        let tx_hash = evm_bridge_client
             .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
-            .await
+            .await?;
+
+        Ok(tx_hash)
     }
 
     pub async fn solana_get_transfer_event(
@@ -1576,7 +1584,7 @@ impl OmniConnector {
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
-                    transaction_options.nonce.map(std::convert::Into::into),
+                    transaction_options.nonce.map(U256::from),
                 )
                 .await
                 .map(|hash| hash.to_string()),
@@ -1809,7 +1817,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer(chain_kind, event, tx_nonce)
                 .await
-                .map(ethers::abi::AbiEncode::encode_hex),
+                .map(alloy::hex::encode_prefixed),
             FinTransferArgs::EvmFinTransferWithTxHash {
                 chain_kind,
                 near_tx_hash,
@@ -1817,7 +1825,7 @@ impl OmniConnector {
             } => self
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
-                .map(ethers::abi::AbiEncode::encode_hex),
+                .map(alloy::hex::encode_prefixed),
             FinTransferArgs::SolanaFinTransfer {
                 event,
                 solana_token,
@@ -2015,9 +2023,11 @@ impl OmniConnector {
             ));
         }
 
-        evm_bridge_client
+        let evm_proof = evm_bridge_client
             .get_proof_for_event(tx_hash, proof_kind)
-            .await
+            .await?;
+
+        Ok(evm_proof)
     }
 
     pub async fn get_storage_deposit_actions_for_tx(
@@ -2057,7 +2067,7 @@ impl OmniConnector {
         let transfer_event = self.evm_get_transfer_event(chain, tx_hash).await?;
 
         let token_address =
-            OmniAddress::new_from_evm_address(chain, H160(transfer_event.token_address.0))
+            OmniAddress::new_from_evm_address(chain, H160(*transfer_event.token_address.0))
                 .map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Failed to parse token address: {}",

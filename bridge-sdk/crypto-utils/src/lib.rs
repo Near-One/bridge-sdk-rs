@@ -1,6 +1,6 @@
 use crypto_shared::{derive_epsilon, derive_key};
-use ethers::core::k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use ethers::core::k256::{AffinePoint, EncodedPoint};
+use k256::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use k256::{AffinePoint, EncodedPoint};
 use near_crypto::PublicKey;
 use near_primitives::types::AccountId;
 use std::str::FromStr;
