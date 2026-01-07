@@ -1,10 +1,9 @@
-use eth_proof::{EthClientError, EthProofError};
-use ethers::{
-    contract::ContractError,
-    middleware::SignerMiddleware,
-    providers::{Http, Provider, ProviderError},
-    signers::LocalWallet,
+use alloy::{
+    providers::PendingTransactionError,
+    transports::{RpcError, TransportErrorKind},
 };
+use eth_proof::{EthClientError, EthProofError};
+use evm_bridge_client::error::EvmBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
@@ -76,31 +75,27 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
 #[derive(thiserror::Error, Debug)]
 #[error("{0}")]
 pub enum EthRpcError {
-    SignerContractError(#[source] ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>),
-    ProviderContractError(#[source] ContractError<Provider<Http>>),
-    EthClientError(#[source] EthClientError),
-    ProviderError(#[source] ProviderError),
+    RpcError(#[source] RpcError<TransportErrorKind>),
+    PendingTransactionError(#[source] PendingTransactionError),
+    ContractError(String),
+    BlockchainDataError(String),
 }
 
 impl From<EthProofError> for BridgeSdkError {
     fn from(error: EthProofError) -> Self {
         match error {
             EthProofError::TrieError(e) => Self::EthProofError(e.to_string()),
-            EthProofError::EthClientError(e) => Self::EthRpcError(EthRpcError::EthClientError(e)),
+            EthProofError::EthClientError(EthClientError::ParseError(e)) => {
+                Self::EthRpcError(EthRpcError::RpcError(RpcError::DeserError {
+                    err: e,
+                    text: String::new(),
+                }))
+            }
+            EthProofError::EthClientError(EthClientError::TransportError(e)) => Self::EthRpcError(
+                EthRpcError::RpcError(RpcError::Transport(TransportErrorKind::Custom(Box::new(e)))),
+            ),
             EthProofError::Other(e) => Self::EthProofError(e),
         }
-    }
-}
-
-impl From<ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>> for BridgeSdkError {
-    fn from(error: ContractError<SignerMiddleware<Provider<Http>, LocalWallet>>) -> Self {
-        Self::EthRpcError(EthRpcError::SignerContractError(error))
-    }
-}
-
-impl From<ProviderError> for BridgeSdkError {
-    fn from(error: ProviderError) -> Self {
-        Self::EthRpcError(EthRpcError::ProviderError(error))
     }
 }
 
@@ -109,6 +104,26 @@ impl From<UtxoClientError> for BridgeSdkError {
         match error {
             UtxoClientError::RpcError(e) => Self::UtxoRpcError(e),
             UtxoClientError::Other(e) => Self::UtxoClientError(e),
+        }
+    }
+}
+
+impl From<EvmBridgeClientError> for BridgeSdkError {
+    fn from(error: EvmBridgeClientError) -> Self {
+        match error {
+            EvmBridgeClientError::RpcError(e) => Self::EthRpcError(EthRpcError::RpcError(e)),
+            EvmBridgeClientError::PendingTransactionError(e) => {
+                Self::EthRpcError(EthRpcError::PendingTransactionError(e))
+            }
+            EvmBridgeClientError::ContractError(e) => {
+                Self::EthRpcError(EthRpcError::ContractError(e))
+            }
+            EvmBridgeClientError::BlockchainDataError(e) => {
+                Self::EthRpcError(EthRpcError::BlockchainDataError(e))
+            }
+            EvmBridgeClientError::EthProofError(e) => Self::EthProofError(e.to_string()),
+            EvmBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            EvmBridgeClientError::ConfigError(e) => Self::ConfigError(e),
         }
     }
 }

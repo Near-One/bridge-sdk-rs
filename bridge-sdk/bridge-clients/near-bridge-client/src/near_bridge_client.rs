@@ -11,6 +11,7 @@ use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
     ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
+    UnifiedTransferId,
 };
 use serde_json::json;
 
@@ -70,7 +71,7 @@ struct StorageBalanceBounds {
 pub struct FastFinTransferArgs {
     pub token_id: AccountId,
     pub amount_to_send: u128,
-    pub transfer_id: TransferId,
+    pub transfer_id: UnifiedTransferId,
     pub recipient: OmniAddress,
     pub amount: u128,
     pub fee: Fee,
@@ -955,7 +956,6 @@ impl NearBridgeClient {
             .ok_or(BridgeSdkError::ConfigError(
                 "Near signer account id is not set".to_string(),
             ))
-            .map_err(|_| BridgeSdkError::ConfigError("Invalid near signer account id".to_string()))
             .cloned()
     }
 

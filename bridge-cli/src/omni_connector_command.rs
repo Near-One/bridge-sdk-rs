@@ -3,8 +3,7 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use ethers::signers::{LocalWallet, Signer};
-use ethers_core::types::{TxHash, H160 as EvmH160};
+use alloy::primitives::TxHash;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -254,6 +253,29 @@ pub enum OmniConnectorSubCommand {
             help = "Transaction hash of the init transfer call on origin chain"
         )]
         tx_hash: String,
+        #[clap(long, help = "Storage deposit amount for tokens receiver")]
+        storage_deposit_amount: Option<u128>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize a transfer from Utxo chain on NEAR")]
+    NearFastFinTransferFromUtxo {
+        #[clap(short, long, help = "Origin chain of the transfer")]
+        chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the deposit transaction on origin chain"
+        )]
+        tx_hash: String,
+        #[clap(
+            short,
+            long,
+            help = "Transfer recipient in format <chain_id>:<address>"
+        )]
+        recipient: OmniAddress,
+        #[clap(short, long, help = "Transfer fee")]
+        fee: u128,
         #[clap(long, help = "Storage deposit amount for tokens receiver")]
         storage_deposit_amount: Option<u128>,
         #[command(flatten)]
@@ -512,8 +534,6 @@ pub enum OmniConnectorSubCommand {
             help = "Transfer recipient in format <chain_id>:<address>"
         )]
         recipient_id: OmniAddress,
-        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
-        amount: u128,
         #[clap(
             short,
             long,
@@ -834,6 +854,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .near_fast_transfer(
                     chain,
                     tx_hash,
+                    storage_deposit_amount,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::NearFastFinTransferFromUtxo {
+            chain,
+            tx_hash,
+            recipient,
+            fee,
+            storage_deposit_amount,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .near_fast_transfer_from_utxo(
+                    chain,
+                    tx_hash,
+                    recipient,
+                    fee,
                     storage_deposit_amount,
                     TransactionOptions::default(),
                 )
@@ -1194,22 +1234,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::GetBitcoinAddress {
             chain,
             recipient_id,
-            amount,
             fee,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), recipient_id, fee)
+                .get_btc_address(chain.into(), &recipient_id, fee)
                 .await
                 .unwrap();
 
-            let transfer_amount = omni_connector
-                .get_amount_to_transfer(chain.into(), amount)
-                .await
-                .unwrap();
             tracing::info!("BTC Address: {btc_address}");
-            tracing::info!("Amount you need to transfer, including the fee: {transfer_amount}");
         }
         OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
             omni_connector(network, config_cli)
@@ -1290,7 +1324,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let eth_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.eth_rpc)
-        .chain_id(combined_config.eth_chain_id)
         .private_key(combined_config.eth_private_key)
         .omni_bridge_address(combined_config.eth_bridge_token_factory_address)
         .wormhole_core_address(None)
@@ -1299,7 +1332,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let base_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.base_rpc)
-        .chain_id(combined_config.base_chain_id)
         .private_key(combined_config.base_private_key)
         .omni_bridge_address(combined_config.base_bridge_token_factory_address)
         .wormhole_core_address(combined_config.base_wormhole_address)
@@ -1308,7 +1340,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let arb_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.arb_rpc)
-        .chain_id(combined_config.arb_chain_id)
         .private_key(combined_config.arb_private_key)
         .omni_bridge_address(combined_config.arb_bridge_token_factory_address)
         .wormhole_core_address(combined_config.arb_wormhole_address)
@@ -1317,7 +1348,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let bnb_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.bnb_rpc)
-        .chain_id(combined_config.bnb_chain_id)
         .private_key(combined_config.bnb_private_key)
         .omni_bridge_address(combined_config.bnb_bridge_token_factory_address)
         .wormhole_core_address(combined_config.bnb_wormhole_address)
@@ -1326,7 +1356,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
 
     let pol_bridge_client = EvmBridgeClientBuilder::default()
         .endpoint(combined_config.pol_rpc)
-        .chain_id(combined_config.pol_chain_id)
         .private_key(combined_config.pol_private_key)
         .omni_bridge_address(combined_config.pol_bridge_token_factory_address)
         .wormhole_core_address(combined_config.pol_wormhole_address)
