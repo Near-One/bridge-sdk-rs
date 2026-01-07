@@ -5,12 +5,12 @@ pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 pub const BTC_LIGHT_CLIENT_ID_MAINNET: &str = "btc-client.bridge.near";
 pub const ZCASH_LIGHT_CLIENT_ID_MAINNET: &str = "zcash-client.bridge.near";
 
-pub const ETH_RPC_MAINNET: &str = "https://eth.llamarpc.com";
+pub const ETH_RPC_MAINNET: &str = "https://ethereum-rpc.publicnode.com";
 pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xe00c629aFaCCb0510995A2B95560E446A24c85B9";
 
-pub const BASE_RPC_MAINNET: &str = "https://base.llamarpc.com";
+pub const BASE_RPC_MAINNET: &str = "https://base-rpc.publicnode.com";
 pub const BASE_CHAIN_ID_MAINNET: u64 = 8453;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
