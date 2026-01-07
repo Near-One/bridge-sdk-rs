@@ -28,16 +28,12 @@ struct CliConfig {
     #[arg(long)]
     eth_rpc: Option<String>,
     #[arg(long)]
-    eth_chain_id: Option<u64>,
-    #[arg(long)]
     eth_private_key: Option<String>,
     #[arg(long)]
     eth_bridge_token_factory_address: Option<String>,
 
     #[arg(long)]
     base_rpc: Option<String>,
-    #[arg(long)]
-    base_chain_id: Option<u64>,
     #[arg(long)]
     base_private_key: Option<String>,
     #[arg(long)]
@@ -48,8 +44,6 @@ struct CliConfig {
     #[arg(long)]
     arb_rpc: Option<String>,
     #[arg(long)]
-    arb_chain_id: Option<u64>,
-    #[arg(long)]
     arb_private_key: Option<String>,
     #[arg(long)]
     arb_bridge_token_factory_address: Option<String>,
@@ -59,8 +53,6 @@ struct CliConfig {
     #[arg(long)]
     bnb_rpc: Option<String>,
     #[arg(long)]
-    bnb_chain_id: Option<u64>,
-    #[arg(long)]
     bnb_private_key: Option<String>,
     #[arg(long)]
     bnb_bridge_token_factory_address: Option<String>,
@@ -69,8 +61,6 @@ struct CliConfig {
 
     #[arg(long)]
     pol_rpc: Option<String>,
-    #[arg(long)]
-    pol_chain_id: Option<u64>,
     #[arg(long)]
     pol_private_key: Option<String>,
     #[arg(long)]
@@ -134,14 +124,12 @@ impl CliConfig {
             zcash_light_client_id: self.zcash_light_client_id.or(other.zcash_light_client_id),
 
             eth_rpc: self.eth_rpc.or(other.eth_rpc),
-            eth_chain_id: self.eth_chain_id.or(other.eth_chain_id),
             eth_private_key: self.eth_private_key.or(other.eth_private_key),
             eth_bridge_token_factory_address: self
                 .eth_bridge_token_factory_address
                 .or(other.eth_bridge_token_factory_address),
 
             base_rpc: self.base_rpc.or(other.base_rpc),
-            base_chain_id: self.base_chain_id.or(other.base_chain_id),
             base_private_key: self.base_private_key.or(other.base_private_key),
             base_bridge_token_factory_address: self
                 .base_bridge_token_factory_address
@@ -149,7 +137,6 @@ impl CliConfig {
             base_wormhole_address: self.base_wormhole_address.or(other.base_wormhole_address),
 
             arb_rpc: self.arb_rpc.or(other.arb_rpc),
-            arb_chain_id: self.arb_chain_id.or(other.arb_chain_id),
             arb_private_key: self.arb_private_key.or(other.arb_private_key),
             arb_bridge_token_factory_address: self
                 .arb_bridge_token_factory_address
@@ -157,7 +144,6 @@ impl CliConfig {
             arb_wormhole_address: self.arb_wormhole_address.or(other.arb_wormhole_address),
 
             bnb_rpc: self.bnb_rpc.or(other.bnb_rpc),
-            bnb_chain_id: self.bnb_chain_id.or(other.bnb_chain_id),
             bnb_private_key: self.bnb_private_key.or(other.bnb_private_key),
             bnb_bridge_token_factory_address: self
                 .bnb_bridge_token_factory_address
@@ -165,7 +151,6 @@ impl CliConfig {
             bnb_wormhole_address: self.bnb_wormhole_address.or(other.bnb_wormhole_address),
 
             pol_rpc: self.pol_rpc.or(other.pol_rpc),
-            pol_chain_id: self.pol_chain_id.or(other.pol_chain_id),
             pol_private_key: self.pol_private_key.or(other.pol_private_key),
             pol_bridge_token_factory_address: self
                 .pol_bridge_token_factory_address
@@ -216,40 +201,25 @@ fn env_config() -> CliConfig {
         zcash_light_client_id: env::var("ZCASH_LIGHT_CLIENT_ID").ok(),
 
         eth_rpc: env::var("ETH_RPC").ok(),
-        eth_chain_id: env::var("ETH_CHAIN_ID")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok()),
         eth_private_key: env::var("ETH_PRIVATE_KEY").ok(),
         eth_bridge_token_factory_address: env::var("ETH_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
 
         base_rpc: env::var("BASE_RPC").ok(),
-        base_chain_id: env::var("BASE_CHAIN_ID")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok()),
         base_private_key: env::var("BASE_PRIVATE_KEY").ok(),
         base_bridge_token_factory_address: env::var("BASE_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         base_wormhole_address: env::var("BASE_WORMHOLE_ADDRESS").ok(),
 
         arb_rpc: env::var("ARB_RPC").ok(),
-        arb_chain_id: env::var("ARB_CHAIN_ID")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok()),
         arb_private_key: env::var("ARB_PRIVATE_KEY").ok(),
         arb_bridge_token_factory_address: env::var("ARB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         arb_wormhole_address: env::var("ARB_WORMHOLE_ADDRESS").ok(),
 
         bnb_rpc: env::var("BNB_RPC").ok(),
-        bnb_chain_id: env::var("BNB_CHAIN_ID")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok()),
         bnb_private_key: env::var("BNB_PRIVATE_KEY").ok(),
         bnb_bridge_token_factory_address: env::var("BNB_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         bnb_wormhole_address: env::var("BNB_WORMHOLE_ADDRESS").ok(),
 
         pol_rpc: env::var("POL_RPC").ok(),
-        pol_chain_id: env::var("POL_CHAIN_ID")
-            .ok()
-            .and_then(|val| val.parse::<u64>().ok()),
         pol_private_key: env::var("POL_PRIVATE_KEY").ok(),
         pol_bridge_token_factory_address: env::var("POL_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         pol_wormhole_address: env::var("POL_WORMHOLE_ADDRESS").ok(),
@@ -299,14 +269,12 @@ fn default_config(network: Network) -> CliConfig {
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_MAINNET.to_owned()),
-            eth_chain_id: Some(defaults::ETH_CHAIN_ID_MAINNET),
             eth_private_key: None,
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
 
             base_rpc: Some(defaults::BASE_RPC_MAINNET.to_owned()),
-            base_chain_id: Some(defaults::BASE_CHAIN_ID_MAINNET),
             base_private_key: None,
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
@@ -314,7 +282,6 @@ fn default_config(network: Network) -> CliConfig {
             base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_MAINNET.to_owned()),
-            arb_chain_id: Some(defaults::ARB_CHAIN_ID_MAINNET),
             arb_private_key: None,
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
@@ -322,7 +289,6 @@ fn default_config(network: Network) -> CliConfig {
             arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             bnb_rpc: Some(defaults::BNB_RPC_MAINNET.to_owned()),
-            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_MAINNET),
             bnb_private_key: None,
             bnb_bridge_token_factory_address: Some(
                 defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
@@ -330,7 +296,6 @@ fn default_config(network: Network) -> CliConfig {
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
             pol_rpc: Some(defaults::POL_RPC_MAINNET.to_owned()),
-            pol_chain_id: Some(defaults::POL_CHAIN_ID_MAINNET),
             pol_private_key: None,
             pol_bridge_token_factory_address: Some(
                 defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
@@ -374,14 +339,12 @@ fn default_config(network: Network) -> CliConfig {
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_TESTNET.to_owned()),
-            eth_chain_id: Some(defaults::ETH_CHAIN_ID_TESTNET),
             eth_private_key: None,
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
 
             base_rpc: Some(defaults::BASE_RPC_TESTNET.to_owned()),
-            base_chain_id: Some(defaults::BASE_CHAIN_ID_TESTNET),
             base_private_key: None,
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
@@ -389,7 +352,6 @@ fn default_config(network: Network) -> CliConfig {
             base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_TESTNET.to_owned()),
-            arb_chain_id: Some(defaults::ARB_CHAIN_ID_TESTNET),
             arb_private_key: None,
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
@@ -397,7 +359,6 @@ fn default_config(network: Network) -> CliConfig {
             arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             bnb_rpc: Some(defaults::BNB_RPC_TESTNET.to_owned()),
-            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_TESTNET),
             bnb_private_key: None,
             bnb_bridge_token_factory_address: Some(
                 defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
@@ -405,7 +366,6 @@ fn default_config(network: Network) -> CliConfig {
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
             pol_rpc: Some(defaults::POL_RPC_TESTNET.to_owned()),
-            pol_chain_id: Some(defaults::POL_CHAIN_ID_TESTNET),
             pol_private_key: None,
             pol_bridge_token_factory_address: Some(
                 defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
@@ -449,14 +409,12 @@ fn default_config(network: Network) -> CliConfig {
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
-            eth_chain_id: Some(defaults::ETH_CHAIN_ID_DEVNET),
             eth_private_key: None,
             eth_bridge_token_factory_address: Some(
                 defaults::ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
 
             base_rpc: Some(defaults::BASE_RPC_DEVNET.to_owned()),
-            base_chain_id: Some(defaults::BASE_CHAIN_ID_DEVNET),
             base_private_key: None,
             base_bridge_token_factory_address: Some(
                 defaults::BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
@@ -464,7 +422,6 @@ fn default_config(network: Network) -> CliConfig {
             base_wormhole_address: Some(defaults::BASE_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             arb_rpc: Some(defaults::ARB_RPC_DEVNET.to_owned()),
-            arb_chain_id: Some(defaults::ARB_CHAIN_ID_DEVNET),
             arb_private_key: None,
             arb_bridge_token_factory_address: Some(
                 defaults::ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
@@ -472,7 +429,6 @@ fn default_config(network: Network) -> CliConfig {
             arb_wormhole_address: Some(defaults::ARB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             bnb_rpc: Some(defaults::BNB_RPC_DEVNET.to_owned()),
-            bnb_chain_id: Some(defaults::BNB_CHAIN_ID_DEVNET),
             bnb_private_key: None,
             bnb_bridge_token_factory_address: Some(
                 defaults::BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
@@ -480,7 +436,6 @@ fn default_config(network: Network) -> CliConfig {
             bnb_wormhole_address: Some(defaults::BNB_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
             pol_rpc: Some(defaults::POL_RPC_DEVNET.to_owned()),
-            pol_chain_id: Some(defaults::POL_CHAIN_ID_DEVNET),
             pol_private_key: None,
             pol_bridge_token_factory_address: Some(
                 defaults::POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
