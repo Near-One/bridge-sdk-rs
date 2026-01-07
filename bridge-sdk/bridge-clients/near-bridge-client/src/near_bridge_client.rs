@@ -100,7 +100,7 @@ pub struct NearBridgeClient {
     #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<AccountId>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
-    pub utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
+    utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
 }
 
 impl NearBridgeClient {

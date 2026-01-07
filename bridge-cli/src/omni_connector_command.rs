@@ -84,132 +84,64 @@ fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
     Ok(format!("sol:{}", keypair.pubkey()))
 }
 
-/// Convert Solana native fee (u128 from indexer) to u64, erroring if it doesn't fit.
 fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
     u64::try_from(fee).map_err(|_| format!("Solana native_fee {} exceeds u64::MAX", fee))
 }
 
-enum NativeFeeConversion<T> {
-    Identity,
-    Custom(fn(u128) -> Result<T, String>),
-}
-
-impl<T> NativeFeeConversion<T>
-where
-    T: TryFrom<u128>,
-    <T as TryFrom<u128>>::Error: std::fmt::Display,
-{
-    fn apply(self, value: u128) -> Result<T, String> {
-        match self {
-            NativeFeeConversion::Identity => {
-                T::try_from(value).map_err(|err| format!("Failed to convert native fee: {err}"))
-            }
-            NativeFeeConversion::Custom(func) => func(value),
-        }
-    }
-}
-
-struct FeeRequest<'a, T, FSender, FToken> {
-    fee: Option<u128>,
-    native_fee: Option<T>,
-    api_url: Option<&'a str>,
-    sender_fn: FSender,
-    token_fn: FToken,
-    native_conv: NativeFeeConversion<T>,
-    amount: Option<u128>,
-    recipient: &'a OmniAddress,
-}
-
-async fn resolve_fees<T, FSender, FToken>(
-    request: FeeRequest<'_, T, FSender, FToken>,
-) -> Result<(u128, T, Option<u128>), String>
-where
-    T: Copy + TryFrom<u128>,
-    <T as TryFrom<u128>>::Error: std::fmt::Display,
-    FSender: FnOnce() -> Result<String, String>,
-    FToken: FnOnce() -> Result<String, String>,
-{
-    let FeeRequest {
-        fee,
-        native_fee,
-        api_url,
-        sender_fn,
-        token_fn,
-        native_conv,
-        amount,
-        recipient,
-    } = request;
-
-    if let (Some(f), Some(nf)) = (fee, native_fee) {
-        return Ok((f, nf, None));
-    }
-
-    let api_url = api_url.ok_or_else(|| {
-        "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly".to_string()
-    })?;
-
-    let sender = sender_fn()?;
-    let token = token_fn()?;
-
-    let quote = fee::fetch_transfer_fee(api_url, &sender, &recipient.to_string(), &token, amount)
+async fn fetch_indexer_fees(
+    api_url: &str,
+    sender: String,
+    token: String,
+    amount: u128,
+    recipient: &OmniAddress,
+) -> Result<(u128, u128, Option<u128>), String> {
+    let quote = fee::fetch_transfer_fee(api_url, &sender, &recipient.to_string(), &token, Some(amount))
         .await
         .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
 
-    let nf = native_conv.apply(quote.native_fee)?;
-
-    Ok((
-        fee.unwrap_or(quote.transferred_fee),
-        native_fee.unwrap_or(nf),
-        quote.gas_fee,
-    ))
+    Ok((quote.transferred_fee, quote.native_fee, quote.gas_fee))
 }
 
 async fn resolve_evm_fees(
     chain: ChainKind,
-    fee: Option<u128>,
-    native_fee: Option<u128>,
     config: &CliConfig,
     token: &str,
     amount: u128,
     recipient: &OmniAddress,
 ) -> Result<(u128, u128, Option<u128>), String> {
-    resolve_fees(FeeRequest {
-        fee,
-        native_fee,
-        api_url: config.bridge_indexer_api_url.as_deref(),
-        sender_fn: || derive_evm_sender(chain, config),
-        token_fn: || evm_address_to_omni(chain, token),
-        native_conv: NativeFeeConversion::Identity,
-        amount: Some(amount),
-        recipient,
-    })
-    .await
+    let api_url = config
+        .bridge_indexer_api_url
+        .as_deref()
+        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees".to_string())?;
+
+    let sender = derive_evm_sender(chain, config)?;
+    let token = evm_address_to_omni(chain, token)?;
+
+    fetch_indexer_fees(api_url, sender, token, amount, recipient).await
 }
 
 async fn resolve_solana_fees(
-    fee: Option<u128>,
-    native_fee: Option<u64>,
     config: &CliConfig,
     token: &str,
     amount: u128,
     recipient: &OmniAddress,
 ) -> Result<(u128, u64, Option<u128>), String> {
-    resolve_fees(FeeRequest {
-        fee,
-        native_fee,
-        api_url: config.bridge_indexer_api_url.as_deref(),
-        sender_fn: || derive_solana_sender(config),
-        token_fn: || {
-            let addr: OmniAddress = token.parse().map_err(|err| {
-                format!("Failed to parse token address for fee calculation: {err}")
-            })?;
-            Ok(addr.to_string())
-        },
-        native_conv: NativeFeeConversion::Custom(solana_native_fee_to_u64),
-        amount: Some(amount),
-        recipient,
-    })
-    .await
+    let api_url = config
+        .bridge_indexer_api_url
+        .as_deref()
+        .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees".to_string())?;
+
+    let sender = derive_solana_sender(config)?;
+    let token_addr: OmniAddress = token
+        .parse()
+        .map_err(|err| format!("Failed to parse token address for fee calculation: {err}"))?;
+
+    let (fee, native_fee, gas_fee) =
+        fetch_indexer_fees(api_url, sender, token_addr.to_string(), amount, recipient).await?;
+
+    let native_fee = solana_native_fee_to_u64(native_fee)?;
+
+    Ok((fee, native_fee, gas_fee))
 }
 
 #[derive(Subcommand, Debug)]
@@ -767,37 +699,54 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, gas_fee) = match resolve_fees(FeeRequest {
-                fee,
-                native_fee,
-                api_url: combined_config.bridge_indexer_api_url.as_deref(),
-                sender_fn: || {
-                    let signer = combined_config.near_signer.as_deref().ok_or_else(|| {
-                        "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
-                            .to_string()
-                    })?;
-
-                    let addr = signer.parse().map_err(|err| {
-                        format!("Failed to parse near_signer for fee calculation: {err}")
-                    })?;
-                    Ok(OmniAddress::Near(addr).to_string())
-                },
-                token_fn: || {
-                    let addr = token
-                        .parse()
-                        .map_err(|err| format!("Failed to parse token for fee calculation: {err}"))?;
-                    Ok(OmniAddress::Near(addr).to_string())
-                },
-                native_conv: NativeFeeConversion::Identity,
-                amount: Some(amount),
-                recipient: &recipient,
-            })
-            .await
-            {
-                Ok(values) => values,
-                Err(err) => {
-                    eprintln!("{err}");
+            let (fee, native_fee, gas_fee) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf, None),
+                (Some(_), None) | (None, Some(_)) => {
+                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
                     return;
+                }
+                _ => {
+                    let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
+                        Some(url) => url,
+                        None => {
+                            eprintln!(
+                                "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                            );
+                            return;
+                        }
+                    };
+
+                    let sender = match combined_config.near_signer.as_deref() {
+                        Some(signer) => match signer.parse() {
+                            Ok(addr) => OmniAddress::Near(addr).to_string(),
+                            Err(err) => {
+                                eprintln!("Failed to parse near_signer for fee calculation: {err}");
+                                return;
+                            }
+                        },
+                        None => {
+                            eprintln!(
+                                "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
+                            );
+                            return;
+                        }
+                    };
+
+                    let token_addr = match token.parse() {
+                        Ok(addr) => OmniAddress::Near(addr).to_string(),
+                        Err(err) => {
+                            eprintln!("Failed to parse token for fee calculation: {err}");
+                            return;
+                        }
+                    };
+
+                    match fetch_indexer_fees(api_url, sender, token_addr, amount, &recipient).await {
+                        Ok(values) => values,
+                        Err(err) => {
+                            eprintln!("{err}");
+                            return;
+                        }
+                    }
                 }
             };
 
@@ -903,22 +852,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, _) = match resolve_evm_fees(
-                chain,
-                fee,
-                native_fee,
-                &combined_config,
-                &token,
-                amount,
-                &recipient,
-            )
-            .await
-            {
-                Ok(values) => values,
-                Err(err) => {
-                    eprintln!("{err}");
+            let (fee, native_fee, _) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf, None),
+                (Some(_), None) | (None, Some(_)) => {
+                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
                     return;
                 }
+                _ => match resolve_evm_fees(chain, &combined_config, &token, amount, &recipient).await
+                {
+                    Ok(values) => values,
+                    Err(err) => {
+                        eprintln!("{err}");
+                        return;
+                    }
+                },
             };
 
             omni_connector(network, config_cli)
@@ -978,20 +925,27 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
-                fee,
-                native_fee,
-                &combined_config,
-                &("sol:".to_owned() + &token),
-                amount,
-                &recipient,
-            )
-            .await
-            {
-                Ok(values) => values,
-                Err(e) => {
-                    eprintln!("{e}");
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf, None),
+                (Some(_), None) | (None, Some(_)) => {
+                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
                     return;
+                }
+                _ => {
+                    match resolve_solana_fees(
+                        &combined_config,
+                        &("sol:".to_owned() + &token),
+                        amount,
+                        &recipient,
+                    )
+                    .await
+                    {
+                        Ok(values) => values,
+                        Err(e) => {
+                            eprintln!("{e}");
+                            return;
+                        }
+                    }
                 }
             };
 
@@ -1016,20 +970,27 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, _): (u128, u64, Option<u128>) = match resolve_solana_fees(
-                fee,
-                native_fee,
-                &combined_config,
-                "sol:So11111111111111111111111111111111111111112",
-                amount,
-                &recipient,
-            )
-            .await
-            {
-                Ok(values) => values,
-                Err(e) => {
-                    eprintln!("{e}");
+            let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf, None),
+                (Some(_), None) | (None, Some(_)) => {
+                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
                     return;
+                }
+                _ => {
+                    match resolve_solana_fees(
+                        &combined_config,
+                        "sol:So11111111111111111111111111111111111111112",
+                        amount,
+                        &recipient,
+                    )
+                    .await
+                    {
+                        Ok(values) => values,
+                        Err(e) => {
+                            eprintln!("{e}");
+                            return;
+                        }
+                    }
                 }
             };
 
