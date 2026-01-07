@@ -6,30 +6,25 @@ pub const BTC_LIGHT_CLIENT_ID_MAINNET: &str = "btc-client.bridge.near";
 pub const ZCASH_LIGHT_CLIENT_ID_MAINNET: &str = "zcash-client.bridge.near";
 
 pub const ETH_RPC_MAINNET: &str = "https://ethereum-rpc.publicnode.com";
-pub const ETH_CHAIN_ID_MAINNET: u64 = 1;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xe00c629aFaCCb0510995A2B95560E446A24c85B9";
 
 pub const BASE_RPC_MAINNET: &str = "https://base-rpc.publicnode.com";
-pub const BASE_CHAIN_ID_MAINNET: u64 = 8453;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const BASE_WORMHOLE_ADDRESS_MAINNET: &str = "0xbebdb6C8ddC678FfA9f8748f85C815C556Dd8ac6";
 
 pub const ARB_RPC_MAINNET: &str = "https://arbitrum-one-rpc.publicnode.com";
-pub const ARB_CHAIN_ID_MAINNET: u64 = 42_161;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const ARB_WORMHOLE_ADDRESS_MAINNET: &str = "0xa5f208e072434bC67592E4C49C1B991BA79BCA46";
 
 pub const BNB_RPC_MAINNET: &str = "https://bsc-rpc.publicnode.com";
-pub const BNB_CHAIN_ID_MAINNET: u64 = 56;
 pub const BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0x073C8a225c8Cf9d3f9157F5C1a1DbE02407f5720";
 pub const BNB_WORMHOLE_ADDRESS_MAINNET: &str = "0x98f3c9e6E3fAce36bAAd05FE09d375Ef1464288B";
 
 pub const POL_RPC_MAINNET: &str = "https://polygon-bor-rpc.publicnode.com";
-pub const POL_CHAIN_ID_MAINNET: u64 = 137;
 pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const POL_WORMHOLE_ADDRESS_MAINNET: &str = "0x7A4B5a56256163F07b2C80A7cA55aBE66c4ec4d7";
@@ -60,30 +55,25 @@ pub const BTC_LIGHT_CLIENT_ID_TESTNET: &str = "btc-client-v4.testnet";
 pub const ZCASH_LIGHT_CLIENT_ID_TESTNET: &str = "zcash-client.n-bridge.testnet";
 
 pub const ETH_RPC_TESTNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
-pub const ETH_CHAIN_ID_TESTNET: u64 = 11_155_111;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x68a86e0Ea5B1d39F385c1326e4d493526dFe4401";
 
 pub const BASE_RPC_TESTNET: &str = "https://base-sepolia-rpc.publicnode.com";
-pub const BASE_CHAIN_ID_TESTNET: u64 = 84_532;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xa56b860017152cD296ad723E8409Abd6e5D86d4d";
 pub const BASE_WORMHOLE_ADDRESS_TESTNET: &str = "0x79A1027a6A159502049F10906D333EC57E95F083";
 
 pub const ARB_RPC_TESTNET: &str = "https://arbitrum-sepolia-rpc.publicnode.com";
-pub const ARB_CHAIN_ID_TESTNET: u64 = 421_614;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x0C981337fFe39a555d3A40dbb32f21aD0eF33FFA";
 pub const ARB_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const BNB_RPC_TESTNET: &str = "https://bsc-testnet-rpc.publicnode.com";
-pub const BNB_CHAIN_ID_TESTNET: u64 = 97;
 pub const BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const BNB_WORMHOLE_ADDRESS_TESTNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2A509D74b4D";
 
 pub const POL_RPC_TESTNET: &str = "https://polygon-amoy-bor-rpc.publicnode.com";
-pub const POL_CHAIN_ID_TESTNET: u64 = 80002;
 pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
@@ -114,30 +104,25 @@ pub const BTC_LIGHT_CLIENT_ID_DEVNET: &str = "btc-client-v4.testnet";
 pub const ZCASH_LIGHT_CLIENT_ID_DEVNET: &str = "zcash-client.n-bridge.testnet";
 
 pub const ETH_RPC_DEVNET: &str = "https://ethereum-sepolia-rpc.publicnode.com";
-pub const ETH_CHAIN_ID_DEVNET: u64 = 11_155_111;
 pub const ETH_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x3701B9859Dbb9a4333A3dd933ab18e9011ddf2C8";
 
 pub const BASE_RPC_DEVNET: &str = "https://base-sepolia-rpc.publicnode.com";
-pub const BASE_CHAIN_ID_DEVNET: u64 = 84_532;
 pub const BASE_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x0C981337fFe39a555d3A40dbb32f21aD0eF33FFA";
 pub const BASE_WORMHOLE_ADDRESS_DEVNET: &str = "0x79A1027a6A159502049F10906D333EC57E95F083";
 
 pub const ARB_RPC_DEVNET: &str = "https://arbitrum-sepolia-rpc.publicnode.com";
-pub const ARB_CHAIN_ID_DEVNET: u64 = 421_614;
 pub const ARB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const ARB_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
 pub const BNB_RPC_DEVNET: &str = "https://bsc-testnet-rpc.publicnode.com";
-pub const BNB_CHAIN_ID_DEVNET: u64 = 97;
 pub const BNB_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const BNB_WORMHOLE_ADDRESS_DEVNET: &str = "0x68605AD7b15c732a30b1BbC62BE8F2A509D74b4D";
 
 pub const POL_RPC_DEVNET: &str = "https://polygon-amoy-bor-rpc.publicnode.com";
-pub const POL_CHAIN_ID_DEVNET: u64 = 80002;
 pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
