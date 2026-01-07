@@ -1,11 +1,13 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
+use base64::Engine;
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_sdk::json_types::Base64VecU8;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
 use omni_types::ChainKind;
@@ -112,6 +114,12 @@ pub struct BtcVerifyWithdrawArgs {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChainSpecificData {
+    pub orchard_bundle_bytes: Option<Base64VecU8>,
+    pub expiry_height: Option<u32>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum TokenReceiverMessage {
     DepositProtocolFee,
     Withdraw {
@@ -119,6 +127,7 @@ pub enum TokenReceiverMessage {
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
         max_gas_fee: Option<U128>,
+        chain_specific_data: Option<ChainSpecificData>,
     },
 }
 
@@ -333,6 +342,8 @@ impl NearBridgeClient {
         chain: ChainKind,
         btc_tx_hash: String,
         outs: Vec<TxOut>,
+        orchard_bundle_hex: Option<String>,
+        expiry_height: Option<u32>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -347,7 +358,9 @@ impl NearBridgeClient {
                 args: serde_json::json!({
                     "chain_kind": chain,
                     "original_btc_pending_verify_id": btc_tx_hash,
-                    "output": outs
+                    "output": outs,
+                    "orchard_bundle_bytes": orchard_bundle_hex,
+                    "expiry_height": expiry_height
                 })
                 .to_string()
                 .into_bytes(),
@@ -626,6 +639,24 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
+    pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> String {
+        let endpoint = self.endpoint().unwrap();
+        let btc_connector = self.utxo_chain_connector(chain).unwrap();
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_public_key_by_path".to_string(),
+                args: serde_json::json!({"path": utxo.path}),
+            },
+        )
+        .await
+        .unwrap();
+
+        serde_json::from_slice::<String>(&response).unwrap()
+    }
+
     pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
         let utxo_num = self.get_utxo_num(chain).await?;
 
@@ -776,26 +807,39 @@ impl NearBridgeClient {
                 "Missing EVENT_JSON prefix".to_string(),
             ))?;
         let v: Value = serde_json::from_str(json_str)?;
-        let bytes = v["data"][0]["tx_bytes"]
-            .as_array()
-            .ok_or_else(|| {
-                BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
-            })?
-            .iter()
-            .map(|val| {
-                let num = val.as_u64().ok_or_else(|| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Expected u64 value in 'tx_bytes', got: {val}"
-                    ))
-                })?;
 
-                u8::try_from(num).map_err(|e| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
-                    ))
+        let bytes = if v["data"][0].get("tx_bytes_base64").is_some() {
+            base64::engine::general_purpose::STANDARD
+                .decode(v["data"][0]["tx_bytes_base64"].as_str().ok_or_else(|| {
+                    BridgeSdkError::InvalidLog(
+                        "Expected string value in 'tx_bytes_base64'".to_string(),
+                    )
+                })?)
+                .map_err(|err| {
+                    BridgeSdkError::InvalidLog(format!("Error on parsing base64: {err}"))
+                })?
+        } else {
+            v["data"][0]["tx_bytes"]
+                .as_array()
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
+                })?
+                .iter()
+                .map(|val| {
+                    let num = val.as_u64().ok_or_else(|| {
+                        BridgeSdkError::InvalidLog(format!(
+                            "Expected u64 value in 'tx_bytes', got: {val}"
+                        ))
+                    })?;
+
+                    u8::try_from(num).map_err(|e| {
+                        BridgeSdkError::InvalidLog(format!(
+                            "Value {num} in 'tx_bytes' is out of range for u8: {e}"
+                        ))
+                    })
                 })
-            })
-            .collect::<Result<Vec<u8>>>()?;
+                .collect::<Result<Vec<u8>>>()?
+        };
 
         Ok(bytes)
     }

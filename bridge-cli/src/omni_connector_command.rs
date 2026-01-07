@@ -473,6 +473,13 @@ pub enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
+        #[clap(
+            short,
+            long,
+            help = "Enable Orchard shielded mode",
+            default_value = "false"
+        )]
+        orchard: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1023,6 +1030,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                orchard,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1030,6 +1038,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain.into(),
                         target_btc_address,
                         amount,
+                        orchard,
                         TransactionOptions::default(),
                     )
                     .await
