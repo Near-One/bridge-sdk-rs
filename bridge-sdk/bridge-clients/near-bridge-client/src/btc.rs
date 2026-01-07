@@ -598,7 +598,7 @@ impl NearBridgeClient {
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
-        recipient_id: OmniAddress,
+        recipient_id: &OmniAddress,
         fee: u128,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
@@ -759,7 +759,7 @@ impl NearBridgeClient {
 
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
-        recipient_id: OmniAddress,
+        recipient_id: &OmniAddress,
         fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
@@ -767,33 +767,23 @@ impl NearBridgeClient {
                 "Cannot send directly to UTXO chains".to_string(),
             ));
         }
-
-        if let OmniAddress::Near(recipient_id) = recipient_id {
-            Ok(DepositMsg {
-                recipient_id,
-                post_actions: None,
-                extra_msg: None,
-                safe_deposit: None,
-            })
-        } else {
-            let omni_bridge_id = self.omni_bridge_id()?;
-            Ok(DepositMsg {
-                recipient_id: omni_bridge_id,
-                post_actions: None,
-                extra_msg: None,
-                safe_deposit: Some(SafeDepositMsg {
-                    msg: json!({
-                        "UtxoFinTransfer": {
-                            "utxo_id": "{{UTXO_TX_ID}}",
-                            "recipient": recipient_id.to_string(),
-                            "relayer_fee": fee.to_string(),
-                            "msg": "",
-                        }
-                    })
-                    .to_string(),
-                }),
-            })
-        }
+        let omni_bridge_id = self.omni_bridge_id()?;
+        Ok(DepositMsg {
+            recipient_id: omni_bridge_id,
+            post_actions: None,
+            extra_msg: None,
+            safe_deposit: Some(SafeDepositMsg {
+                msg: json!({
+                    "UtxoFinTransfer": {
+                        "utxo_id": "will_be_replaced_by_the_bridge",
+                        "recipient": recipient_id.to_string(),
+                        "relayer_fee": fee.to_string(),
+                        "msg": "",
+                    }
+                })
+                .to_string(),
+            }),
+        })
     }
 
     pub async fn get_btc_tx_data(

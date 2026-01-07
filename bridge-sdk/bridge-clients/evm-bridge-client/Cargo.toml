@@ -1,12 +1,14 @@
 [package]
 name = "evm-bridge-client"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.88.0"
 
 [dependencies]
 sha3.workspace = true
 borsh.workspace = true
-ethers.workspace = true
+alloy.workspace = true
+ethereum-types.workspace = true
 derive_builder.workspace = true
 hex.workspace = true
 near-crypto.workspace = true
@@ -16,9 +18,9 @@ near-token.workspace = true
 omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
-bridge-connector-common = { path = "../../connectors/bridge-connector-common" }
 
 [lib]
 path = "src/evm_bridge_client.rs"

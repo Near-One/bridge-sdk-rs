@@ -9,10 +9,10 @@ use near_jsonrpc_client::{methods, JsonRpcClient, JsonRpcClientConnector};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::TransactionInfo;
 use near_primitives::hash::CryptoHash;
-use near_primitives::serialize::dec_format::DecType;
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction, TransactionV0};
-use near_primitives::types::{AccountId, BlockReference, Finality, FunctionArgs, Gas};
+use near_primitives::types::{AccountId, BlockReference, Finality, FunctionArgs};
 use near_primitives::views::{FinalExecutionOutcomeView, QueryRequest};
+use near_token::NearToken;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use tokio::time;
 
@@ -178,8 +178,8 @@ pub async fn change(
         actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
             method_name: change_request.method_name,
             args: change_request.args,
-            gas: Gas::from_u64(change_request.gas),
-            deposit: near_token::NearToken::from_yoctonear(change_request.deposit),
+            gas: near_primitives::gas::Gas::from_gas(change_request.gas),
+            deposit: NearToken::from_yoctonear(change_request.deposit),
         }))],
     });
     let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {

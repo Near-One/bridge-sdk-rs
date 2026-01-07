@@ -20,6 +20,13 @@ pub struct TxProof {
     pub merkle_proof: Vec<String>,
 }
 
+pub struct UtxoBridgeTransactionData {
+    pub tx_hash: String,
+    pub deposit_address: String,
+    pub amount: u64,
+    pub vout: u32,
+}
+
 pub trait UTXOChainBlock {
     fn from_str(str: &str) -> Result<Self, UtxoClientError>
     where

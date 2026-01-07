@@ -1,13 +1,14 @@
 [package]
 name = "omni-connector"
-version = "0.2.20"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.88.0"
 
 [dependencies]
 sha3.workspace = true
 bitcoin.workspace = true
 borsh.workspace = true
-ethers.workspace = true
+alloy.workspace = true
 derive_builder.workspace = true
 hex.workspace = true
 near-crypto.workspace = true
@@ -15,7 +16,7 @@ near-jsonrpc-client.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
 near-contract-standards.workspace = true
-near-sdk = "5.17.2"
+near-sdk.workspace = true
 omni-types.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
