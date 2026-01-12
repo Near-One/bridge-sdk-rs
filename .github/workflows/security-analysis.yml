@@ -28,11 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Build matrix.include from entities.json
         id: matrix
         run: |
-          test -f entities.json
-          MATRIX=$(jq -c '{include: .}' entities.json)
+          FILE=".github/workflows/entities.json"
+          test -f "$FILE"
+          MATRIX="$(jq -c '{include: .}' "$FILE")"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
 
   build:
