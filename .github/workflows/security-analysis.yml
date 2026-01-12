@@ -57,18 +57,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup repo variables (.env.example)
-        run: test -f .env.example && cat .env.example >> "$GITHUB_ENV" || true
-      - name: Setup component variables (.env.example)
-        working-directory: ${{ matrix.path }}
-        run: test -f .env.example && cat .env.example >> "$GITHUB_ENV" || true
-
-      - name: Setup repo variables (Makefile)
-        run: test -f Makefile && make env >> "$GITHUB_ENV" || true
-      - name: Setup component variables (Makefile)
-        working-directory: ${{ matrix.path }}
-        run: test -f Makefile && make env >> "$GITHUB_ENV" || true
-
       - name: Install Clippy
         id: clippy_setup
         if: ${{ !cancelled() && matrix.runClippy }}
