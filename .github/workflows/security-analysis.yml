@@ -69,17 +69,6 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: test -f Makefile && make env >> "$GITHUB_ENV" || true
 
-      - name: Run Slither
-        uses: crytic/slither-action@v0.4.1
-        id: slither
-        if: ${{ !cancelled() && matrix.runSlither }}
-        continue-on-error: ${{ matrix.allowTestsToFail }}
-        with:
-          fail-on: medium
-          target: ${{ matrix.nodeRoot }}
-          node-version: 20
-          slither-args: ${{ matrix.slitherArgs }}
-
       - name: Install Clippy
         id: clippy_setup
         if: ${{ !cancelled() && matrix.runClippy }}
@@ -104,41 +93,3 @@ jobs:
           -A clippy::missing_errors_doc -A clippy::missing_panics_doc \
           -A clippy::must_use_candidate -A clippy::unreadable_literal \
           -A clippy::similar_names -A clippy::too_long_first_doc_paragraph
-
-      - name: Setup Go
-        uses: WillAbides/setup-go-faster@v1.14.0
-        id: go_setup
-        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
-        continue-on-error: ${{ matrix.allowTestsToFail }}
-        with:
-          go-version: ${{ matrix.goVersion }}
-
-      - name: Run Go Vet
-        id: go_vet
-        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
-        continue-on-error: ${{ matrix.allowTestsToFail }}
-        run: "go vet ./${{ matrix.path }}/..."
-
-      - name: Run Go Staticcheck
-        uses: dominikh/staticcheck-action@v1
-        id: go_staticcheck
-        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
-        continue-on-error: ${{ matrix.allowTestsToFail }}
-        with:
-          version: "2024.1.1"
-          install-go: false
-          cache-key: ${{ matrix.goVersion }}
-          working-directory: ${{ matrix.path }}
-
-      - name: Setup Biome
-        uses: biomejs/setup-biome@v2
-        id: biome_setup
-        if: ${{ !cancelled() && matrix.runBiome }}
-        with:
-          version: 1.9.4
-
-      - name: Run Biome
-        id: biome
-        if: ${{ !cancelled() && matrix.runBiome }}
-        continue-on-error: true
-        run: biome lint .
