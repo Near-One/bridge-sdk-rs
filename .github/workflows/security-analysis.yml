@@ -1,15 +1,177 @@
----
 name: "Security Analysis"
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      force_all_checks:
+        description: "Trigger all checks even if files are unchanged"
+        required: false
+        default: "false"
+        type: choice
+        options: [ "false", "true" ]
+      ignore_failures:
+        description: "Don't block CI on failed security checks"
+        required: false
+        default: "false"
+        type: choice
+        options: [ "false", "true" ]
 
 jobs:
-  contract_analysis:
-    name: "Shared"
-    uses: aurora-is-near/.github/.github/workflows/security_analysis.yml@master
-    secrets: inherit
+  scheduler:
+    runs-on: ubuntu-latest
+    name: Load matrix from entities.json
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build matrix.include from entities.json
+        id: matrix
+        run: |
+          test -f entities.json
+          MATRIX=$(jq -c '{include: .}' entities.json)
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    needs: scheduler
+    strategy:
+      matrix: ${{ fromJson(needs.scheduler.outputs.matrix) }}
+      fail-fast: false
+
+    steps:
+      - run: |
+          echo Run for ${{ matrix.name }} at ${{ matrix.path }}
+          echo '${{ toJson(matrix) }}'
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup repo variables (.env.example)
+        run: test -f .env.example && cat .env.example >> "$GITHUB_ENV" || true
+      - name: Setup component variables (.env.example)
+        working-directory: ${{ matrix.path }}
+        run: test -f .env.example && cat .env.example >> "$GITHUB_ENV" || true
+
+      - name: Setup repo variables (Makefile)
+        run: test -f Makefile && make env >> "$GITHUB_ENV" || true
+      - name: Setup component variables (Makefile)
+        working-directory: ${{ matrix.path }}
+        run: test -f Makefile && make env >> "$GITHUB_ENV" || true
+
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.1
+        id: slither
+        if: ${{ !cancelled() && matrix.runSlither }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        with:
+          fail-on: medium
+          target: ${{ matrix.nodeRoot }}
+          node-version: 20
+          slither-args: ${{ matrix.slitherArgs }}
+
+      - name: Install Clippy
+        id: clippy_setup
+        if: ${{ !cancelled() && matrix.runClippy }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        working-directory: ${{ matrix.path }}
+        run: rustup component add clippy-preview
+
+      - name: Run Clippy
+        id: clippy
+        if: ${{ !cancelled() && matrix.runClippy }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        working-directory: ${{ matrix.path }}
+        run: cargo clippy --all-targets --workspace --no-deps --lib -- -D clippy::as_conversions
+
+      - name: Run Clippy (all)
+        id: clippy_all
+        if: ${{ !cancelled() && matrix.runClippy }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        working-directory: ${{ matrix.path }}
+        run: |
+          cargo clippy --all-targets --workspace --no-deps --lib -- -D clippy::all -D clippy::pedantic \
+          -A clippy::missing_errors_doc -A clippy::missing_panics_doc \
+          -A clippy::must_use_candidate -A clippy::unreadable_literal \
+          -A clippy::similar_names -A clippy::too_long_first_doc_paragraph
+
+      - name: Setup Go
+        uses: WillAbides/setup-go-faster@v1.14.0
+        id: go_setup
+        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        with:
+          go-version: ${{ matrix.goVersion }}
+
+      - name: Run Go Vet
+        id: go_vet
+        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        run: "go vet ./${{ matrix.path }}/..."
+
+      - name: Run Go Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        id: go_staticcheck
+        if: ${{ !cancelled() && matrix.runGoStaticChecks }}
+        continue-on-error: ${{ matrix.allowTestsToFail }}
+        with:
+          version: "2024.1.1"
+          install-go: false
+          cache-key: ${{ matrix.goVersion }}
+          working-directory: ${{ matrix.path }}
+
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        id: biome_setup
+        if: ${{ !cancelled() && matrix.runBiome }}
+        with:
+          version: 1.9.4
+
+      - name: Run Biome
+        id: biome
+        if: ${{ !cancelled() && matrix.runBiome }}
+        continue-on-error: true
+        run: biome lint .
+
+      - name: Send Datadog Metric
+        if: ${{ !cancelled() && secrets.DD_API_KEY != '' }}
+        continue-on-error: true
+        run: |
+          if [ "${{ steps.clippy.conclusion }}" == "failure" ] || \
+            [ "${{ steps.clippy_all.conclusion }}" == "failure" ] || \
+            [ "${{ steps.slither.conclusion }}" == "failure" ] || \
+            [ "${{ steps.go_vet.conclusion }}" == "failure" ] || \
+            [ "${{ steps.go_staticcheck.conclusion }}" == "failure" ] || \
+            [ "${{ steps.biome.conclusion }}" == "failure" ]; then
+            export dd_metric_value=1
+          else
+            export dd_metric_value=0
+          fi
+
+          export NOW="$(date +%s)"
+          curl -X POST "https://api.datadoghq.eu/api/v2/series" \
+          -H "Accept: application/json" \
+          -H "Content-Type: application/json" \
+          -H "DD-API-KEY: ${{ secrets.DD_API_KEY }}" \
+          -d @- << EOF
+          {
+            "series": [
+              {
+                "metric": "gha.workflow.outcome",
+                "type": 1,
+                "points": [
+                  { "timestamp": $NOW, "value": $dd_metric_value }
+                ],
+                "resources": [
+                  { "name": "${{ matrix.name }}", "type": "component" }
+                ]
+              }
+            ]
+          }
+          EOF
