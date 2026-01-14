@@ -24,21 +24,8 @@ jobs:
   build:
     name: Static Analysis
     runs-on: warp-ubuntu-2204-x64-16x
-    strategy:
-      matrix:
-        include:
-          - name: bridge-cli
-            path: bridge-cli
-          - name: eth-proof
-            path: bridge-sdk/eth-proof
-          - name: near-rpc-client
-            path: bridge-sdk/near-rpc-client
-      fail-fast: false
 
     steps:
-      - run: |
-          echo Run for ${{ matrix.name }} at ${{ matrix.path }}
-
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -47,19 +34,16 @@ jobs:
       - name: Install Clippy
         id: clippy_setup
         continue-on-error: false
-        working-directory: ${{ matrix.path }}
         run: rustup component add clippy-preview
 
       - name: Run Clippy
         id: clippy
         continue-on-error: true
-        working-directory: ${{ matrix.path }}
-        run: cargo clippy --all-targets --workspace --no-deps --lib -- -D clippy::as_conversions
+        run: cargo clippy --all-targets --workspace --no-deps --lib -- -D clippy::as_conversions -D clippy::unsafe_casting
 
       - name: Run Clippy (all)
         id: clippy_all
         continue-on-error: true
-        working-directory: ${{ matrix.path }}
         run: |
           cargo clippy --all-targets --workspace --no-deps --lib -- -D clippy::all -D clippy::pedantic \
           -A clippy::missing_errors_doc -A clippy::missing_panics_doc \
