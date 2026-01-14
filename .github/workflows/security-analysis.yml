@@ -2,7 +2,8 @@ name: "Security Analysis"
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
     inputs:
@@ -22,7 +23,7 @@ on:
 jobs:
   build:
     name: Static Analysis
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-2204-x64-16x
     strategy:
       matrix:
         include:
@@ -45,7 +46,7 @@ jobs:
 
       - name: Install Clippy
         id: clippy_setup
-        continue-on-error: true
+        continue-on-error: false
         working-directory: ${{ matrix.path }}
         run: rustup component add clippy-preview
 
