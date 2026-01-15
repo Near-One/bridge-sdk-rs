@@ -67,7 +67,7 @@ impl OmniConnector {
         for input in &input_points {
             let pk_raw = near_bridge_client
                 .get_pk_for_utxo(ChainKind::Zcash, input.utxo.clone())
-                .await;
+                .await?;
 
             let transparent_pubkey = secp256k1::PublicKey::from_str(&pk_raw).map_err(|err| {
                 BridgeSdkError::ZCashError(format!("Invalid secp256k1 public key for UTXO: {err}"))

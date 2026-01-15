@@ -988,14 +988,13 @@ impl OmniConnector {
         near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
     ) -> Result<String> {
-        let near_bridge_client = self.near_bridge_client().unwrap();
+        let near_bridge_client = self.near_bridge_client()?;
         let btc_tx_data = near_bridge_client
             .get_btc_tx_data(chain, near_tx_hash, relayer)
-            .await
-            .unwrap();
+            .await?;
 
-        let utxo_bridge_client = self.utxo_bridge_client(chain).unwrap();
-        let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await.unwrap();
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let tx_hash = utxo_bridge_client.send_tx(&btc_tx_data).await?;
         Ok(tx_hash)
     }
 

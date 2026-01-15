@@ -639,9 +639,9 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
-    pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> String {
-        let endpoint = self.endpoint().unwrap();
-        let btc_connector = self.utxo_chain_connector(chain).unwrap();
+    pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> Result<String> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
 
         let response = near_rpc_client::view(
             endpoint,
@@ -651,10 +651,9 @@ impl NearBridgeClient {
                 args: serde_json::json!({"path": utxo.path}),
             },
         )
-        .await
-        .unwrap();
+        .await?;
 
-        serde_json::from_slice::<String>(&response).unwrap()
+        Ok(serde_json::from_slice::<String>(&response)?)
     }
 
     pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
