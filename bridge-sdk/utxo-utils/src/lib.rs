@@ -287,3 +287,31 @@ pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Addre
         &parsed_address.ok_or_else(|| "No orchard address found in unified address".to_string())?,
     ))
 }
+
+pub fn contains_orchard_address(uaddress: &str) -> Result<bool, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
+    for receiver in ua.items() {
+        if let unified::Receiver::Orchard(_) = receiver {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+pub fn contains_transparent_address(uaddress: &str) -> Result<bool, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
+    for receiver in ua.items() {
+        if let unified::Receiver::P2pkh(_) = receiver {
+            return Ok(true);
+        }
+
+        if let unified::Receiver::P2sh(_) = receiver {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}

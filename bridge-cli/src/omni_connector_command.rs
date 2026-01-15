@@ -477,7 +477,7 @@ pub enum InternalSubCommand {
             short,
             long,
             help = "Enable Orchard shielded mode",
-            default_value = "false"
+            default_value = "true"
         )]
         orchard: bool,
         #[command(flatten)]

@@ -667,6 +667,19 @@ impl OmniConnector {
         enable_orchard: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let mut enable_orchard = enable_orchard;
+        if !utxo_utils::contains_orchard_address(&target_btc_address)
+            .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?
+        {
+            enable_orchard = false;
+        }
+
+        if !utxo_utils::contains_transparent_address(&target_btc_address)
+            .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?
+        {
+            enable_orchard = true;
+        }
+
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
