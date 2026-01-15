@@ -192,6 +192,34 @@ pub struct NearToBtcTransferInfo {
 enum UTXOChainMsg {
     MaxGasFee(U64),
 }
+#[derive(serde::Deserialize)]
+struct Logs {
+    data: Vec<LogsData>,
+}
+
+#[derive(serde::Deserialize)]
+struct LogsData {
+    #[serde(flatten)]
+    tx: TxBytes,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum TxBytes {
+    Base64 { tx_bytes_base64: String },
+    Array { tx_bytes: Vec<u8> },
+}
+
+impl TxBytes {
+    fn into_bytes(self) -> Result<Vec<u8>> {
+        match self {
+            TxBytes::Base64 { tx_bytes_base64 } => base64::engine::general_purpose::STANDARD
+                .decode(tx_bytes_base64)
+                .map_err(|e| BridgeSdkError::InvalidLog(format!("Error parsing base64: {e}"))),
+            TxBytes::Array { tx_bytes } => Ok(tx_bytes),
+        }
+    }
+}
 
 impl NearBridgeClient {
     /// Signs a NEAR transfer to BTC by calling `sign_btc_transaction` on the BTC connector contract.
@@ -807,39 +835,16 @@ impl NearBridgeClient {
             ))?;
         let v: Value = serde_json::from_str(json_str)?;
 
-        let bytes = if v["data"][0].get("tx_bytes_base64").is_some() {
-            base64::engine::general_purpose::STANDARD
-                .decode(v["data"][0]["tx_bytes_base64"].as_str().ok_or_else(|| {
-                    BridgeSdkError::InvalidLog(
-                        "Expected string value in 'tx_bytes_base64'".to_string(),
-                    )
-                })?)
-                .map_err(|err| {
-                    BridgeSdkError::InvalidLog(format!("Error on parsing base64: {err}"))
-                })?
-        } else {
-            v["data"][0]["tx_bytes"]
-                .as_array()
-                .ok_or_else(|| {
-                    BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
-                })?
-                .iter()
-                .map(|val| {
-                    let num = val.as_u64().ok_or_else(|| {
-                        BridgeSdkError::InvalidLog(format!(
-                            "Expected u64 value in 'tx_bytes', got: {val}"
-                        ))
-                    })?;
+        let logs: Logs = serde_json::from_value(v)
+            .map_err(|e| BridgeSdkError::InvalidLog(format!("Invalid log shape: {e}")))?;
 
-                    u8::try_from(num).map_err(|e| {
-                        BridgeSdkError::InvalidLog(format!(
-                            "Value {num} in 'tx_bytes' is out of range for u8: {e}"
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<u8>>>()?
-        };
+        let entry = logs
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| BridgeSdkError::InvalidLog("Expected 'data[0]'".into()))?;
 
+        let bytes = entry.tx.into_bytes()?;
         Ok(bytes)
     }
 
