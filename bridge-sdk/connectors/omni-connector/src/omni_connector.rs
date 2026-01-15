@@ -733,7 +733,7 @@ impl OmniConnector {
         )
         .map_err(|err| BridgeSdkError::UtxoClientError(format!("Error on get tx out: {err}")))?;
 
-        let (orchard, expiry_height, output) = if enable_orchard {
+        let (chain_specific_data, output) = if enable_orchard {
             let (orchard, expiry_height) = self
                 .get_orchard_raw(
                     target_btc_address.clone(),
@@ -749,9 +749,15 @@ impl OmniConnector {
                 output.push(tx_outs[1].clone());
             }
 
-            (Some(orchard), Some(expiry_height), output)
+            (
+                Some(ChainSpecificData {
+                    orchard_bundle_bytes: orchard.into(),
+                    expiry_height,
+                }),
+                output,
+            )
         } else {
-            (None, None, tx_outs)
+            (None, tx_outs)
         };
 
         near_bridge_client
@@ -763,10 +769,7 @@ impl OmniConnector {
                     input: out_points,
                     output,
                     max_gas_fee: None,
-                    chain_specific_data: Some(ChainSpecificData {
-                        orchard_bundle_bytes: orchard.map(std::convert::Into::into),
-                        expiry_height,
-                    }),
+                    chain_specific_data,
                 },
                 transaction_options,
             )

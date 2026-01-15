@@ -115,8 +115,8 @@ pub struct BtcVerifyWithdrawArgs {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChainSpecificData {
-    pub orchard_bundle_bytes: Option<Base64VecU8>,
-    pub expiry_height: Option<u32>,
+    pub orchard_bundle_bytes: Base64VecU8,
+    pub expiry_height: u32,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
