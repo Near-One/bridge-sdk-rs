@@ -53,6 +53,7 @@ impl OmniConnector {
             BridgeSdkError::ZCashError(format!("Near bridge client is not initialized: {err}"))
         })?;
 
+        //TODO!!!
         let params = zcash_protocol::consensus::TestNetwork;
 
         let mut builder = zcash_primitives::transaction::builder::Builder::new(

@@ -2383,6 +2383,23 @@ dependencies = [
 [[package]]
 name = "crypto-shared"
 version = "0.1.0"
+source = "git+https://github.com/near/mpc_old?rev=0afee9004a1b1c3386940e60c28cff7cf1b5978c#0afee9004a1b1c3386940e60c28cff7cf1b5978c"
+dependencies = [
+ "anyhow",
+ "borsh 1.6.0",
+ "getrandom 0.2.16",
+ "k256",
+ "near-account-id 1.1.4",
+ "near-sdk",
+ "serde",
+ "serde_json",
+ "sha3",
+ "subtle",
+]
+
+[[package]]
+name = "crypto-shared"
+version = "0.1.0"
 source = "git+https://github.com/near-one/mpc?rev=463172481597ee09b12020b72c61d6b01da7b167#463172481597ee09b12020b72c61d6b01da7b167"
 dependencies = [
  "anyhow",
@@ -2401,7 +2418,7 @@ dependencies = [
 name = "crypto-utils"
 version = "0.2.1"
 dependencies = [
- "crypto-shared",
+ "crypto-shared 0.1.0 (git+https://github.com/near-one/mpc?rev=463172481597ee09b12020b72c61d6b01da7b167)",
  "k256",
  "near-crypto",
  "near-primitives",
@@ -4764,8 +4781,10 @@ dependencies = [
  "bitcoin",
  "borsh 1.6.0",
  "bridge-connector-common",
+ "crypto-shared 0.1.0 (git+https://github.com/near/mpc_old?rev=0afee9004a1b1c3386940e60c28cff7cf1b5978c)",
  "derive_builder",
  "futures",
+ "k256",
  "near-contract-standards",
  "near-crypto",
  "near-jsonrpc-client",

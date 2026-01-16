@@ -1,7 +1,7 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use base64::Engine;
-use bitcoin::{OutPoint, TxOut};
+use bitcoin::{OutPoint, TxOut, PublicKey as BtcPublicKey};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
 use near_primitives::types::Gas;
@@ -18,6 +18,7 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 use utxo_utils::UTXO;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
@@ -172,6 +173,7 @@ struct PartialConfig {
     active_management_upper_limit: u32,
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
+    chain_signatures_root_public_key: Option<near_sdk::PublicKey>
 }
 
 #[serde_as]
@@ -668,20 +670,21 @@ impl NearBridgeClient {
     }
 
     pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> Result<String> {
-        let endpoint = self.endpoint()?;
+        let config = self.get_config(chain).await?;
         let btc_connector = self.utxo_chain_connector(chain)?;
+        let chain_signatures_root_public_key = config.chain_signatures_root_public_key.unwrap();
 
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: btc_connector,
-                method_name: "get_public_key_by_path".to_string(),
-                args: serde_json::json!({"path": utxo.path}),
-            },
-        )
-        .await?;
+        let mpc_pk = crypto_shared::near_public_key_to_affine_point(
+            chain_signatures_root_public_key,
+        );
+        let epsilon = crypto_shared::derive_epsilon(&btc_connector.to_string().parse().unwrap(), &utxo.path);
+        let user_pk = crypto_shared::derive_key(mpc_pk, epsilon);
+        let user_pk_encoded_point = user_pk.to_encoded_point(false);
+        let public_key_bytes = user_pk_encoded_point.as_bytes().to_vec();
+        let uncompressed_btc_public_key =
+            BtcPublicKey::from_slice(&public_key_bytes).expect("Invalid public key bytes");
 
-        Ok(serde_json::from_slice::<String>(&response)?)
+        Ok(uncompressed_btc_public_key.inner.to_string())
     }
 
     pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
