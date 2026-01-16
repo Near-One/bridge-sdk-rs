@@ -3,7 +3,8 @@ use core::panic;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
-use alloy::primitives::TxHash;
+use alloy::primitives::{Address as EvmH160, TxHash};
+use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
@@ -53,23 +54,20 @@ fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, Str
         ChainKind::Arb => &config.arb_private_key,
         ChainKind::Bnb => &config.bnb_private_key,
         ChainKind::Pol => &config.pol_private_key,
-        _ => return Err(format!("Unsupported EVM chain: {:?}", chain)),
+        _ => return Err(format!("Unsupported EVM chain: {chain:?}")),
     }
     .as_ref()
     .ok_or("Private key not configured")?;
 
-    let wallet: LocalWallet = pk.parse().map_err(|e| format!("Invalid key: {e}"))?;
-    let evm_addr = omni_types::H160(wallet.address().0);
-    let omni_addr = OmniAddress::new_from_evm_address(chain, evm_addr)
-        .map_err(|e| format!("Unsupported EVM chain for sender derivation: {e}"))?;
-    Ok(omni_addr.to_string())
+    let wallet: PrivateKeySigner = pk.parse().map_err(|e| format!("Invalid key: {e}"))?;
+    evm_address_to_omni(chain, &format!("{:?}", wallet.address()))
 }
 
 fn evm_address_to_omni(chain: ChainKind, address: &str) -> Result<String, String> {
     let evm: EvmH160 = address
         .parse()
         .map_err(|e| format!("Invalid EVM address {address}: {e}"))?;
-    let omni = OmniAddress::new_from_evm_address(chain, omni_types::H160(evm.0))
+    let omni = OmniAddress::new_from_evm_address(chain, omni_types::H160(evm.into()))
         .map_err(|e| format!("Unsupported EVM chain for address: {e}"))?;
     Ok(omni.to_string())
 }
@@ -84,7 +82,7 @@ fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
 }
 
 fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
-    u64::try_from(fee).map_err(|_| format!("Solana native_fee {} exceeds u64::MAX", fee))
+    u64::try_from(fee).map_err(|_| format!("Solana native_fee {fee} exceeds u64::MAX"))
 }
 
 async fn fetch_indexer_fees(
@@ -94,11 +92,26 @@ async fn fetch_indexer_fees(
     amount: u128,
     recipient: &OmniAddress,
 ) -> Result<(u128, u128, Option<u128>), String> {
-    let quote = fee::fetch_transfer_fee(api_url, &sender, &recipient.to_string(), &token, Some(amount))
-        .await
-        .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
+    let fee = fee::fetch_transfer_fee(
+        api_url,
+        &sender,
+        &recipient.to_string(),
+        &token,
+        Some(amount),
+    )
+    .await
+    .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
 
-    Ok((quote.transferred_fee, quote.native_fee, quote.gas_fee))
+    let transferred_fee = fee
+        .transferred_token_fee
+        .ok_or("Missing transferred_token_fee in response")?
+        .0;
+
+    Ok((
+        transferred_fee,
+        fee.native_token_fee.0,
+        fee.gas_fee.map(|v| v.0),
+    ))
 }
 
 async fn resolve_evm_fees(
@@ -721,10 +734,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let (fee, native_fee, gas_fee) = match (fee, native_fee) {
                 (Some(f), Some(nf)) => (f, nf, None),
-                (Some(_), None) | (None, Some(_)) => {
-                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
-                    return;
-                }
+                (Some(f), None) => (f, 0, None),
+                (None, Some(nf)) => (0, nf, None),
                 _ => {
                     let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
                         Some(url) => url,
@@ -760,7 +771,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         }
                     };
 
-                    match fetch_indexer_fees(api_url, sender, token_addr, amount, &recipient).await {
+                    match fetch_indexer_fees(api_url, sender, token_addr, amount, &recipient).await
+                    {
                         Ok(values) => values,
                         Err(err) => {
                             eprintln!("{err}");
@@ -894,11 +906,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let (fee, native_fee, _) = match (fee, native_fee) {
                 (Some(f), Some(nf)) => (f, nf, None),
-                (Some(_), None) | (None, Some(_)) => {
-                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
-                    return;
-                }
-                _ => match resolve_evm_fees(chain, &combined_config, &token, amount, &recipient).await
+                (Some(f), None) => (f, 0, None),
+                (None, Some(nf)) => (0, nf, None),
+                _ => match resolve_evm_fees(chain, &combined_config, &token, amount, &recipient)
+                    .await
                 {
                     Ok(values) => values,
                     Err(err) => {
@@ -967,26 +978,22 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
                 (Some(f), Some(nf)) => (f, nf, None),
-                (Some(_), None) | (None, Some(_)) => {
-                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
-                    return;
-                }
-                _ => {
-                    match resolve_solana_fees(
-                        &combined_config,
-                        &("sol:".to_owned() + &token),
-                        amount,
-                        &recipient,
-                    )
-                    .await
-                    {
-                        Ok(values) => values,
-                        Err(e) => {
-                            eprintln!("{e}");
-                            return;
-                        }
+                (Some(f), None) => (f, 0, None),
+                (None, Some(nf)) => (0, nf, None),
+                _ => match resolve_solana_fees(
+                    &combined_config,
+                    &("sol:".to_owned() + &token),
+                    amount,
+                    &recipient,
+                )
+                .await
+                {
+                    Ok(values) => values,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
                     }
-                }
+                },
             };
 
             omni_connector(network, config_cli)
@@ -1012,26 +1019,22 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
                 (Some(f), Some(nf)) => (f, nf, None),
-                (Some(_), None) | (None, Some(_)) => {
-                    eprintln!("Both fee and native_fee must be provided to skip indexer calculation");
-                    return;
-                }
-                _ => {
-                    match resolve_solana_fees(
-                        &combined_config,
-                        "sol:So11111111111111111111111111111111111111112",
-                        amount,
-                        &recipient,
-                    )
-                    .await
-                    {
-                        Ok(values) => values,
-                        Err(e) => {
-                            eprintln!("{e}");
-                            return;
-                        }
+                (Some(f), None) => (f, 0, None),
+                (None, Some(nf)) => (0, nf, None),
+                _ => match resolve_solana_fees(
+                    &combined_config,
+                    "sol:So11111111111111111111111111111111111111112",
+                    amount,
+                    &recipient,
+                )
+                .await
+                {
+                    Ok(values) => values,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        return;
                     }
-                }
+                },
             };
 
             omni_connector(network, config_cli)
