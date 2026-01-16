@@ -61,11 +61,11 @@ mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
-pczt = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
-zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "4a9d9814478162c1b5191cc83808bf1686f3713b" }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["transparent-inputs"] }
+zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
+pczt = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
+zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
 orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
 bip0039 = "0.12.0"
 zcash_keys = "0.12.0"

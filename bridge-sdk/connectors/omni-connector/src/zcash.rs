@@ -52,6 +52,8 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client().map_err(|err| {
             BridgeSdkError::ZCashError(format!("Near bridge client is not initialized: {err}"))
         })?;
+        
+        let expiry_delta = near_bridge_client.get_expiry_height_gap(ChainKind::Zcash).await?;
 
         //TODO!!!
         let params = zcash_protocol::consensus::TestNetwork;
@@ -59,6 +61,7 @@ impl OmniConnector {
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
             BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX)),
+            expiry_delta,
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard::Anchor::empty_tree()),

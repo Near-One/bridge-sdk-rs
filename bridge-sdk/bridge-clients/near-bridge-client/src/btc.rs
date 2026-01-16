@@ -173,6 +173,7 @@ struct PartialConfig {
     active_management_upper_limit: u32,
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
+    expiry_height_gap: Option<u32>,
     chain_signatures_root_public_key: Option<near_sdk::PublicKey>
 }
 
@@ -685,6 +686,11 @@ impl NearBridgeClient {
             BtcPublicKey::from_slice(&public_key_bytes).expect("Invalid public key bytes");
 
         Ok(uncompressed_btc_public_key.inner.to_string())
+    }
+    
+    pub async fn get_expiry_height_gap(&self, chain: ChainKind) -> Result<u32> {
+        let config = self.get_config(chain).await?;
+        Ok(config.expiry_height_gap.unwrap_or(0))
     }
 
     pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
