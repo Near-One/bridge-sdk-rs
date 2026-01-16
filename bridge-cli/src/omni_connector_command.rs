@@ -346,6 +346,13 @@ pub enum OmniConnectorSubCommand {
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
+        #[clap(
+            short,
+            long,
+            help = "Enable Orchard shielded mode",
+            default_value = "true"
+        )]
+        orchard: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -473,6 +480,13 @@ pub enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
+        #[clap(
+            short,
+            long,
+            help = "Enable Orchard shielded mode",
+            default_value = "true"
+        )]
+        orchard: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -596,6 +610,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            orchard,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -604,6 +619,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
                     fee_rate,
+                    orchard,
                     TransactionOptions::default(),
                 )
                 .await
@@ -1023,6 +1039,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                orchard,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1030,6 +1047,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         chain.into(),
                         target_btc_address,
                         amount,
+                        orchard,
                         TransactionOptions::default(),
                     )
                     .await

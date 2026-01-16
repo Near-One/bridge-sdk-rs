@@ -156,7 +156,11 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "Amount not found in output. Transaction data: {result}",
             ))
         })?;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::as_conversions
+        )]
         let amount = (amount_btc * SATS_PER_BTC) as u64;
 
         let vout: u32 = output_index.try_into().map_err(|_| {
@@ -320,6 +324,31 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         Ok(result)
     }
 
+    pub async fn get_current_height(&self) -> Result<u64, UtxoClientError> {
+        let count_response: JsonRpcResponse<Value> = self
+            .http_client
+            .post(&self.endpoint_url)
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+
+                        "method": "getblockcount",
+                "params": []
+            }))
+            .send()
+            .await
+            .map_err(|e| UtxoClientError::RpcError(format!("Failed to send getblockcount: {e}")))?
+            .json()
+            .await
+            .map_err(|e| UtxoClientError::Other(format!("Failed to parse getblockcount: {e}")))?;
+
+        let last_block_height = count_response
+            .result
+            .as_u64()
+            .ok_or_else(|| UtxoClientError::Other("Invalid getblockcount result".to_string()))?;
+
+        Ok(last_block_height)
+    }
     async fn get_raw_transaction(&self, tx_hash: &str) -> Result<Value, UtxoClientError> {
         let args = if T::is_zcash() {
             json!([tx_hash, 1])
