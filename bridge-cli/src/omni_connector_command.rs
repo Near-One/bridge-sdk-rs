@@ -737,48 +737,30 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 (Some(f), None) => (f, 0, None),
                 (None, Some(nf)) => (0, nf, None),
                 _ => {
-                    let api_url = match combined_config.bridge_indexer_api_url.as_deref() {
-                        Some(url) => url,
-                        None => {
-                            eprintln!(
-                                "bridge_indexer_api_url must be set to auto-calculate fees or provide fee/native_fee explicitly"
-                            );
-                            return;
-                        }
-                    };
+                    let api_url = combined_config
+                        .bridge_indexer_api_url
+                        .as_deref()
+                        .expect(
+                            "Getting fee: bridge_indexer_api_url not available",
+                        );
 
-                    let sender = match combined_config.near_signer.as_deref() {
-                        Some(signer) => match signer.parse() {
-                            Ok(addr) => OmniAddress::Near(addr).to_string(),
-                            Err(err) => {
-                                eprintln!("Failed to parse near_signer for fee calculation: {err}");
-                                return;
-                            }
-                        },
-                        None => {
-                            eprintln!(
-                                "near_signer must be set to auto-calculate fees or provide fee/native_fee explicitly"
-                            );
-                            return;
-                        }
-                    };
+                    let sender = combined_config
+                        .near_signer
+                        .as_deref()
+                        .expect(
+                            "Getting fee: near_signer not available",
+                        )
+                        .parse()
+                        .map(OmniAddress::Near)
+                        .map(|addr| addr.to_string())
+                        .expect("Getting fee: failed to parse near_signer");
 
-                    let token_addr = match token.parse() {
-                        Ok(addr) => OmniAddress::Near(addr).to_string(),
-                        Err(err) => {
-                            eprintln!("Failed to parse token for fee calculation: {err}");
-                            return;
-                        }
-                    };
-
-                    match fetch_indexer_fees(api_url, sender, token_addr, amount, &recipient).await
-                    {
-                        Ok(values) => values,
-                        Err(err) => {
-                            eprintln!("{err}");
-                            return;
-                        }
-                    }
+                    let token_addr: OmniAddress = token
+                        .parse()
+                        .expect("Getting fee: failed to parse token");
+                    fetch_indexer_fees(api_url, sender, token_addr.to_string(), amount, &recipient)
+                        .await
+                        .expect("Failed to get fee from indexer")
                 }
             };
 

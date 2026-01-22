@@ -603,22 +603,13 @@ impl NearBridgeClient {
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
-        fee: Option<u128>,
-        native_fee: Option<u128>,
+        fee: u128,
+        native_fee: u128,
         message: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
-
-        let (fee, native_fee) = match (fee, native_fee) {
-            (Some(fee), Some(native_fee)) => (fee, native_fee),
-            _ => {
-                return Err(BridgeSdkError::ConfigError(
-                    "fee and native_fee must be provided".to_string(),
-                ))
-            }
-        };
 
         if amount == 0 {
             return Err(BridgeSdkError::ConfigError(

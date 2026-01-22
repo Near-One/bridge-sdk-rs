@@ -390,8 +390,8 @@ impl OmniConnector {
         token_id: String,
         amount: u128,
         receiver: OmniAddress,
-        fee: Option<u128>,
-        native_fee: Option<u128>,
+        fee: u128,
+        native_fee: u128,
         message: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
@@ -1717,8 +1717,21 @@ impl OmniConnector {
                 native_fee,
                 message,
                 transaction_options,
-            } => self
-                .near_init_transfer(
+            } => {
+                let fee = fee.ok_or_else(|| {
+                    BridgeSdkError::ConfigError(
+                        "OmniConnector Near init_transfer missing fees: provide fee and native_fee before calling."
+                            .to_string(),
+                    )
+                })?;
+                let native_fee = native_fee.ok_or_else(|| {
+                    BridgeSdkError::ConfigError(
+                        "OmniConnector Near init_transfer missing fees: provide fee and native_fee before calling."
+                            .to_string(),
+                    )
+                })?;
+
+                self.near_init_transfer(
                     near_token_id,
                     amount,
                     recipient,
@@ -1728,7 +1741,8 @@ impl OmniConnector {
                     transaction_options,
                 )
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(|tx_hash| tx_hash.to_string())
+            }
             InitTransferArgs::EvmInitTransfer {
                 chain_kind,
                 token,
