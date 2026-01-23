@@ -497,7 +497,10 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self.get_required_balance_for_deploy_token().await?;
+        // let deposit = self.get_required_balance_for_deploy_token().await?;
+        // TODO: temporary fix for deploy token deposit, remove when token deployer contract is
+        // updated for eth tokens
+        let deposit = NearToken::from_near(4).as_yoctonear();
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
