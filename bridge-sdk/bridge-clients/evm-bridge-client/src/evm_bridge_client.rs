@@ -226,10 +226,11 @@ impl EvmBridgeClient {
         let omni_bridge_address = self.omni_bridge_address()?;
         let omni_bridge = self.omni_bridge()?;
         let signer_address = self.signer_address()?;
+        let signer_provider = self.signer_provider()?;
 
         // Handle token approval if not native token
         if !token.is_zero() {
-            let erc20 = ERC20::new(token, &self.provider);
+            let erc20 = ERC20::new(token, &signer_provider);
 
             let allowance_result = erc20
                 .allowance(*signer_address, omni_bridge_address)
