@@ -7,7 +7,7 @@ use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
-use near_bridge_client::{NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
+use near_bridge_client::{btc::format_max_gas_fee, NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
     BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
@@ -236,7 +236,7 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u128>,
-        #[clap(short, long, help = "Additional message")]
+        #[clap(short = 'm', long, help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)")]
         message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -355,7 +355,7 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u64>,
-        #[clap(short, long, help = "Additional message")]
+        #[clap(short = 'm', long, help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)")]
         message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -769,7 +769,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 && matches!(recipient.get_chain(), ChainKind::Btc | ChainKind::Zcash)
             {
                 if let Some(gas_fee) = gas_fee {
-                    message = format!("{{\"MaxGasFee\": \"{gas_fee}\"}}");
+                    message = format_max_gas_fee(gas_fee as u64);
                 }
             }
 
