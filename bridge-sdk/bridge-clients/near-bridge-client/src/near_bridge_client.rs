@@ -603,7 +603,7 @@ impl NearBridgeClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
         &self,
-        token_id: String,
+        token_id: AccountId,
         amount: u128,
         receiver: OmniAddress,
         fee: u128,
@@ -656,9 +656,7 @@ impl NearBridgeClient {
             ChangeRequest {
                 signer: self.signer()?,
                 nonce,
-                receiver_id: token_id.parse().map_err(|err| {
-                    BridgeSdkError::ConfigError(format!("Failed to parse token_id: {err}"))
-                })?,
+                receiver_id: token_id,
                 method_name: "ft_transfer_call".to_string(),
                 args: serde_json::json!({
                     "receiver_id": omni_bridge_id,
