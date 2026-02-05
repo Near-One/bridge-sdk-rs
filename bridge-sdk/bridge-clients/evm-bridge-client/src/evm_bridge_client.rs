@@ -1,4 +1,6 @@
 use alloy::{
+    contract::{CallBuilder, CallDecoder},
+    network::Network,
     primitives::{Address, Bytes, TxHash, U256},
     providers::{DynProvider, Provider},
     sol,
@@ -18,6 +20,9 @@ pub use builder::EvmBridgeClientBuilder;
 
 mod builder;
 pub mod error;
+
+const DEPLOY_TOKEN_GAS: u64 = 500_000;
+const FIN_TRANSFER_GAS: u64 = 250_000;
 
 sol! {
     #[allow(missing_docs)]
@@ -43,7 +48,6 @@ sol! {
         function deployToken(bytes signatureData, MetadataPayload metadata) external returns (address);
         function finTransfer(bytes, TransferMessagePayload) external;
         function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external payable;
-        function nearToEthToken(string nearTokenId) external view returns (address);
         function logMetadata(address tokenAddress) external payable;
         function completedTransfers(uint64) external view returns (bool);
 
@@ -141,15 +145,12 @@ impl EvmBridgeClient {
         let omni_bridge = self.omni_bridge()?;
         let token_address = Address::from_slice(&address.0);
 
-        let mut call_builder = omni_bridge.logMetadata(token_address);
-
-        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
-            call_builder = call_builder.value(wormhole_fee);
-        }
-
-        if let Some(nonce) = tx_nonce {
-            call_builder = call_builder.nonce(nonce.to::<u64>());
-        }
+        let call_builder = self.prepare_tx_for_sending(
+            omni_bridge.logMetadata(token_address),
+            tx_nonce,
+            self.get_wormhole_fee().await.ok(),
+            None,
+        );
 
         let receipt = call_builder.send().await?.get_receipt().await?;
 
@@ -190,17 +191,12 @@ impl EvmBridgeClient {
         let serialized_signature = signature.to_bytes();
         assert!(serialized_signature.len() == 65);
 
-        let mut call_builder = omni_bridge
-            .deployToken(Bytes::from(serialized_signature), payload)
-            .gas(500_000);
-
-        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
-            call_builder = call_builder.value(wormhole_fee);
-        }
-
-        if let Some(nonce) = tx_nonce {
-            call_builder = call_builder.nonce(nonce.to::<u64>());
-        }
+        let call_builder = self.prepare_tx_for_sending(
+            omni_bridge.deployToken(Bytes::from(serialized_signature), payload),
+            tx_nonce,
+            self.get_wormhole_fee().await.ok(),
+            Some(DEPLOY_TOKEN_GAS),
+        );
 
         let receipt = call_builder.send().await?.get_receipt().await?;
 
@@ -261,22 +257,21 @@ impl EvmBridgeClient {
             value += U256::from(amount);
         }
 
-        let mut transfer_call = omni_bridge
-            .initTransfer(
+        let call_builder = self.prepare_tx_for_sending(
+            omni_bridge.initTransfer(
                 token,
                 amount,
                 fee.fee.into(),
                 fee.native_fee.into(),
                 receiver.to_string(),
                 message,
-            )
-            .value(value);
+            ),
+            tx_nonce,
+            Some(value),
+            None,
+        );
 
-        if let Some(nonce) = tx_nonce {
-            transfer_call = transfer_call.nonce(nonce.to::<u64>());
-        }
-
-        let receipt = transfer_call.send().await?.get_receipt().await?;
+        let receipt = call_builder.send().await?.get_receipt().await?;
 
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
@@ -317,16 +312,12 @@ impl EvmBridgeClient {
                 .map_or_else(String::new, |addr| addr.to_string()),
         };
 
-        let mut call_builder =
-            omni_bridge.finTransfer(Bytes::from(signature.to_bytes()), bridge_deposit);
-
-        if let Ok(wormhole_fee) = self.get_wormhole_fee().await {
-            call_builder = call_builder.value(wormhole_fee);
-        }
-
-        if let Some(nonce) = tx_nonce {
-            call_builder = call_builder.nonce(nonce.to::<u64>());
-        }
+        let call_builder = self.prepare_tx_for_sending(
+            omni_bridge.finTransfer(Bytes::from(signature.to_bytes()), bridge_deposit),
+            tx_nonce,
+            self.get_wormhole_fee().await.ok(),
+            Some(FIN_TRANSFER_GAS),
+        );
 
         let receipt = call_builder.send().await?.get_receipt().await?;
 
@@ -408,6 +399,33 @@ impl EvmBridgeClient {
             recipient: decoded.recipient.clone(),
             message: decoded.message.clone(),
         })
+    }
+
+    pub fn prepare_tx_for_sending<P, D, N>(
+        &self,
+        mut call_builder: CallBuilder<P, D, N>,
+        tx_nonce: Option<U256>,
+        value: Option<U256>,
+        gas: Option<u64>,
+    ) -> CallBuilder<P, D, N>
+    where
+        P: Provider<N>,
+        D: CallDecoder,
+        N: Network,
+    {
+        if let Some(nonce) = tx_nonce {
+            call_builder = call_builder.nonce(nonce.to::<u64>());
+        }
+
+        if let Some(value) = value {
+            call_builder = call_builder.value(value);
+        }
+
+        if let Some(gas) = gas {
+            call_builder = call_builder.gas(gas);
+        }
+
+        call_builder
     }
 
     async fn get_wormhole_fee(&self) -> Result<U256> {
