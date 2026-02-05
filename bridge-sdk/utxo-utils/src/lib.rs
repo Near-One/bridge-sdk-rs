@@ -4,9 +4,13 @@ use crate::address::UTXOAddress;
 use address::Network;
 use bitcoin::consensus::deserialize;
 use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
+use k256::elliptic_curve::subtle::CtOption;
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
+use zcash_address::unified;
+use zcash_address::unified::Container;
+use zcash_address::unified::Encoding;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
@@ -18,7 +22,14 @@ pub struct UTXO {
     pub balance: u64,
 }
 
-fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, String> {
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct InputPoint {
+    pub utxo: UTXO,
+    pub out_point: OutPoint,
+}
+
+pub fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, String> {
     utxos
         .into_iter()
         .map(|(txid, utxo)| {
@@ -36,9 +47,28 @@ fn utxo_to_out_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<OutPoint>, Strin
         .collect()
 }
 
-pub fn get_gas_fee(chain: ChainKind, num_input: u64, num_output: u64, fee_rate: u64) -> u64 {
+pub fn utxo_to_input_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<InputPoint>, String> {
+    let outputs = utxo_to_out_points(utxos.clone())?;
+    Ok(utxos
+        .into_iter()
+        .zip(outputs)
+        .map(|((_, utxo), out_point)| InputPoint { utxo, out_point })
+        .collect())
+}
+
+pub fn get_gas_fee(
+    chain: ChainKind,
+    num_input: u64,
+    num_output: u64,
+    fee_rate: u64,
+    orchard: bool,
+) -> u64 {
     if chain == ChainKind::Zcash {
-        5000 * std::cmp::max(num_input, num_output)
+        let mut fee = 5000 * std::cmp::max(num_input, num_output);
+        if orchard {
+            fee += 5000;
+        }
+        fee
     } else {
         let tx_size = 12 + num_input * 68 + num_output * 31;
         (fee_rate * tx_size / 1024) + 141
@@ -47,11 +77,9 @@ pub fn get_gas_fee(chain: ChainKind, num_input: u64, num_output: u64, fee_rate: 
 
 #[allow(clippy::implicit_hasher)]
 pub fn choose_utxos(
-    chain: ChainKind,
     amount: u128,
     utxos: HashMap<String, UTXO>,
-    fee_rate: u64,
-) -> Result<(Vec<OutPoint>, u128, u128), String> {
+) -> Result<(Vec<(String, UTXO)>, u128), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
 
@@ -67,19 +95,7 @@ pub fn choose_utxos(
         }
     }
 
-    let gas_fee = get_gas_fee(
-        chain,
-        selected
-            .len()
-            .try_into()
-            .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
-        2,
-        fee_rate,
-    )
-    .into();
-
-    let out_points = utxo_to_out_points(selected)?;
-    Ok((out_points, utxos_balance, gas_fee))
+    Ok((selected, utxos_balance))
 }
 
 #[allow(clippy::implicit_hasher)]
@@ -123,7 +139,7 @@ pub fn choose_utxos_for_active_management(
             .try_into()
             .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
 
-        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate);
+        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate, false);
         let out_points = utxo_to_out_points(selected)?;
 
         let tx_outs = get_tx_outs_utxo_management(
@@ -152,6 +168,7 @@ pub fn choose_utxos_for_active_management(
                 .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
             1,
             fee_rate,
+            false,
         );
         let out_points = utxo_to_out_points(selected)?;
 
@@ -227,6 +244,7 @@ pub fn get_tx_outs_script_pubkey(
 pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
     deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
 }
+
 pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
@@ -254,4 +272,46 @@ pub fn get_tx_outs_utxo_management(
     }
 
     Ok(res)
+}
+
+pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Address>, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
+    let mut parsed_address = None;
+    for receiver in ua.items() {
+        if let unified::Receiver::Orchard(orchard_receiver) = receiver {
+            parsed_address = Some(orchard_receiver);
+        }
+    }
+    Ok(orchard::Address::from_raw_address_bytes(
+        &parsed_address.ok_or_else(|| "No orchard address found in unified address".to_string())?,
+    ))
+}
+
+pub fn contains_orchard_address(uaddress: &str) -> Result<bool, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
+    for receiver in ua.items() {
+        if let unified::Receiver::Orchard(_) = receiver {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+pub fn contains_transparent_address(uaddress: &str) -> Result<bool, String> {
+    let (_, ua) = unified::Address::decode(uaddress)
+        .map_err(|err| format!("Invalid unified address {err}"))?;
+    for receiver in ua.items() {
+        if let unified::Receiver::P2pkh(_) = receiver {
+            return Ok(true);
+        }
+
+        if let unified::Receiver::P2sh(_) = receiver {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }

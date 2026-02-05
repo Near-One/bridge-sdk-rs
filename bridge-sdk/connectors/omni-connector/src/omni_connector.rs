@@ -1,3 +1,5 @@
+mod zcash;
+
 use alloy::primitives::{Address, TxHash, U256};
 use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
@@ -19,8 +21,8 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo,
-    TokenReceiverMessage, VUTXO,
+    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
+    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -34,7 +36,7 @@ use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
 };
-use utxo_utils::get_gas_fee;
+use utxo_utils::{get_gas_fee, UTXO};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -55,6 +57,7 @@ pub struct OmniConnector {
     eth_light_client: Option<LightClient>,
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
+    enable_orchard: Option<bool>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -77,6 +80,7 @@ impl AnyUtxoClient<'_> {
     forward_common_utxo_method!(get_fee_rate() -> std::result::Result<u64, UtxoClientError>);
     forward_common_utxo_method!(extract_btc_proof(tx_hash: &str) -> std::result::Result<utxo_bridge_client::types::TxProof, UtxoClientError>);
     forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> std::result::Result<String, UtxoClientError>);
+    forward_common_utxo_method!(get_current_height() -> std::result::Result<u64, UtxoClientError>);
     forward_common_utxo_method!(get_bridge_transaction_data(tx_hash: &str, deposit_address: &str) -> std::result::Result<utxo_bridge_client::types::UtxoBridgeTransactionData, UtxoClientError>);
 }
 
@@ -232,7 +236,6 @@ pub enum BtcDepositArgs {
         msg: DepositMsg,
     },
 }
-
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
@@ -667,6 +670,7 @@ impl OmniConnector {
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let enable_orchard = self.get_orchard_mode(&target_btc_address)?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -679,11 +683,20 @@ impl OmniConnector {
             BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
         })?;
 
-        let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, net_amount, utxos, fee_rate)
-                .map_err(BridgeSdkError::UtxoManagementError)?;
+        let (selected_utxo, utxos_balance) = utxo_utils::choose_utxos(net_amount, utxos)
+            .map_err(BridgeSdkError::UtxoManagementError)?;
+        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
+            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
+        })?;
+        let gas_fee = get_gas_fee(
+            chain,
+            selected_utxo.clone().len().try_into().unwrap(),
+            2 - <bool as std::convert::Into<u64>>::into(enable_orchard),
+            fee_rate,
+            enable_orchard,
+        )
+        .into();
 
-        // TODO: use extract_utxo method
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
@@ -709,7 +722,18 @@ impl OmniConnector {
             chain,
             self.network()?,
         )
-        .map_err(BridgeSdkError::UtxoManagementError)?;
+        .map_err(|err| {
+            BridgeSdkError::UtxoManagementError(format!("Error on get tx out: {err}"))
+        })?;
+
+        let (chain_specific_data, output) = self
+            .get_chain_specific_data(
+                enable_orchard,
+                target_btc_address.clone(),
+                tx_outs,
+                selected_utxo,
+            )
+            .await?;
 
         near_bridge_client
             .init_btc_transfer_near_to_btc(
@@ -718,8 +742,9 @@ impl OmniConnector {
                 TokenReceiverMessage::Withdraw {
                     target_btc_address,
                     input: out_points,
-                    output: tx_outs,
+                    output,
                     max_gas_fee: None,
+                    chain_specific_data,
                 },
                 transaction_options,
             )
@@ -737,15 +762,17 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
     ) -> Result<CryptoHash> {
+        let enable_orchard = self.get_orchard_mode(&recipient)?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
-        let (out_points, tx_outs, gas_fee) = self
+        let (out_points, tx_outs, chain_specific_data, gas_fee) = self
             .extract_utxo(
                 chain,
                 recipient.clone(),
                 amount.checked_sub(fee).ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
                 })?,
+                enable_orchard,
                 fee_rate,
             )
             .await?;
@@ -769,12 +796,17 @@ impl OmniConnector {
                     input: out_points,
                     output: tx_outs,
                     max_gas_fee,
+                    chain_specific_data,
                 },
                 transaction_options,
             )
             .await
     }
 
+    /// Initiates an RBF (Replace-By-Fee) transaction to increase gas fee.
+    ///
+    /// For Zcash shielded withdrawals, you can optionally provide a new Orchard bundle.
+    /// Use `regenerate_orchard_bundle` to create a new bundle with the same parameters.
     pub async fn near_rbf_increase_gas_fee(
         &self,
         chain: ChainKind,
@@ -782,11 +814,51 @@ impl OmniConnector {
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        self.near_rbf_increase_gas_fee_with_bundle(
+            chain,
+            btc_tx_hash,
+            fee_rate,
+            None,
+            None,
+            transaction_options,
+        )
+        .await
+    }
+
+    /// Initiates an RBF (Replace-By-Fee) transaction with an optional new Orchard bundle.
+    ///
+    /// For Zcash shielded withdrawals, this allows replacing the zero-knowledge proof
+    /// while keeping the same recipient and amount. Use `regenerate_orchard_bundle`
+    /// to create a new bundle.
+    ///
+    /// # Arguments
+    /// * `chain` - The chain kind (Btc or Zcash)
+    /// * `btc_tx_hash` - The pending transaction hash to replace
+    /// * `fee_rate` - Optional fee rate override
+    /// * `orchard_bundle_hex` - Optional new Orchard bundle (hex-encoded)
+    /// * `expiry_height` - Optional expiry height for the new bundle
+    /// * `transaction_options` - Transaction options
+    pub async fn near_rbf_increase_gas_fee_with_bundle(
+        &self,
+        chain: ChainKind,
+        btc_tx_hash: String,
+        fee_rate: Option<u64>,
+        orchard_bundle_hex: Option<String>,
+        expiry_height: Option<u32>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
 
         if chain == ChainKind::Zcash {
             return near_bridge_client
-                .btc_rbf_increase_gas_fee(chain, btc_tx_hash, vec![], transaction_options)
+                .btc_rbf_increase_gas_fee(
+                    chain,
+                    btc_tx_hash,
+                    vec![],
+                    orchard_bundle_hex,
+                    expiry_height,
+                    transaction_options,
+                )
                 .await;
         }
 
@@ -844,6 +916,7 @@ impl OmniConnector {
             })?,
             2,
             fee_rate,
+            false,
         );
 
         let net_amount = u64::try_from(
@@ -869,7 +942,7 @@ impl OmniConnector {
         );
 
         near_bridge_client
-            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, transaction_options)
+            .btc_rbf_increase_gas_fee(chain, btc_tx_hash, outs, None, None, transaction_options)
             .await
     }
 
@@ -902,7 +975,6 @@ impl OmniConnector {
         )
         .await
     }
-
     pub async fn btc_fin_transfer(
         &self,
         chain: ChainKind,
@@ -1920,6 +1992,27 @@ impl OmniConnector {
         wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
+    pub fn get_orchard_mode(&self, target_btc_address: &str) -> Result<bool> {
+        let has_orchard = utxo_utils::contains_orchard_address(target_btc_address)
+            .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?;
+
+        let has_transparent = utxo_utils::contains_transparent_address(target_btc_address)
+            .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?;
+
+        let enable_orchard = match (has_orchard, has_transparent) {
+            (false, false) => {
+                return Err(BridgeSdkError::InvalidArgument(
+                    "Address contains neither orchard nor transparent components".to_string(),
+                ));
+            }
+            (false, true) => false,
+            (true, false) => true,
+            (true, true) => self.enable_orchard.unwrap_or(false),
+        };
+
+        Ok(enable_orchard)
+    }
+
     pub fn denormalize_amount(&self, decimals: &Decimals, amount: u128) -> Result<u128> {
         amount
             .checked_mul(10_u128.pow((decimals.origin_decimals - decimals.decimals).into()))
@@ -2232,8 +2325,9 @@ impl OmniConnector {
         chain: ChainKind,
         target_btc_address: String,
         amount: u128,
+        enable_orchard: bool,
         fee_rate: Option<u64>,
-    ) -> Result<(Vec<OutPoint>, Vec<TxOut>, u64)> {
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -2243,10 +2337,20 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
-        let (out_points, utxos_balance, gas_fee) =
-            utxo_utils::choose_utxos(chain, amount, utxos, fee_rate)
-                .map_err(BridgeSdkError::UtxoManagementError)?;
+        let (selected_utxo, utxos_balance) =
+            utxo_utils::choose_utxos(amount, utxos).map_err(BridgeSdkError::UtxoManagementError)?;
+        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
+            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
+        })?;
 
+        let gas_fee = get_gas_fee(
+            chain,
+            selected_utxo.len().try_into().unwrap(),
+            2 - <bool as std::convert::Into<u64>>::into(enable_orchard),
+            fee_rate,
+            enable_orchard,
+        )
+        .into();
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let tx_outs = utxo_utils::get_tx_outs(
             &target_btc_address,
@@ -2274,12 +2378,54 @@ impl OmniConnector {
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
+        let (chain_specific_data, output) = self
+            .get_chain_specific_data(enable_orchard, target_btc_address, tx_outs, selected_utxo)
+            .await?;
+
         Ok((
             out_points,
-            tx_outs,
+            output,
+            chain_specific_data,
             gas_fee.try_into().map_err(|err| {
                 BridgeSdkError::UnknownError(format!("gas_fee unexpectedly high: {err}"))
             })?,
         ))
+    }
+
+    async fn get_chain_specific_data(
+        &self,
+        enable_orchard: bool,
+        target_btc_address: String,
+        tx_outs: Vec<TxOut>,
+        selected_utxo: Vec<(String, UTXO)>,
+    ) -> Result<(Option<ChainSpecificData>, Vec<TxOut>)> {
+        if enable_orchard {
+            let (orchard, expiry_height) = self
+                .get_orchard_raw(
+                    target_btc_address.clone(),
+                    tx_outs[0].clone().value.to_sat(),
+                    utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
+                        BridgeSdkError::UtxoManagementError(format!(
+                            "Error on get input points: {e}"
+                        ))
+                    })?,
+                    tx_outs.get(1),
+                )
+                .await?;
+            let mut output = vec![];
+            if tx_outs.len() == 2 {
+                output.push(tx_outs[1].clone());
+            }
+
+            Ok((
+                Some(ChainSpecificData {
+                    orchard_bundle_bytes: orchard.into(),
+                    expiry_height,
+                }),
+                output,
+            ))
+        } else {
+            Ok((None, tx_outs))
+        }
     }
 }

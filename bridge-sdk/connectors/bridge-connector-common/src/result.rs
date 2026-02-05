@@ -56,6 +56,8 @@ pub enum BridgeSdkError {
     UtxoManagementError(String),
     #[error("Unexpected error occured: {0}")]
     UnknownError(String),
+    #[error("Error on build ZCash Orchard Bundle: {0}")]
+    ZCashOrchardBundleError(String),
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {

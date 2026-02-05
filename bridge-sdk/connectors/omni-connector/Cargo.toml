@@ -1,6 +1,6 @@
 [package]
 name = "omni-connector"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2021"
 rust-version = "1.88.0"
 
@@ -24,6 +24,18 @@ solana-sdk.workspace = true
 light-client.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
+
+zcash_primitives.workspace = true
+zcash_transparent.workspace = true
+zcash_protocol.workspace = true
+pczt.workspace = true
+bip0039.workspace = true
+zcash_keys.workspace = true
+orchard.workspace = true
+zcash_address.workspace = true
+ripemd.workspace = true
+sha2.workspace = true
+
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }
 bridge-connector-common = { path = "../bridge-connector-common" }

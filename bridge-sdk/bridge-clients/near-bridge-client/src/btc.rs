@@ -1,11 +1,14 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
-use bitcoin::{OutPoint, TxOut};
+use base64::Engine;
+use bitcoin::{OutPoint, PublicKey as BtcPublicKey, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_sdk::json_types::Base64VecU8;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
 use omni_types::ChainKind;
@@ -112,6 +115,12 @@ pub struct BtcVerifyWithdrawArgs {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChainSpecificData {
+    pub orchard_bundle_bytes: Base64VecU8,
+    pub expiry_height: u32,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum TokenReceiverMessage {
     DepositProtocolFee,
     Withdraw {
@@ -119,6 +128,7 @@ pub enum TokenReceiverMessage {
         input: Vec<OutPoint>,
         output: Vec<TxOut>,
         max_gas_fee: Option<U128>,
+        chain_specific_data: Option<ChainSpecificData>,
     },
 }
 
@@ -163,6 +173,8 @@ struct PartialConfig {
     active_management_upper_limit: u32,
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
+    expiry_height_gap: Option<u32>,
+    chain_signatures_root_public_key: Option<near_sdk::PublicKey>,
 }
 
 #[serde_as]
@@ -182,6 +194,34 @@ pub struct NearToBtcTransferInfo {
 #[derive(Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 enum UTXOChainMsg {
     MaxGasFee(U64),
+}
+#[derive(serde::Deserialize)]
+struct Logs {
+    data: Vec<LogsData>,
+}
+
+#[derive(serde::Deserialize)]
+struct LogsData {
+    #[serde(flatten)]
+    tx: TxBytes,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum TxBytes {
+    Base64 { tx_bytes_base64: String },
+    Array { tx_bytes: Vec<u8> },
+}
+
+impl TxBytes {
+    fn into_bytes(self) -> Result<Vec<u8>> {
+        match self {
+            TxBytes::Base64 { tx_bytes_base64 } => base64::engine::general_purpose::STANDARD
+                .decode(tx_bytes_base64)
+                .map_err(|e| BridgeSdkError::InvalidLog(format!("Error parsing base64: {e}"))),
+            TxBytes::Array { tx_bytes } => Ok(tx_bytes),
+        }
+    }
 }
 
 impl NearBridgeClient {
@@ -333,6 +373,8 @@ impl NearBridgeClient {
         chain: ChainKind,
         btc_tx_hash: String,
         outs: Vec<TxOut>,
+        orchard_bundle_hex: Option<String>,
+        expiry_height: Option<u32>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
@@ -347,7 +389,9 @@ impl NearBridgeClient {
                 args: serde_json::json!({
                     "chain_kind": chain,
                     "original_btc_pending_verify_id": btc_tx_hash,
-                    "output": outs
+                    "output": outs,
+                    "orchard_bundle_bytes": orchard_bundle_hex,
+                    "expiry_height": expiry_height
                 })
                 .to_string()
                 .into_bytes(),
@@ -626,6 +670,34 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
+    pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> Result<String> {
+        let config = self.get_config(chain).await?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        let chain_signatures_root_public_key = config.chain_signatures_root_public_key.ok_or(
+            BridgeSdkError::ContractConfigurationError(format!(
+                "Chain signatures root public key is not set for chain {:?}",
+                chain
+            )),
+        )?;
+
+        let mpc_pk =
+            crypto_shared::near_public_key_to_affine_point(chain_signatures_root_public_key);
+        let epsilon =
+            crypto_shared::derive_epsilon(&btc_connector.to_string().parse().unwrap(), &utxo.path);
+        let user_pk = crypto_shared::derive_key(mpc_pk, epsilon);
+        let user_pk_encoded_point = user_pk.to_encoded_point(false);
+        let public_key_bytes = user_pk_encoded_point.as_bytes().to_vec();
+        let uncompressed_btc_public_key =
+            BtcPublicKey::from_slice(&public_key_bytes).expect("Invalid public key bytes");
+
+        Ok(uncompressed_btc_public_key.inner.to_string())
+    }
+
+    pub async fn get_expiry_height_gap(&self, chain: ChainKind) -> Result<u32> {
+        let config = self.get_config(chain).await?;
+        Ok(config.expiry_height_gap.unwrap_or(0))
+    }
+
     pub async fn get_utxos(&self, chain: ChainKind) -> Result<HashMap<String, UTXO>> {
         let utxo_num = self.get_utxo_num(chain).await?;
 
@@ -776,27 +848,17 @@ impl NearBridgeClient {
                 "Missing EVENT_JSON prefix".to_string(),
             ))?;
         let v: Value = serde_json::from_str(json_str)?;
-        let bytes = v["data"][0]["tx_bytes"]
-            .as_array()
-            .ok_or_else(|| {
-                BridgeSdkError::InvalidLog("Expected 'tx_bytes' to be an array".to_string())
-            })?
-            .iter()
-            .map(|val| {
-                let num = val.as_u64().ok_or_else(|| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Expected u64 value in 'tx_bytes', got: {val}"
-                    ))
-                })?;
 
-                u8::try_from(num).map_err(|e| {
-                    BridgeSdkError::InvalidLog(format!(
-                        "Value {num} in 'tx_bytes' is out of range for u8: {e}"
-                    ))
-                })
-            })
-            .collect::<Result<Vec<u8>>>()?;
+        let logs: Logs = serde_json::from_value(v)
+            .map_err(|e| BridgeSdkError::InvalidLog(format!("Invalid log shape: {e}")))?;
 
+        let entry = logs
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| BridgeSdkError::InvalidLog("Expected 'data[0]'".into()))?;
+
+        let bytes = entry.tx.into_bytes()?;
         Ok(bytes)
     }
 

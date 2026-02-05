@@ -110,6 +110,8 @@ struct CliConfig {
     zcash_connector: Option<String>,
     #[arg(long)]
     zcash: Option<String>,
+    #[arg(long)]
+    enable_orchard: Option<bool>,
 
     #[arg(long)]
     config: Option<String>,
@@ -188,6 +190,7 @@ impl CliConfig {
             zcash_basic_auth: self.zcash_basic_auth.or(other.zcash_basic_auth),
             zcash_connector: self.zcash_connector.or(other.zcash_connector),
             zcash: self.zcash.or(other.zcash),
+            enable_orchard: self.enable_orchard.or(other.enable_orchard),
 
             config: self.config.or(other.config),
         }
@@ -256,6 +259,7 @@ fn env_config() -> CliConfig {
         zcash_basic_auth: env::var("ZCASH_BASIC_AUTH").ok(),
         zcash_connector: env::var("ZCASH_CONNECTOR").ok(),
         zcash: env::var("ZCASH").ok(),
+        enable_orchard: env::var("ENABLE_ORCHARD").ok().map(|s| s == "true"),
 
         config: None,
     }
@@ -332,6 +336,7 @@ fn default_config(network: Network) -> CliConfig {
             zcash_basic_auth: None,
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_MAINNET.to_owned()),
             zcash: Some(defaults::ZCASH_MAINNET.to_owned()),
+            enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_MAINNET),
 
             config: None,
         },
@@ -403,6 +408,7 @@ fn default_config(network: Network) -> CliConfig {
             zcash_basic_auth: None,
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_TESTNET.to_owned()),
             zcash: Some(defaults::ZCASH_TESTNET.to_owned()),
+            enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_TESTNET),
 
             config: None,
         },
@@ -474,6 +480,7 @@ fn default_config(network: Network) -> CliConfig {
             zcash_basic_auth: None,
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_DEVNET.to_owned()),
             zcash: Some(defaults::ZCASH_DEVNET.to_owned()),
+            enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_DEVNET),
 
             config: None,
         },

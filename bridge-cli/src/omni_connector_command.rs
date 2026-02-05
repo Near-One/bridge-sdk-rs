@@ -1455,6 +1455,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .eth_light_client(Some(eth_light_client))
         .btc_light_client(Some(btc_light_client))
         .zcash_light_client(Some(zcash_light_client))
+        .enable_orchard(combined_config.enable_orchard)
         .build()
         .unwrap()
 }
