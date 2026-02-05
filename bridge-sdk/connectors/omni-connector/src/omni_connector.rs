@@ -683,7 +683,7 @@ impl OmniConnector {
         let (selected_utxo, utxos_balance) = utxo_utils::choose_utxos(net_amount, utxos)
             .map_err(BridgeSdkError::UtxoManagementError)?;
         let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
-            BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
         })?;
         let gas_fee = get_gas_fee(
             chain,
@@ -719,7 +719,9 @@ impl OmniConnector {
             chain,
             self.network()?,
         )
-        .map_err(|err| BridgeSdkError::UtxoClientError(format!("Error on get tx out: {err}")))?;
+        .map_err(|err| {
+            BridgeSdkError::UtxoManagementError(format!("Error on get tx out: {err}"))
+        })?;
 
         let (chain_specific_data, output) = self
             .get_chain_specific_data(
@@ -2322,7 +2324,7 @@ impl OmniConnector {
         let (selected_utxo, utxos_balance) =
             utxo_utils::choose_utxos(amount, utxos).map_err(BridgeSdkError::UtxoManagementError)?;
         let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
-            BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
         })?;
 
         let gas_fee = get_gas_fee(
@@ -2387,7 +2389,9 @@ impl OmniConnector {
                     target_btc_address.clone(),
                     tx_outs[0].clone().value.to_sat(),
                     utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
-                        BridgeSdkError::UtxoClientError(format!("Error on get input points: {e}"))
+                        BridgeSdkError::UtxoManagementError(format!(
+                            "Error on get input points: {e}"
+                        ))
                     })?,
                     tx_outs.get(1),
                 )

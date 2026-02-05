@@ -1,9 +1,10 @@
 use crate::NearBridgeClient;
 use crate::TransactionOptions;
 use base64::Engine;
-use bitcoin::{OutPoint, TxOut, PublicKey as BtcPublicKey};
+use bitcoin::{OutPoint, PublicKey as BtcPublicKey, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use futures::future::join_all;
+use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use near_rpc_client::{ChangeRequest, ViewRequest};
@@ -18,7 +19,6 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 use utxo_utils::UTXO;
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
@@ -174,7 +174,7 @@ struct PartialConfig {
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
     expiry_height_gap: Option<u32>,
-    chain_signatures_root_public_key: Option<near_sdk::PublicKey>
+    chain_signatures_root_public_key: Option<near_sdk::PublicKey>,
 }
 
 #[serde_as]
@@ -673,12 +673,17 @@ impl NearBridgeClient {
     pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> Result<String> {
         let config = self.get_config(chain).await?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        let chain_signatures_root_public_key = config.chain_signatures_root_public_key.unwrap();
+        let chain_signatures_root_public_key = config.chain_signatures_root_public_key.ok_or(
+            BridgeSdkError::ContractConfigurationError(format!(
+                "Chain signatures root public key is not set for chain {:?}",
+                chain
+            )),
+        )?;
 
-        let mpc_pk = crypto_shared::near_public_key_to_affine_point(
-            chain_signatures_root_public_key,
-        );
-        let epsilon = crypto_shared::derive_epsilon(&btc_connector.to_string().parse().unwrap(), &utxo.path);
+        let mpc_pk =
+            crypto_shared::near_public_key_to_affine_point(chain_signatures_root_public_key);
+        let epsilon =
+            crypto_shared::derive_epsilon(&btc_connector.to_string().parse().unwrap(), &utxo.path);
         let user_pk = crypto_shared::derive_key(mpc_pk, epsilon);
         let user_pk_encoded_point = user_pk.to_encoded_point(false);
         let public_key_bytes = user_pk_encoded_point.as_bytes().to_vec();
@@ -687,7 +692,7 @@ impl NearBridgeClient {
 
         Ok(uncompressed_btc_public_key.inner.to_string())
     }
-    
+
     pub async fn get_expiry_height_gap(&self, chain: ChainKind) -> Result<u32> {
         let config = self.get_config(chain).await?;
         Ok(config.expiry_height_gap.unwrap_or(0))
