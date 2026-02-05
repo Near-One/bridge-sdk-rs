@@ -90,7 +90,6 @@ pub struct UTXOChainAccounts {
     pub satoshi_relayer: Option<AccountId>,
 }
 
-/// Bridging NEAR-originated NEP-141 tokens
 #[derive(Builder, Default, Clone)]
 pub struct NearBridgeClient {
     #[doc = r"NEAR RPC endpoint"]
@@ -497,7 +496,10 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
 
-        let deposit = self.get_required_balance_for_deploy_token().await?;
+        // let deposit = self.get_required_balance_for_deploy_token().await?;
+        // TODO: temporary fix for deploy token deposit, remove when token deployer contract is
+        // updated for eth tokens
+        let deposit = NearToken::from_near(4).as_yoctonear();
 
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -597,7 +599,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Transfers NEP-141 tokens to `OmniBridge`. The proof from this transaction is then used to mint the corresponding tokens on Ethereum
     #[tracing::instrument(skip_all, name = "NEAR INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -607,10 +608,23 @@ impl NearBridgeClient {
         receiver: OmniAddress,
         fee: u128,
         native_fee: u128,
+        message: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let omni_bridge_id = self.omni_bridge_id()?;
+
+        if amount == 0 {
+            return Err(BridgeSdkError::ConfigError(
+                "Transfer amount must be greater than 0".to_string(),
+            ));
+        }
+
+        if fee == 0 && native_fee == 0 {
+            tracing::warn!(
+                "Transfer initiated with 0 fee. This transaction may be rejected by the relayer."
+            );
+        }
 
         let required_balance = self
             .get_required_balance_for_init_transfer()
@@ -626,6 +640,17 @@ impl NearBridgeClient {
             transaction_options.nonce
         };
 
+        let mut init_transfer_msg = serde_json::Map::new();
+        init_transfer_msg.insert("recipient".to_string(), serde_json::json!(receiver));
+        init_transfer_msg.insert("fee".to_string(), serde_json::json!(fee.to_string()));
+        init_transfer_msg.insert(
+            "native_token_fee".to_string(),
+            serde_json::json!(native_fee.to_string()),
+        );
+        if !message.is_empty() {
+            init_transfer_msg.insert("msg".to_string(), serde_json::json!(message));
+        }
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -638,12 +663,7 @@ impl NearBridgeClient {
                 args: serde_json::json!({
                     "receiver_id": omni_bridge_id,
                     "amount": amount.to_string(),
-                    "msg": serde_json::json!({
-                        "recipient": receiver,
-                        "fee": fee.to_string(),
-                        "native_token_fee": native_fee.to_string()
-                    })
-                    .to_string()
+                    "msg": serde_json::Value::Object(init_transfer_msg).to_string(),
                 })
                 .to_string()
                 .into_bytes(),

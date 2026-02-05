@@ -6,6 +6,7 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{field::MakeExt, fmt::format, EnvFilter, FmtSubscriber};
 
 mod defaults;
+mod fee;
 mod omni_connector_command;
 
 #[derive(Args, Debug, Clone, Deserialize, Default)]
@@ -24,6 +25,8 @@ struct CliConfig {
     btc_light_client_id: Option<String>,
     #[arg(long)]
     zcash_light_client_id: Option<String>,
+    #[arg(long)]
+    bridge_indexer_api_url: Option<String>,
 
     #[arg(long)]
     eth_rpc: Option<String>,
@@ -124,6 +127,7 @@ impl CliConfig {
             eth_light_client_id: self.eth_light_client_id.or(other.eth_light_client_id),
             btc_light_client_id: self.btc_light_client_id.or(other.btc_light_client_id),
             zcash_light_client_id: self.zcash_light_client_id.or(other.zcash_light_client_id),
+            bridge_indexer_api_url: self.bridge_indexer_api_url.or(other.bridge_indexer_api_url),
 
             eth_rpc: self.eth_rpc.or(other.eth_rpc),
             eth_private_key: self.eth_private_key.or(other.eth_private_key),
@@ -202,6 +206,7 @@ fn env_config() -> CliConfig {
         eth_light_client_id: env::var("ETH_LIGHT_CLIENT_ID").ok(),
         btc_light_client_id: env::var("BTC_LIGHT_CLIENT_ID").ok(),
         zcash_light_client_id: env::var("ZCASH_LIGHT_CLIENT_ID").ok(),
+        bridge_indexer_api_url: env::var("BRIDGE_INDEXER_API_URL").ok(),
 
         eth_rpc: env::var("ETH_RPC").ok(),
         eth_private_key: env::var("ETH_PRIVATE_KEY").ok(),
@@ -271,6 +276,7 @@ fn default_config(network: Network) -> CliConfig {
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_MAINNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
+            bridge_indexer_api_url: Some(defaults::BRIDGE_INDEXER_API_MAINNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_MAINNET.to_owned()),
             eth_private_key: None,
@@ -342,6 +348,7 @@ fn default_config(network: Network) -> CliConfig {
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_TESTNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
+            bridge_indexer_api_url: Some(defaults::BRIDGE_INDEXER_API_TESTNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_TESTNET.to_owned()),
             eth_private_key: None,
@@ -413,6 +420,7 @@ fn default_config(network: Network) -> CliConfig {
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_DEVNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
+            bridge_indexer_api_url: Some(defaults::BRIDGE_INDEXER_API_DEVNET.to_owned()),
 
             eth_rpc: Some(defaults::ETH_RPC_DEVNET.to_owned()),
             eth_private_key: None,
