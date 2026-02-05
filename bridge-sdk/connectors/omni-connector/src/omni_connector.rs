@@ -145,7 +145,7 @@ pub enum BindTokenArgs {
 
 pub enum InitTransferArgs {
     NearInitTransfer {
-        token: String,
+        token: AccountId,
         amount: u128,
         recipient: OmniAddress,
         fee: Option<u128>,
@@ -390,7 +390,7 @@ impl OmniConnector {
     #[allow(clippy::too_many_arguments)]
     pub async fn near_init_transfer(
         &self,
-        token_id: String,
+        token_id: AccountId,
         amount: u128,
         receiver: OmniAddress,
         fee: u128,
@@ -1790,25 +1790,27 @@ impl OmniConnector {
                 message,
                 transaction_options,
             } => {
-                let fee = fee.ok_or_else(|| {
-                    BridgeSdkError::ConfigError(
-                        "OmniConnector Near init_transfer missing fees: provide fee and native_fee before calling."
-                            .to_string(),
-                    )
-                })?;
-                let native_fee = native_fee.ok_or_else(|| {
-                    BridgeSdkError::ConfigError(
-                        "OmniConnector Near init_transfer missing fees: provide fee and native_fee before calling."
-                            .to_string(),
-                    )
-                })?;
+                match (fee, native_fee) {
+                    (Some(_), Some(_)) => {
+                        return Err(BridgeSdkError::ConfigError(
+                            "init_transfer can't have both fee and native_fee".to_string(),
+                        ))
+                    }
+                    (None, None) => {
+                        return Err(BridgeSdkError::ConfigError(
+                            "init_transfer missing fee: provide fee or native_fee before calling."
+                                .to_string(),
+                        ))
+                    }
+                    _ => {}
+                }
 
                 self.near_init_transfer(
                     near_token_id,
                     amount,
                     recipient,
-                    fee,
-                    native_fee,
+                    fee.unwrap_or(0),
+                    native_fee.unwrap_or(0),
                     message,
                     transaction_options,
                 )

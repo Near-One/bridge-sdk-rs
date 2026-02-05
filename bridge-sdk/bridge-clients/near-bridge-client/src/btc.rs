@@ -675,8 +675,7 @@ impl NearBridgeClient {
         let btc_connector = self.utxo_chain_connector(chain)?;
         let chain_signatures_root_public_key = config.chain_signatures_root_public_key.ok_or(
             BridgeSdkError::ContractConfigurationError(format!(
-                "Chain signatures root public key is not set for chain {:?}",
-                chain
+                "Chain signatures root public key is not set for chain {chain:?}",
             )),
         )?;
 
