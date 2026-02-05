@@ -46,6 +46,7 @@ pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io/";
 pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
 pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
+pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
@@ -95,6 +96,7 @@ pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
 pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
+pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
 
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
@@ -144,3 +146,4 @@ pub const SATOSHI_RELAYER_DEVNET: &str = "cosmosfirst.testnet";
 pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/";
 pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";
+pub const ENABLE_ORCHARD_BUNDLE_DEVNET: bool = true;

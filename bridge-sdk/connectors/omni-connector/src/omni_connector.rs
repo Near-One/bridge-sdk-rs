@@ -57,6 +57,7 @@ pub struct OmniConnector {
     eth_light_client: Option<LightClient>,
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
+    enable_orchard: Option<bool>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -664,10 +665,9 @@ impl OmniConnector {
         chain: ChainKind,
         target_btc_address: String,
         amount: u128,
-        enable_orchard: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let enable_orchard = Self::get_orchard_mode(&target_btc_address, enable_orchard)?;
+        let enable_orchard = self.get_orchard_mode(&target_btc_address)?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -756,11 +756,10 @@ impl OmniConnector {
         amount: u128,
         fee_rate: Option<u64>,
         transfer_id: omni_types::TransferId,
-        enable_orchard: bool,
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
     ) -> Result<CryptoHash> {
-        let enable_orchard = Self::get_orchard_mode(&recipient, enable_orchard)?;
+        let enable_orchard = self.get_orchard_mode(&recipient)?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
@@ -950,7 +949,6 @@ impl OmniConnector {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
-        enable_orchard: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -969,7 +967,6 @@ impl OmniConnector {
             amount,
             fee_rate,
             transfer_id,
-            enable_orchard,
             transaction_options,
             max_gas_fee,
         )
@@ -1976,7 +1973,7 @@ impl OmniConnector {
         wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
-    pub fn get_orchard_mode(target_btc_address: &str, enable_orchard: bool) -> Result<bool> {
+    pub fn get_orchard_mode(&self, target_btc_address: &str) -> Result<bool> {
         let has_orchard = utxo_utils::contains_orchard_address(target_btc_address)
             .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?;
 
@@ -1991,7 +1988,7 @@ impl OmniConnector {
             }
             (false, true) => false,
             (true, false) => true,
-            (true, true) => enable_orchard,
+            (true, true) => self.enable_orchard.unwrap_or(false),
         };
 
         Ok(enable_orchard)
