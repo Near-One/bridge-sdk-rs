@@ -588,6 +588,13 @@ pub enum InternalSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Get Solana token vault (locker) PDA")]
+    SolanaGetTokenVault {
+        #[clap(short, long, help = "Token mint address")]
+        token: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
 }
 
 #[allow(clippy::too_many_lines)]
@@ -1248,6 +1255,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .unwrap();
 
                 tracing::info!("Near Tx Hash: {tx_hash}");
+            }
+            InternalSubCommand::SolanaGetTokenVault { token, config_cli } => {
+                omni_connector(network, config_cli)
+                    .solana_get_token_vault(token.parse().unwrap())
+                    .await
+                    .unwrap();
             }
         },
     }

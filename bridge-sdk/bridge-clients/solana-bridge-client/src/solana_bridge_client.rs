@@ -1001,6 +1001,12 @@ impl SolanaBridgeClient {
         Ok(mint_account.owner)
     }
 
+    pub fn get_token_vault(&self, token: Pubkey) -> Result<Pubkey, SolanaBridgeClientError> {
+        let program_id = self.program_id()?;
+        let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
+        Ok(vault)
+    }
+
     pub fn client(&self) -> Result<&RpcClient, SolanaBridgeClientError> {
         self.client
             .as_ref()

@@ -1457,6 +1457,19 @@ impl OmniConnector {
         Ok(version)
     }
 
+    pub async fn solana_get_token_vault(&self, token: Pubkey) -> Result<Pubkey> {
+        let solana_bridge_client = self.solana_bridge_client()?;
+        let vault = solana_bridge_client.get_token_vault(token)?;
+
+        tracing::info!(
+            token = token.to_string(),
+            vault = vault.to_string(),
+            "Derived Solana token vault"
+        );
+
+        Ok(vault)
+    }
+
     pub async fn solana_log_metadata(&self, token: Pubkey) -> Result<Signature> {
         let solana_bridge_client = self.solana_bridge_client()?;
 
