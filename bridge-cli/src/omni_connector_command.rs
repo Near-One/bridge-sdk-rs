@@ -343,6 +343,13 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Get Solana token vault (locker) PDA")]
+    SolanaGetTokenVault {
+        #[clap(short, long, help = "Token mint address")]
+        token: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on Solana")]
     SolanaInitTransfer {
         #[clap(short, long, help = "Token to transfer")]
@@ -938,6 +945,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::SolanaGetVersion { config_cli } => {
             omni_connector(network, config_cli)
                 .solana_get_version()
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::SolanaGetTokenVault { token, config_cli } => {
+            omni_connector(network, config_cli)
+                .solana_get_token_vault(token.parse().unwrap())
                 .await
                 .unwrap();
         }
