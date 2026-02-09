@@ -224,6 +224,13 @@ impl TxBytes {
     }
 }
 
+/// Format a MaxGasFee message for UTXO chain transfers.
+/// This produces JSON like: `{"MaxGasFee":"400"}`
+pub fn format_max_gas_fee(gas_fee: u64) -> String {
+    serde_json::to_string(&UTXOChainMsg::MaxGasFee(U64::from(gas_fee)))
+        .expect("Failed to serialize UTXOChainMsg")
+}
+
 impl NearBridgeClient {
     /// Signs a NEAR transfer to BTC by calling `sign_btc_transaction` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION")]
