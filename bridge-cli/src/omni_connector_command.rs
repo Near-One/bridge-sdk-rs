@@ -343,13 +343,6 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Get Solana token vault (locker) PDA")]
-    SolanaGetTokenVault {
-        #[clap(short, long, help = "Token mint address")]
-        token: String,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     #[clap(about = "Initialize a transfer on Solana")]
     SolanaInitTransfer {
         #[clap(short, long, help = "Token to transfer")]
@@ -592,6 +585,13 @@ pub enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "The amount to be transferred, in satoshis")]
         amount: u128,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Get Solana token vault (locker) PDA")]
+    SolanaGetTokenVault {
+        #[clap(short, long, help = "Token mint address")]
+        token: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -948,12 +948,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaGetTokenVault { token, config_cli } => {
-            omni_connector(network, config_cli)
-                .solana_get_token_vault(token.parse().unwrap())
-                .await
-                .unwrap();
-        }
         OmniConnectorSubCommand::SolanaInitTransfer {
             token,
             amount,
@@ -1261,6 +1255,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .unwrap();
 
                 tracing::info!("Near Tx Hash: {tx_hash}");
+            }
+            InternalSubCommand::SolanaGetTokenVault { token, config_cli } => {
+                omni_connector(network, config_cli)
+                    .solana_get_token_vault(token.parse().unwrap())
+                    .await
+                    .unwrap();
             }
         },
     }
