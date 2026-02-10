@@ -7,6 +7,7 @@ use evm_bridge_client::error::EvmBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
+use starknet_bridge_client::error::StarknetBridgeClientError;
 use std::result;
 use utxo_bridge_client::{self, error::UtxoClientError};
 
@@ -58,6 +59,10 @@ pub enum BridgeSdkError {
     UnknownError(String),
     #[error("Error on build ZCash Orchard Bundle: {0}")]
     ZCashOrchardBundleError(String),
+    #[error("Error communicating with Starknet RPC: {0}")]
+    StarknetRpcError(String),
+    #[error("Error working with Starknet: {0}")]
+    StarknetOtherError(String),
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {
@@ -106,6 +111,19 @@ impl From<UtxoClientError> for BridgeSdkError {
         match error {
             UtxoClientError::RpcError(e) => Self::UtxoRpcError(e),
             UtxoClientError::Other(e) => Self::UtxoClientError(e),
+        }
+    }
+}
+
+impl From<StarknetBridgeClientError> for BridgeSdkError {
+    fn from(error: StarknetBridgeClientError) -> Self {
+        match error {
+            StarknetBridgeClientError::ProviderError(e) => Self::StarknetRpcError(e),
+            StarknetBridgeClientError::AccountError(e) => Self::StarknetOtherError(e),
+            StarknetBridgeClientError::BlockchainDataError(e) => Self::StarknetOtherError(e),
+            StarknetBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            StarknetBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            StarknetBridgeClientError::TransactionError(e) => Self::StarknetOtherError(e),
         }
     }
 }

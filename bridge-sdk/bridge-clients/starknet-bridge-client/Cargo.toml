@@ -1,0 +1,18 @@
+[package]
+name = "starknet-bridge-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+starknet.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+omni-types.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+url = "2"
+
+[lib]
+path = "src/starknet_bridge_client.rs"

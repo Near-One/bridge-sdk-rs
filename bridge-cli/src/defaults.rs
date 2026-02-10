@@ -30,6 +30,11 @@ pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const POL_WORMHOLE_ADDRESS_MAINNET: &str = "0x7A4B5a56256163F07b2C80A7cA55aBE66c4ec4d7";
 
+pub const HYPEREVM_RPC_MAINNET: &str = "https://rpc.hyperliquid.xyz/evm";
+pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0x0000000000000000000000000000000000000000";
+pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee704ab943b8B53aB3";
+
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth";
@@ -48,6 +53,9 @@ pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io
 pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
 pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
+
+pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
+pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
@@ -81,6 +89,11 @@ pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
+pub const HYPEREVM_RPC_TESTNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm";
+pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0x0000000000000000000000000000000000000000";
+pub const HYPEREVM_WORMHOLE_ADDRESS_TESTNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
 pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
@@ -99,6 +112,11 @@ pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io
 pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
+
+pub const STARKNET_RPC_TESTNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
+pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0x05a0ad01b18eba34432d22e4cb5c987560cae87a785b494ed58d9553a98bdc8f";
+pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
 
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
@@ -132,6 +150,11 @@ pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0xEC81aFc3485a425347Ac03316675e58a680b283A";
 pub const POL_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e782bA6a35";
 
+pub const HYPEREVM_RPC_DEVNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm";
+pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0x0000000000000000000000000000000000000000";
+pub const HYPEREVM_WORMHOLE_ADDRESS_DEVNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_DEVNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEpGSS5zeBge28p";
 pub const SOLANA_WORMHOLE_ADDRESS_DEVNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
@@ -150,3 +173,6 @@ pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/
 pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_DEVNET: bool = true;
+
+pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
+pub const STARKNET_CHAIN_ID_DEVNET: &str = "SN_SEPOLIA";

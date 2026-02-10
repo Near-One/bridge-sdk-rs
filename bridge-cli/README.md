@@ -57,11 +57,15 @@ NEAR_PRIVATE_KEY=<signer-private-key>
 ETH_PRIVATE_KEY=<eth-private-key>
 BASE_PRIVATE_KEY=<base-private-key>
 ARB_PRIVATE_KEY=<arbitrum-private-key>
+HYPEREVM_PRIVATE_KEY=<hyperevm-private-key>
 
 # you can provide solana's keypair as base58 string
 SOLANA_KEYPAIR=<solana-keypair-bs58>
 # or by providing an absolute path to the file where keypair is stored
 # SOLANA_KEYPAIR=/Users/.../solana-wallet.json
+
+STARKNET_ACCOUNT_ADDRESS=<starknet-account-address>
+STARKNET_PRIVATE_KEY=<starknet-private-key>
 ```
 
 ### Configuration File

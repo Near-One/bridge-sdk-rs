@@ -45,6 +45,8 @@ evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
+starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
+starknet.workspace = true
 
 [lib]
 path = "src/omni_connector.rs"
