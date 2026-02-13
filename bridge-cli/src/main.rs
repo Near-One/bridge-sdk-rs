@@ -571,7 +571,9 @@ fn default_config(network: Network) -> CliConfig {
             starknet_rpc: Some(defaults::STARKNET_RPC_DEVNET.to_owned()),
             starknet_private_key: None,
             starknet_account_address: None,
-            starknet_bridge_address: None,
+            starknet_bridge_address: Some(
+                defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_DEVNET.to_owned()),
 
             config: None,

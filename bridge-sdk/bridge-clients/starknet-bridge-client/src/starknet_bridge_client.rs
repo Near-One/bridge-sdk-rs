@@ -79,7 +79,8 @@ impl StarknetBridgeClient {
     }
 
     async fn wait_for_tx(&self, tx_hash: Felt) -> Result<TransactionReceiptWithBlockInfo> {
-        loop {
+        const MAX_RETRIES: u32 = 360;
+        for _ in 0..MAX_RETRIES {
             match self.provider.get_transaction_receipt(tx_hash).await {
                 Ok(receipt) => match receipt.receipt.execution_result() {
                     ExecutionResult::Succeeded => return Ok(receipt),
@@ -94,6 +95,9 @@ impl StarknetBridgeClient {
                 }
             }
         }
+        Err(StarknetBridgeClientError::TransactionError(format!(
+            "Transaction {tx_hash:#066x} was not confirmed after {MAX_RETRIES} seconds"
+        )))
     }
 
     /// Encode a u128 as a single Felt.
@@ -434,7 +438,6 @@ fn felt_to_u128(f: Felt) -> Result<u128> {
     Ok(u128::from_be_bytes(buf))
 }
 
-/// Simple u256-from-BE-bytes, only low 128 bits needed for bitmap check.
 /// Decode a Cairo `ByteArray` from a slice of Felts starting at `offset`.
 /// Returns `(decoded_string, next_offset)`.
 fn decode_byte_array(data: &[Felt], offset: usize) -> Result<(String, usize)> {
@@ -483,4 +486,97 @@ fn decode_byte_array(data: &[Felt], offset: usize) -> Result<(String, usize)> {
     })?;
 
     Ok((s, idx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_u128_roundtrip() {
+        let value: u128 = 123_456_789_012_345;
+        let felt = StarknetBridgeClient::encode_u128(value);
+        let back = felt_to_u128(felt).unwrap();
+        assert_eq!(value, back);
+    }
+
+    #[test]
+    fn test_encode_u64_roundtrip() {
+        let value: u64 = 9_876_543_210;
+        let felt = StarknetBridgeClient::encode_u64(value);
+        let back = felt_to_u64(felt).unwrap();
+        assert_eq!(value, back);
+    }
+
+    #[test]
+    fn test_encode_u256_split() {
+        // Build a 32-byte value where the first 16 bytes (high) = 1 and last 16 bytes (low) = 2
+        let mut input = [0u8; 32];
+        input[15] = 1; // high = 1
+        input[31] = 2; // low = 2
+
+        let [low, high] = StarknetBridgeClient::encode_u256(input);
+        assert_eq!(felt_to_u128(low).unwrap(), 2);
+        assert_eq!(felt_to_u128(high).unwrap(), 1);
+    }
+
+    #[test]
+    fn test_encode_decode_byte_array_empty() {
+        let encoded = StarknetBridgeClient::encode_byte_array("");
+        let (decoded, next) = decode_byte_array(&encoded, 0).unwrap();
+        assert_eq!(decoded, "");
+        assert_eq!(next, encoded.len());
+    }
+
+    #[test]
+    fn test_encode_decode_byte_array_short() {
+        let input = "hello";
+        let encoded = StarknetBridgeClient::encode_byte_array(input);
+        let (decoded, next) = decode_byte_array(&encoded, 0).unwrap();
+        assert_eq!(decoded, input);
+        assert_eq!(next, encoded.len());
+    }
+
+    #[test]
+    fn test_encode_decode_byte_array_exact_31() {
+        let input = "abcdefghijklmnopqrstuvwxyz01234"; // exactly 31 bytes
+        assert_eq!(input.len(), 31);
+        let encoded = StarknetBridgeClient::encode_byte_array(input);
+        let (decoded, next) = decode_byte_array(&encoded, 0).unwrap();
+        assert_eq!(decoded, input);
+        assert_eq!(next, encoded.len());
+    }
+
+    #[test]
+    fn test_encode_decode_byte_array_multi_word() {
+        let input = "This string is longer than thirty-one bytes for sure!!"; // > 31 bytes
+        assert!(input.len() > 31);
+        let encoded = StarknetBridgeClient::encode_byte_array(input);
+        let (decoded, next) = decode_byte_array(&encoded, 0).unwrap();
+        assert_eq!(decoded, input);
+        assert_eq!(next, encoded.len());
+    }
+
+    #[test]
+    fn test_encode_signature() {
+        let mut sig = [0u8; 65];
+        // r = first 32 bytes, s = next 32 bytes, v = last byte
+        sig[31] = 0xFF; // r low byte
+        sig[63] = 0xAA; // s low byte
+        sig[64] = 27; // v
+
+        let felts = StarknetBridgeClient::encode_signature(&sig);
+        assert_eq!(felts.len(), 5); // r_low, r_high, s_low, s_high, v
+
+        // r_low should contain 0xFF
+        assert_eq!(felt_to_u128(felts[0]).unwrap(), 0xFF);
+        // r_high should be 0
+        assert_eq!(felt_to_u128(felts[1]).unwrap(), 0);
+        // s_low should contain 0xAA
+        assert_eq!(felt_to_u128(felts[2]).unwrap(), 0xAA);
+        // s_high should be 0
+        assert_eq!(felt_to_u128(felts[3]).unwrap(), 0);
+        // v should be 27
+        assert_eq!(felt_to_u64(felts[4]).unwrap(), 27);
+    }
 }

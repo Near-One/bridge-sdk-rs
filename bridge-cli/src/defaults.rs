@@ -175,4 +175,6 @@ pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_DEVNET: bool = true;
 
 pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
+pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0x05a0ad01b18eba34432d22e4cb5c987560cae87a785b494ed58d9553a98bdc8f";
 pub const STARKNET_CHAIN_ID_DEVNET: &str = "SN_SEPOLIA";
