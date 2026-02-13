@@ -480,7 +480,8 @@ impl EvmBridgeClient {
             | OmniAddress::Arb(addr)
             | OmniAddress::Bnb(addr)
             | OmniAddress::Pol(addr)
-            | OmniAddress::HyperEvm(addr) => Ok(Address::from_slice(&addr.0)),
+            | OmniAddress::HyperEvm(addr)
+            | OmniAddress::Abs(addr) => Ok(Address::from_slice(&addr.0)),
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
             | OmniAddress::Btc(_)

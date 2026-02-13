@@ -52,6 +52,7 @@ pub struct OmniConnector {
     bnb_bridge_client: Option<EvmBridgeClient>,
     pol_bridge_client: Option<EvmBridgeClient>,
     hyper_evm_bridge_client: Option<EvmBridgeClient>,
+    abs_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
@@ -1694,7 +1695,8 @@ impl OmniConnector {
             | OmniAddress::Base(address)
             | OmniAddress::Bnb(address)
             | OmniAddress::Pol(address)
-            | OmniAddress::HyperEvm(address) => self
+            | OmniAddress::HyperEvm(address)
+            | OmniAddress::Abs(address) => self
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
@@ -2046,7 +2048,8 @@ impl OmniConnector {
             | ChainKind::Arb
             | ChainKind::Bnb
             | ChainKind::Pol
-            | ChainKind::HyperEvm => {
+            | ChainKind::HyperEvm
+            | ChainKind::Abs => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -2130,6 +2133,7 @@ impl OmniConnector {
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
             ChainKind::Pol => self.pol_bridge_client.as_ref(),
             ChainKind::HyperEvm => self.hyper_evm_bridge_client.as_ref(),
+            ChainKind::Abs => self.abs_bridge_client.as_ref(),
             ChainKind::Near
             | ChainKind::Sol
             | ChainKind::Btc
@@ -2301,6 +2305,7 @@ impl OmniConnector {
             | ChainKind::Bnb
             | ChainKind::Pol
             | ChainKind::HyperEvm
+            | ChainKind::Abs
             | ChainKind::Sol
             | ChainKind::Strk => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
@@ -2343,7 +2348,8 @@ impl OmniConnector {
             | ChainKind::Arb
             | ChainKind::Bnb
             | ChainKind::Pol
-            | ChainKind::HyperEvm => {
+            | ChainKind::HyperEvm
+            | ChainKind::Abs => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;
