@@ -2220,7 +2220,7 @@ impl OmniConnector {
     ) -> Result<starknet::core::types::Felt> {
         let client = self.starknet_bridge_client()?;
         let normalized = if token.starts_with("0x") || token.starts_with("0X") {
-            token.clone()
+            token
         } else {
             format!("0x{token}")
         };
