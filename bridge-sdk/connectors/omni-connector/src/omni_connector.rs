@@ -31,6 +31,7 @@ use solana_bridge_client::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
+use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::str::FromStr;
 use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
@@ -50,10 +51,12 @@ pub struct OmniConnector {
     arb_bridge_client: Option<EvmBridgeClient>,
     bnb_bridge_client: Option<EvmBridgeClient>,
     pol_bridge_client: Option<EvmBridgeClient>,
+    hyper_evm_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
     zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
+    starknet_bridge_client: Option<StarknetBridgeClient>,
     eth_light_client: Option<LightClient>,
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
@@ -123,6 +126,13 @@ pub enum DeployTokenArgs {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
+    StarknetDeployToken {
+        event: OmniBridgeEvent,
+    },
+    StarknetDeployTokenWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    },
 }
 
 pub enum BindTokenArgs {
@@ -177,6 +187,14 @@ pub enum InitTransferArgs {
         native_fee: u64,
         message: String,
     },
+    StarknetInitTransfer {
+        token: String,
+        amount: u128,
+        recipient: String,
+        fee: u128,
+        native_fee: u128,
+        message: String,
+    },
 }
 
 pub enum FinTransferArgs {
@@ -224,6 +242,13 @@ pub enum FinTransferArgs {
         chain: ChainKind,
         near_tx_hash: CryptoHash,
         relayer: Option<AccountId>,
+    },
+    StarknetFinTransfer {
+        event: OmniBridgeEvent,
+    },
+    StarknetFinTransferWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
     },
 }
 
@@ -1668,7 +1693,8 @@ impl OmniConnector {
             | OmniAddress::Arb(address)
             | OmniAddress::Base(address)
             | OmniAddress::Bnb(address)
-            | OmniAddress::Pol(address) => self
+            | OmniAddress::Pol(address)
+            | OmniAddress::HyperEvm(address) => self
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
@@ -1685,6 +1711,12 @@ impl OmniConnector {
                 self.solana_log_metadata(token)
                     .await
                     .map(|hash| hash.to_string())
+            }
+            OmniAddress::Strk(strk_address) => {
+                let token_felt = starknet::core::types::Felt::from_bytes_be(&strk_address.0);
+                self.starknet_log_metadata(token_felt)
+                    .await
+                    .map(|hash| format!("{hash:#066x}"))
             }
             OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
                 "Log metadata is not supported for this chain".to_string(),
@@ -1743,6 +1775,17 @@ impl OmniConnector {
                 .solana_deploy_token_with_tx_hash(tx_hash, sender_id)
                 .await
                 .map(|hash| hash.to_string()),
+            DeployTokenArgs::StarknetDeployToken { event } => self
+                .starknet_deploy_token_with_event(event)
+                .await
+                .map(|hash| format!("{hash:#066x}")),
+            DeployTokenArgs::StarknetDeployTokenWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => self
+                .starknet_deploy_token_with_tx_hash(near_tx_hash, sender_id)
+                .await
+                .map(|hash| format!("{hash:#066x}")),
         }
     }
 
@@ -1863,6 +1906,17 @@ impl OmniConnector {
                 .solana_init_transfer_sol(amount, recipient, fee, native_fee, message)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
+            InitTransferArgs::StarknetInitTransfer {
+                token,
+                amount,
+                recipient,
+                fee,
+                native_fee,
+                message,
+            } => self
+                .starknet_init_transfer(token, amount, fee, native_fee, recipient, message)
+                .await
+                .map(|tx_hash| format!("{tx_hash:#066x}")),
         }
     }
 
@@ -1952,6 +2006,17 @@ impl OmniConnector {
                 near_tx_hash,
                 relayer,
             } => self.btc_fin_transfer(chain, near_tx_hash, relayer).await,
+            FinTransferArgs::StarknetFinTransfer { event } => self
+                .starknet_fin_transfer_with_event(event)
+                .await
+                .map(|hash| format!("{hash:#066x}")),
+            FinTransferArgs::StarknetFinTransferWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => self
+                .starknet_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
+                .await
+                .map(|hash| format!("{hash:#066x}")),
         }
     }
 
@@ -1976,11 +2041,17 @@ impl OmniConnector {
                 })
                 .await
             }
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
+            ChainKind::Eth
+            | ChainKind::Base
+            | ChainKind::Arb
+            | ChainKind::Bnb
+            | ChainKind::Pol
+            | ChainKind::HyperEvm => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
             ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Strk => self.starknet_is_transfer_finalised(nonce).await,
             ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
                 "is_transfer_finalised is not supported for UTXO chains".to_string(),
             )),
@@ -2058,8 +2129,15 @@ impl OmniConnector {
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
             ChainKind::Pol => self.pol_bridge_client.as_ref(),
-            ChainKind::Near | ChainKind::Sol | ChainKind::Btc | ChainKind::Zcash => {
-                unreachable!("Unsupported chain kind")
+            ChainKind::HyperEvm => self.hyper_evm_bridge_client.as_ref(),
+            ChainKind::Near
+            | ChainKind::Sol
+            | ChainKind::Btc
+            | ChainKind::Zcash
+            | ChainKind::Strk => {
+                return Err(BridgeSdkError::ConfigError(format!(
+                    "EVM bridge client is not available for {chain_kind:?}"
+                )));
             }
         };
 
@@ -2091,6 +2169,101 @@ impl OmniConnector {
             .ok_or(BridgeSdkError::ConfigError(
                 "SOLANA bridge client is not configured".to_string(),
             ))
+    }
+
+    pub fn starknet_bridge_client(&self) -> Result<&StarknetBridgeClient> {
+        self.starknet_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Starknet bridge client is not configured".to_string(),
+            ))
+    }
+
+    pub async fn starknet_log_metadata(
+        &self,
+        token: starknet::core::types::Felt,
+    ) -> Result<starknet::core::types::Felt> {
+        let client = self.starknet_bridge_client()?;
+        Ok(client.log_metadata(token).await?)
+    }
+
+    pub async fn starknet_deploy_token_with_event(
+        &self,
+        event: OmniBridgeEvent,
+    ) -> Result<starknet::core::types::Felt> {
+        let client = self.starknet_bridge_client()?;
+        Ok(client.deploy_token(event).await?)
+    }
+
+    pub async fn starknet_deploy_token_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<starknet::core::types::Felt> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
+            .await?;
+        self.starknet_deploy_token_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn starknet_init_transfer(
+        &self,
+        token: String,
+        amount: u128,
+        fee: u128,
+        native_fee: u128,
+        recipient: String,
+        message: String,
+    ) -> Result<starknet::core::types::Felt> {
+        let client = self.starknet_bridge_client()?;
+        let normalized = if token.starts_with("0x") || token.starts_with("0X") {
+            token
+        } else {
+            format!("0x{token}")
+        };
+        let token_felt = starknet::core::types::Felt::from_hex(&normalized).map_err(|_| {
+            BridgeSdkError::InvalidArgument("Invalid Starknet token address".to_string())
+        })?;
+        Ok(client
+            .init_transfer(token_felt, amount, fee, native_fee, recipient, message)
+            .await?)
+    }
+
+    pub async fn starknet_fin_transfer_with_event(
+        &self,
+        event: OmniBridgeEvent,
+    ) -> Result<starknet::core::types::Felt> {
+        let client = self.starknet_bridge_client()?;
+        Ok(client.fin_transfer(event).await?)
+    }
+
+    pub async fn starknet_fin_transfer_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<starknet::core::types::Felt> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
+            .await?;
+        self.starknet_fin_transfer_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    pub async fn starknet_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        let client = self.starknet_bridge_client()?;
+        Ok(client.is_transfer_finalised(nonce).await?)
+    }
+
+    pub async fn starknet_get_transfer_event(
+        &self,
+        tx_hash: starknet::core::types::Felt,
+    ) -> Result<StarknetInitTransferEvent> {
+        let client = self.starknet_bridge_client()?;
+        Ok(client.get_transfer_event(tx_hash).await?)
     }
 
     pub fn wormhole_bridge_client(&self) -> Result<&WormholeBridgeClient> {
@@ -2127,7 +2300,9 @@ impl OmniConnector {
             | ChainKind::Arb
             | ChainKind::Bnb
             | ChainKind::Pol
-            | ChainKind::Sol => Err(BridgeSdkError::ConfigError(
+            | ChainKind::HyperEvm
+            | ChainKind::Sol
+            | ChainKind::Strk => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
         }
@@ -2163,7 +2338,12 @@ impl OmniConnector {
         tx_hash: String,
     ) -> Result<Vec<StorageDepositAction>> {
         match chain {
-            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
+            ChainKind::Eth
+            | ChainKind::Base
+            | ChainKind::Arb
+            | ChainKind::Bnb
+            | ChainKind::Pol
+            | ChainKind::HyperEvm => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;
@@ -2177,7 +2357,7 @@ impl OmniConnector {
                 self.get_storage_deposit_actions_for_solana_tx(&signature)
                     .await
             }
-            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
+            ChainKind::Near | ChainKind::Btc | ChainKind::Zcash | ChainKind::Strk => {
                 Err(BridgeSdkError::ConfigError(
                     "Storage deposit actions are not supported for this chain".to_string(),
                 ))

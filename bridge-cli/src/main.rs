@@ -72,6 +72,15 @@ struct CliConfig {
     pol_wormhole_address: Option<String>,
 
     #[arg(long)]
+    hyperevm_rpc: Option<String>,
+    #[arg(long)]
+    hyperevm_private_key: Option<String>,
+    #[arg(long)]
+    hyperevm_bridge_token_factory_address: Option<String>,
+    #[arg(long)]
+    hyperevm_wormhole_address: Option<String>,
+
+    #[arg(long)]
     solana_rpc: Option<String>,
     #[arg(long)]
     solana_bridge_address: Option<String>,
@@ -112,6 +121,17 @@ struct CliConfig {
     zcash: Option<String>,
     #[arg(long)]
     enable_orchard: Option<bool>,
+
+    #[arg(long)]
+    starknet_rpc: Option<String>,
+    #[arg(long)]
+    starknet_private_key: Option<String>,
+    #[arg(long)]
+    starknet_account_address: Option<String>,
+    #[arg(long)]
+    starknet_bridge_address: Option<String>,
+    #[arg(long)]
+    starknet_chain_id: Option<String>,
 
     #[arg(long)]
     config: Option<String>,
@@ -163,6 +183,15 @@ impl CliConfig {
                 .or(other.pol_bridge_token_factory_address),
             pol_wormhole_address: self.pol_wormhole_address.or(other.pol_wormhole_address),
 
+            hyperevm_rpc: self.hyperevm_rpc.or(other.hyperevm_rpc),
+            hyperevm_private_key: self.hyperevm_private_key.or(other.hyperevm_private_key),
+            hyperevm_bridge_token_factory_address: self
+                .hyperevm_bridge_token_factory_address
+                .or(other.hyperevm_bridge_token_factory_address),
+            hyperevm_wormhole_address: self
+                .hyperevm_wormhole_address
+                .or(other.hyperevm_wormhole_address),
+
             solana_rpc: self.solana_rpc.or(other.solana_rpc),
             solana_bridge_address: self.solana_bridge_address.or(other.solana_bridge_address),
             solana_wormhole_address: self
@@ -191,6 +220,16 @@ impl CliConfig {
             zcash_connector: self.zcash_connector.or(other.zcash_connector),
             zcash: self.zcash.or(other.zcash),
             enable_orchard: self.enable_orchard.or(other.enable_orchard),
+
+            starknet_rpc: self.starknet_rpc.or(other.starknet_rpc),
+            starknet_private_key: self.starknet_private_key.or(other.starknet_private_key),
+            starknet_account_address: self
+                .starknet_account_address
+                .or(other.starknet_account_address),
+            starknet_bridge_address: self
+                .starknet_bridge_address
+                .or(other.starknet_bridge_address),
+            starknet_chain_id: self.starknet_chain_id.or(other.starknet_chain_id),
 
             config: self.config.or(other.config),
         }
@@ -232,6 +271,12 @@ fn env_config() -> CliConfig {
         pol_bridge_token_factory_address: env::var("POL_BRIDGE_TOKEN_FACTORY_ADDRESS").ok(),
         pol_wormhole_address: env::var("POL_WORMHOLE_ADDRESS").ok(),
 
+        hyperevm_rpc: env::var("HYPEREVM_RPC").ok(),
+        hyperevm_private_key: env::var("HYPEREVM_PRIVATE_KEY").ok(),
+        hyperevm_bridge_token_factory_address: env::var("HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS")
+            .ok(),
+        hyperevm_wormhole_address: env::var("HYPEREVM_WORMHOLE_ADDRESS").ok(),
+
         solana_rpc: env::var("SOLANA_RPC").ok(),
         solana_bridge_address: env::var("SOLANA_BRIDGE_ADDRESS").ok(),
         solana_wormhole_address: env::var("SOLANA_WORMHOLE_ADDRESS").ok(),
@@ -260,6 +305,12 @@ fn env_config() -> CliConfig {
         zcash_connector: env::var("ZCASH_CONNECTOR").ok(),
         zcash: env::var("ZCASH").ok(),
         enable_orchard: env::var("ENABLE_ORCHARD").ok().map(|s| s == "true"),
+
+        starknet_rpc: env::var("STARKNET_RPC").ok(),
+        starknet_private_key: env::var("STARKNET_PRIVATE_KEY").ok(),
+        starknet_account_address: env::var("STARKNET_ACCOUNT_ADDRESS").ok(),
+        starknet_bridge_address: env::var("STARKNET_BRIDGE_ADDRESS").ok(),
+        starknet_chain_id: env::var("STARKNET_CHAIN_ID").ok(),
 
         config: None,
     }
@@ -312,6 +363,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
+            hyperevm_rpc: Some(defaults::HYPEREVM_RPC_MAINNET.to_owned()),
+            hyperevm_private_key: None,
+            hyperevm_bridge_token_factory_address: Some(
+                defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
+            hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+
             solana_rpc: Some(defaults::SOLANA_RPC_MAINNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_MAINNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_MAINNET.to_owned()),
@@ -337,6 +395,12 @@ fn default_config(network: Network) -> CliConfig {
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_MAINNET.to_owned()),
             zcash: Some(defaults::ZCASH_MAINNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_MAINNET),
+
+            starknet_rpc: Some(defaults::STARKNET_RPC_MAINNET.to_owned()),
+            starknet_private_key: None,
+            starknet_account_address: None,
+            starknet_bridge_address: None,
+            starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_MAINNET.to_owned()),
 
             config: None,
         },
@@ -384,6 +448,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_TESTNET.to_owned()),
 
+            hyperevm_rpc: Some(defaults::HYPEREVM_RPC_TESTNET.to_owned()),
+            hyperevm_private_key: None,
+            hyperevm_bridge_token_factory_address: Some(
+                defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
+            hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+
             solana_rpc: Some(defaults::SOLANA_RPC_TESTNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_TESTNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_TESTNET.to_owned()),
@@ -409,6 +480,14 @@ fn default_config(network: Network) -> CliConfig {
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_TESTNET.to_owned()),
             zcash: Some(defaults::ZCASH_TESTNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_TESTNET),
+
+            starknet_rpc: Some(defaults::STARKNET_RPC_TESTNET.to_owned()),
+            starknet_private_key: None,
+            starknet_account_address: None,
+            starknet_bridge_address: Some(
+                defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
+            starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_TESTNET.to_owned()),
 
             config: None,
         },
@@ -456,6 +535,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             pol_wormhole_address: Some(defaults::POL_WORMHOLE_ADDRESS_DEVNET.to_owned()),
 
+            hyperevm_rpc: Some(defaults::HYPEREVM_RPC_DEVNET.to_owned()),
+            hyperevm_private_key: None,
+            hyperevm_bridge_token_factory_address: Some(
+                defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+            hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+
             solana_rpc: Some(defaults::SOLANA_RPC_DEVNET.to_owned()),
             solana_bridge_address: Some(defaults::SOLANA_BRIDGE_ADDRESS_DEVNET.to_owned()),
             solana_wormhole_address: Some(defaults::SOLANA_WORMHOLE_ADDRESS_DEVNET.to_owned()),
@@ -481,6 +567,14 @@ fn default_config(network: Network) -> CliConfig {
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_DEVNET.to_owned()),
             zcash: Some(defaults::ZCASH_DEVNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_DEVNET),
+
+            starknet_rpc: Some(defaults::STARKNET_RPC_DEVNET.to_owned()),
+            starknet_private_key: None,
+            starknet_account_address: None,
+            starknet_bridge_address: Some(
+                defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
+            starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_DEVNET.to_owned()),
 
             config: None,
         },

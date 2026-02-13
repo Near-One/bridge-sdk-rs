@@ -479,11 +479,13 @@ impl EvmBridgeClient {
             | OmniAddress::Base(addr)
             | OmniAddress::Arb(addr)
             | OmniAddress::Bnb(addr)
-            | OmniAddress::Pol(addr) => Ok(Address::from_slice(&addr.0)),
+            | OmniAddress::Pol(addr)
+            | OmniAddress::HyperEvm(addr) => Ok(Address::from_slice(&addr.0)),
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
             | OmniAddress::Btc(_)
-            | OmniAddress::Zcash(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
+            | OmniAddress::Zcash(_)
+            | OmniAddress::Strk(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Unsupported address type in SignTransferEvent: {address:?}",
             ))),
         }
