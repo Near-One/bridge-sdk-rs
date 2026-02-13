@@ -473,6 +473,12 @@ fn decode_byte_array(data: &[Felt], offset: usize) -> Result<(String, usize)> {
     let pending_len = felt_to_u64(data[idx + 1])? as usize;
     idx += 2;
 
+    if pending_len > 31 {
+        return Err(StarknetBridgeClientError::BlockchainDataError(format!(
+            "ByteArray decode: invalid pending_len {pending_len} (max 31)"
+        )));
+    }
+
     if pending_len > 0 {
         let pw_bytes = pending_word.to_bytes_be();
         let start = 32 - pending_len;

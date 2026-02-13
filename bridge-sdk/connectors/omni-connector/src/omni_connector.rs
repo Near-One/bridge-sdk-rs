@@ -2219,7 +2219,12 @@ impl OmniConnector {
         message: String,
     ) -> Result<starknet::core::types::Felt> {
         let client = self.starknet_bridge_client()?;
-        let token_felt = starknet::core::types::Felt::from_hex(&token).map_err(|_| {
+        let normalized = if token.starts_with("0x") || token.starts_with("0X") {
+            token.clone()
+        } else {
+            format!("0x{token}")
+        };
+        let token_felt = starknet::core::types::Felt::from_hex(&normalized).map_err(|_| {
             BridgeSdkError::InvalidArgument("Invalid Starknet token address".to_string())
         })?;
         Ok(client
