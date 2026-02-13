@@ -290,10 +290,25 @@ impl StarknetBridgeClient {
         let recipient_felt = Self::omni_address_to_felt(message_payload.recipient)?;
         calldata.push(recipient_felt);
 
-        let fee_recipient_str = message_payload
-            .fee_recipient
-            .map_or_else(String::new, |addr| addr.to_string());
-        calldata.extend(Self::encode_byte_array(&fee_recipient_str));
+        // Cairo Option: Some = variant 0, None = variant 1
+        match message_payload.fee_recipient {
+            Some(addr) => {
+                calldata.push(Felt::ZERO); // Some variant index
+                calldata.extend(Self::encode_byte_array(&addr.to_string()));
+            }
+            None => {
+                calldata.push(Felt::ONE); // None variant index
+            }
+        }
+
+        if message_payload.message.is_empty() {
+            calldata.push(Felt::ONE); // None variant index
+        } else {
+            calldata.push(Felt::ZERO); // Some variant index
+            calldata.extend(Self::encode_byte_array(
+                &String::from_utf8_lossy(&message_payload.message),
+            ));
+        }
 
         let call = Call {
             to: bridge,
