@@ -5490,7 +5490,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=527a175d8f045aa3ccf11eef7381a1edf3e6f69d#527a175d8f045aa3ccf11eef7381a1edf3e6f69d"
+source = "git+https://github.com/near-one/omni-bridge?rev=71abe3b06b3eb4e4a49a0fbc8dfa3e68558b69b7#71abe3b06b3eb4e4a49a0fbc8dfa3e68558b69b7"
 dependencies = [
  "alloy",
  "borsh 1.6.0",
