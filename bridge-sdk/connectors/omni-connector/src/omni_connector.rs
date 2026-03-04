@@ -670,7 +670,7 @@ impl OmniConnector {
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let enable_orchard = self.get_orchard_mode(&target_btc_address)?;
+        let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -762,7 +762,7 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
     ) -> Result<CryptoHash> {
-        let enable_orchard = self.get_orchard_mode(&recipient)?;
+        let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
@@ -2007,7 +2007,11 @@ impl OmniConnector {
         wormhole_bridge_client.get_vaa_by_tx_hash(tx_hash).await
     }
 
-    pub fn get_orchard_mode(&self, target_btc_address: &str) -> Result<bool> {
+    pub fn get_orchard_mode(&self, target_btc_address: &str, chain: ChainKind) -> Result<bool> {
+        if chain != ChainKind::Zcash {
+            return Ok(false);
+        }
+
         let has_orchard = utxo_utils::contains_orchard_address(target_btc_address)
             .map_err(|err| BridgeSdkError::InvalidArgument(format!("Invalid address: {err}")))?;
 
