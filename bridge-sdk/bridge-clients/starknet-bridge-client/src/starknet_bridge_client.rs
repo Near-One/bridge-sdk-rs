@@ -33,6 +33,17 @@ pub struct StarknetInitTransferEvent {
     pub message: String,
 }
 
+/// Raw Starknet InitTransfer log with full metadata for MPC proof construction.
+#[derive(Debug)]
+pub struct StarknetInitTransferLog {
+    pub from_address: Felt,
+    pub keys: Vec<Felt>,
+    pub data: Vec<Felt>,
+    pub block_hash: Felt,
+    pub block_number: u64,
+    pub log_index: u64,
+}
+
 type StarknetAccount = SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>;
 
 /// Starknet bridge client for the OmniBridge contract.
@@ -294,7 +305,7 @@ impl StarknetBridgeClient {
         match message_payload.fee_recipient {
             Some(addr) => {
                 calldata.push(Felt::ZERO); // Some variant index
-                calldata.extend(Self::encode_byte_array(&addr.to_string()));
+                calldata.extend(Self::encode_byte_array(addr.as_ref()));
             }
             None => {
                 calldata.push(Felt::ONE); // None variant index
@@ -305,9 +316,9 @@ impl StarknetBridgeClient {
             calldata.push(Felt::ONE); // None variant index
         } else {
             calldata.push(Felt::ZERO); // Some variant index
-            calldata.extend(Self::encode_byte_array(
-                &String::from_utf8_lossy(&message_payload.message),
-            ));
+            calldata.extend(Self::encode_byte_array(&String::from_utf8_lossy(
+                &message_payload.message,
+            )));
         }
 
         let call = Call {
@@ -362,48 +373,19 @@ impl StarknetBridgeClient {
 
     /// Extract an `InitTransfer` event from a Starknet transaction receipt.
     pub async fn get_transfer_event(&self, tx_hash: Felt) -> Result<StarknetInitTransferEvent> {
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await
-            .map_err(|e| {
-                StarknetBridgeClientError::ProviderError(format!(
-                    "Failed to get transaction receipt: {e}"
-                ))
-            })?;
+        let log = self.get_init_transfer_log(tx_hash).await?;
 
-        let init_transfer_selector = selector!("InitTransfer");
-
-        let events = match &receipt.receipt {
-            starknet::core::types::TransactionReceipt::Invoke(r) => &r.events,
-            starknet::core::types::TransactionReceipt::L1Handler(r) => &r.events,
-            _ => {
-                return Err(StarknetBridgeClientError::BlockchainDataError(
-                    "Unexpected receipt type".to_string(),
-                ));
-            }
-        };
-
-        let event = events
-            .iter()
-            .find(|e| !e.keys.is_empty() && e.keys[0] == init_transfer_selector)
-            .ok_or_else(|| {
-                StarknetBridgeClientError::BlockchainDataError(
-                    "InitTransfer event not found in receipt".to_string(),
-                )
-            })?;
-
-        if event.keys.len() < 4 {
+        if log.keys.len() < 4 {
             return Err(StarknetBridgeClientError::BlockchainDataError(
                 "InitTransfer event has too few keys".to_string(),
             ));
         }
 
-        let sender = event.keys[1];
-        let token_address = event.keys[2];
-        let origin_nonce = felt_to_u64(event.keys[3])?;
+        let sender = log.keys[1];
+        let token_address = log.keys[2];
+        let origin_nonce = felt_to_u64(log.keys[3])?;
 
-        let data = &event.data;
+        let data = &log.data;
         if data.len() < 3 {
             return Err(StarknetBridgeClientError::BlockchainDataError(
                 "InitTransfer event has too few data fields".to_string(),
@@ -426,6 +408,63 @@ impl StarknetBridgeClient {
             native_token_fee,
             recipient,
             message,
+        })
+    }
+
+    /// Returns the raw InitTransfer log with full metadata (block info, log index)
+    /// for MPC proof construction.
+    pub async fn get_init_transfer_log(&self, tx_hash: Felt) -> Result<StarknetInitTransferLog> {
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await
+            .map_err(|e| {
+                StarknetBridgeClientError::ProviderError(format!(
+                    "Failed to get transaction receipt: {e}"
+                ))
+            })?;
+
+        let init_transfer_selector = selector!("InitTransfer");
+
+        let events = match &receipt.receipt {
+            starknet::core::types::TransactionReceipt::Invoke(r) => &r.events,
+            starknet::core::types::TransactionReceipt::L1Handler(r) => &r.events,
+            _ => {
+                return Err(StarknetBridgeClientError::BlockchainDataError(
+                    "Unexpected receipt type".to_string(),
+                ));
+            }
+        };
+
+        let (log_index, event) = events
+            .iter()
+            .enumerate()
+            .find(|(_, e)| !e.keys.is_empty() && e.keys[0] == init_transfer_selector)
+            .ok_or_else(|| {
+                StarknetBridgeClientError::BlockchainDataError(
+                    "InitTransfer event not found in receipt".to_string(),
+                )
+            })?;
+
+        let (block_hash, block_number) = match &receipt.block {
+            starknet::core::types::ReceiptBlock::Block {
+                block_hash,
+                block_number,
+            } => (*block_hash, *block_number),
+            starknet::core::types::ReceiptBlock::PreConfirmed { .. } => {
+                return Err(StarknetBridgeClientError::BlockchainDataError(
+                    "Transaction is still pending (pre-confirmed)".to_string(),
+                ));
+            }
+        };
+
+        Ok(StarknetInitTransferLog {
+            from_address: event.from_address,
+            keys: event.keys.clone(),
+            data: event.data.clone(),
+            block_hash,
+            block_number,
+            log_index: log_index as u64,
         })
     }
 

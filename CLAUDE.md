@@ -55,7 +55,8 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 - **Builder pattern**: `OmniConnector`, `EvmBridgeClient`, and other structs use `derive_builder` crate. Fields are built with `XxxBuilder::default()...build().unwrap()`.
 - **Exhaustive matching**: `ChainKind` and `OmniAddress` enums from `omni-types` must be exhaustively matched. When adding a new chain, check all `match` arms.
 - **One `EvmBridgeClient` per EVM chain**: Each EVM chain (Eth, Arb, Base, HyperEVM, Abstract) gets its own `EvmBridgeClient` instance with different config (RPC, keys, bridge address, optional wormhole address).
-- **Wormhole**: Some EVM chains use Wormhole VAAs for proof verification (Eth, Arb, Base). Others don't (HyperEVM, Abstract) — these use `wormhole_core_address(None)` and go in the unsupported arm for `NearFinTransfer`.
+- **Wormhole**: Some chains use Wormhole VAAs for proof verification (Arb, Base, Bnb, Pol, HyperEVM, Sol).
+- **MPC Proof**: Starknet and Abstract use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_abs_mpc_sign_payload()` / `build_strk_mpc_sign_payload()`, using types from `mpc-contract-interface` (`github.com/near/mpc`).
 - **CLI config precedence**: CLI args > env vars > config file > defaults (defined in `defaults.rs`)
 
 ### External Dependencies
@@ -65,3 +66,4 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 - `near-*` crates: NEAR blockchain interaction
 - `solana-*` crates: Solana interaction
 - `starknet`: Starknet interaction
+- `mpc-contract-interface` from `github.com/near/mpc`: MPC foreign chain types (`ForeignTxSignPayload`, `EvmLog`, `StarknetLog`, etc.) for constructing MPC proof payloads. Pinned by git rev.

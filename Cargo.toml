@@ -40,7 +40,7 @@ near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.2"
 near-primitives = "0.34.2"
 near-crypto = "0.34.2"
-near-sdk = "5.22.0"
+near-sdk = "5.24.1"
 derive_builder = "0.20.0"
 clap = { version = "4.5", features = ["derive"] }
 dotenv = { version = "0.15" }
@@ -49,9 +49,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "71abe3b06b3eb4e4a49a0fbc8dfa3e68558b69b7" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "55c6f42b84b018cbcc41b664805e8a5d776defd5" }
 starknet = "0.17.0"
-serde_with = "3.12.0"
+serde_with = { version = "3.12.0", features = ["schemars_0_8"] }
 solana-sdk = "2.0.13"
 solana-client = "2.0.13"
 solana-system-interface = "1.0.0"
@@ -61,6 +61,7 @@ spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
 spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
 mpl-token-metadata = "5.1.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
+mpc-contract-interface = { git = "https://github.com/near/mpc", package = "contract-interface", rev = "24634d774923986f6835a2ca196c2ebcacba0729" }
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
 zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }

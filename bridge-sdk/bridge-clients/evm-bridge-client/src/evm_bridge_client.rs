@@ -356,32 +356,7 @@ impl EvmBridgeClient {
     }
 
     pub async fn get_transfer_event(&self, tx_hash: TxHash) -> Result<InitTransferFilter> {
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or(EvmBridgeClientError::BlockchainDataError(
-                "Transaction receipt missing".to_string(),
-            ))?;
-
-        let rpc_log = receipt
-            .inner
-            .into_logs()
-            .into_iter()
-            .find(|log| {
-                if let Some(topic) = log.topics().first() {
-                    // SIGNATURE is a &str constant, need to compare topics properly
-                    let sig_hash = alloy::primitives::keccak256(
-                        OmniBridge::InitTransfer::SIGNATURE.as_bytes(),
-                    );
-                    topic.0 == sig_hash.0
-                } else {
-                    false
-                }
-            })
-            .ok_or(EvmBridgeClientError::BlockchainDataError(
-                "Transfer event missing".to_string(),
-            ))?;
+        let rpc_log = self.get_init_transfer_log(tx_hash).await?;
 
         let log_data = rpc_log.into_inner();
 
@@ -399,6 +374,34 @@ impl EvmBridgeClient {
             recipient: decoded.recipient.clone(),
             message: decoded.message.clone(),
         })
+    }
+
+    pub async fn get_init_transfer_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await?
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "Transaction receipt missing".to_string(),
+            ))?;
+
+        receipt
+            .inner
+            .into_logs()
+            .into_iter()
+            .find(|log| {
+                if let Some(topic) = log.topics().first() {
+                    let sig_hash = alloy::primitives::keccak256(
+                        OmniBridge::InitTransfer::SIGNATURE.as_bytes(),
+                    );
+                    topic.0 == sig_hash.0
+                } else {
+                    false
+                }
+            })
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "InitTransfer event log missing".to_string(),
+            ))
     }
 
     pub fn prepare_tx_for_sending<P, D, N>(

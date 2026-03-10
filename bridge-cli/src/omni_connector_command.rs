@@ -884,11 +884,41 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Near
-                | ChainKind::Btc
-                | ChainKind::Zcash
-                | ChainKind::Strk
-                | ChainKind::Abs => {
+                ChainKind::Abs => {
+                    let evm_tx_hash = TxHash::from_str(&tx_hash).expect("Invalid tx_hash");
+                    let sign_payload = connector
+                        .build_abs_mpc_sign_payload(evm_tx_hash)
+                        .await
+                        .unwrap();
+
+                    connector
+                        .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
+                            chain_kind: chain,
+                            destination_chain,
+                            storage_deposit_actions,
+                            sign_payload,
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                }
+                ChainKind::Strk => {
+                    let felt = starknet::core::types::Felt::from_hex(&tx_hash)
+                        .expect("Invalid Starknet tx_hash");
+                    let sign_payload = connector.build_strk_mpc_sign_payload(felt).await.unwrap();
+
+                    connector
+                        .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
+                            chain_kind: chain,
+                            destination_chain,
+                            storage_deposit_actions,
+                            sign_payload,
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                }
+                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
                     panic!("Unsupported chain for NearFinTransfer: {chain:?}");
                 }
             }

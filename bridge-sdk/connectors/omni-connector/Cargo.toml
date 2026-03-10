@@ -47,6 +47,7 @@ wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" 
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
 starknet.workspace = true
+mpc-contract-interface.workspace = true
 
 [lib]
 path = "src/omni_connector.rs"
