@@ -56,6 +56,7 @@ fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, Str
         ChainKind::Bnb => &config.bnb_private_key,
         ChainKind::Pol => &config.pol_private_key,
         ChainKind::HyperEvm => &config.hyperevm_private_key,
+        ChainKind::Abs => &config.abs_private_key,
         _ => return Err(format!("Unsupported EVM chain: {chain:?}")),
     }
     .as_ref()
@@ -672,7 +673,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             | ChainKind::Base
             | ChainKind::Bnb
             | ChainKind::Pol
-            | ChainKind::HyperEvm => {
+            | ChainKind::HyperEvm
+            | ChainKind::Abs => {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
@@ -882,7 +884,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash | ChainKind::Strk => {
+                ChainKind::Near
+                | ChainKind::Btc
+                | ChainKind::Zcash
+                | ChainKind::Strk
+                | ChainKind::Abs => {
                     panic!("Unsupported chain for NearFinTransfer: {chain:?}");
                 }
             }
@@ -1452,6 +1458,14 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let abs_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.abs_rpc)
+        .private_key(combined_config.abs_private_key)
+        .omni_bridge_address(combined_config.abs_bridge_token_factory_address)
+        .wormhole_core_address(None)
+        .build()
+        .unwrap();
+
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
         .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
         .program_id(
@@ -1563,6 +1577,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .bnb_bridge_client(Some(bnb_bridge_client))
         .pol_bridge_client(Some(pol_bridge_client))
         .hyper_evm_bridge_client(Some(hyperevm_bridge_client))
+        .abs_bridge_client(Some(abs_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))

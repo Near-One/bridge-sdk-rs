@@ -35,6 +35,10 @@ pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0x0000000000000000000000000000000000000000";
 pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee704ab943b8B53aB3";
 
+pub const ABS_RPC_MAINNET: &str = "https://api.mainnet.abs.xyz";
+pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0x0000000000000000000000000000000000000000";
+
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth";
@@ -93,6 +97,10 @@ pub const HYPEREVM_RPC_TESTNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm"
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x0000000000000000000000000000000000000000";
 pub const HYPEREVM_WORMHOLE_ADDRESS_TESTNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
+pub const ABS_RPC_TESTNET: &str = "https://api.testnet.abs.xyz";
+pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0x0000000000000000000000000000000000000000";
 
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
@@ -154,6 +162,10 @@ pub const HYPEREVM_RPC_DEVNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm";
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x0000000000000000000000000000000000000000";
 pub const HYPEREVM_WORMHOLE_ADDRESS_DEVNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
+pub const ABS_RPC_DEVNET: &str = "https://api.testnet.abs.xyz";
+pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0x0000000000000000000000000000000000000000";
 
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_DEVNET: &str = "Gy1XPwYZURfBzHiGAxnw3SYC33SfqsEpGSS5zeBge28p";
