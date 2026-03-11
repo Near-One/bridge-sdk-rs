@@ -43,6 +43,7 @@ sol! {
             uint128 amount;
             address recipient;
             string feeRecipient;
+            bytes message;
         }
 
         function deployToken(bytes signatureData, MetadataPayload metadata) external returns (address);
@@ -52,6 +53,7 @@ sol! {
         function completedTransfers(uint64) external view returns (bool);
 
         event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message);
+        event DeployToken(address indexed tokenAddress, string token, string name, string symbol, uint8 decimals, uint8 originDecimals);
     }
 }
 
@@ -310,6 +312,7 @@ impl EvmBridgeClient {
             feeRecipient: message_payload
                 .fee_recipient
                 .map_or_else(String::new, |addr| addr.to_string()),
+            message: Bytes::from(message_payload.message),
         };
 
         let call_builder = self.prepare_tx_for_sending(
@@ -377,6 +380,20 @@ impl EvmBridgeClient {
     }
 
     pub async fn get_init_transfer_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
+        self.get_event_log(tx_hash, OmniBridge::InitTransfer::SIGNATURE)
+            .await
+    }
+
+    pub async fn get_deploy_token_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
+        self.get_event_log(tx_hash, OmniBridge::DeployToken::SIGNATURE)
+            .await
+    }
+
+    async fn get_event_log(
+        &self,
+        tx_hash: TxHash,
+        event_signature: &str,
+    ) -> Result<alloy::rpc::types::Log> {
         let receipt = self
             .provider
             .get_transaction_receipt(tx_hash)
@@ -385,23 +402,20 @@ impl EvmBridgeClient {
                 "Transaction receipt missing".to_string(),
             ))?;
 
+        let sig_hash = alloy::primitives::keccak256(event_signature.as_bytes());
+
         receipt
             .inner
             .into_logs()
             .into_iter()
             .find(|log| {
-                if let Some(topic) = log.topics().first() {
-                    let sig_hash = alloy::primitives::keccak256(
-                        OmniBridge::InitTransfer::SIGNATURE.as_bytes(),
-                    );
-                    topic.0 == sig_hash.0
-                } else {
-                    false
-                }
+                log.topics()
+                    .first()
+                    .is_some_and(|topic| topic.0 == sig_hash.0)
             })
-            .ok_or(EvmBridgeClientError::BlockchainDataError(
-                "InitTransfer event log missing".to_string(),
-            ))
+            .ok_or(EvmBridgeClientError::BlockchainDataError(format!(
+                "Event log for '{event_signature}' missing in tx {tx_hash}"
+            )))
     }
 
     pub fn prepare_tx_for_sending<P, D, N>(

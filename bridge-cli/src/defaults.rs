@@ -59,6 +59,8 @@ pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
+pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
 /// Testnet
@@ -100,7 +102,7 @@ pub const HYPEREVM_WORMHOLE_ADDRESS_TESTNET: &str = "0xBB73cB66C26740F31d1FabDC6
 
 pub const ABS_RPC_TESTNET: &str = "https://api.testnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0x5C79627d2cD753d45B41839d187619f99c7B8D78";
 
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
@@ -123,7 +125,7 @@ pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
 
 pub const STARKNET_RPC_TESTNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
-    "0x05a0ad01b18eba34432d22e4cb5c987560cae87a785b494ed58d9553a98bdc8f";
+    "0x02830785fd87b181c5391819f4a5e6a0b2d76c49d92b7f748a2433495eead162";
 pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
 
 /// Devnet

@@ -33,9 +33,9 @@ pub struct StarknetInitTransferEvent {
     pub message: String,
 }
 
-/// Raw Starknet InitTransfer log with full metadata for MPC proof construction.
+/// Raw Starknet event log with full metadata for MPC proof construction.
 #[derive(Debug)]
-pub struct StarknetInitTransferLog {
+pub struct StarknetEventLog {
     pub from_address: Felt,
     pub keys: Vec<Felt>,
     pub data: Vec<Felt>,
@@ -413,7 +413,23 @@ impl StarknetBridgeClient {
 
     /// Returns the raw InitTransfer log with full metadata (block info, log index)
     /// for MPC proof construction.
-    pub async fn get_init_transfer_log(&self, tx_hash: Felt) -> Result<StarknetInitTransferLog> {
+    pub async fn get_init_transfer_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
+        self.get_event_log(tx_hash, selector!("InitTransfer"), "InitTransfer")
+            .await
+    }
+
+    /// Returns the raw DeployToken log with full metadata for MPC proof construction.
+    pub async fn get_deploy_token_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
+        self.get_event_log(tx_hash, selector!("DeployToken"), "DeployToken")
+            .await
+    }
+
+    async fn get_event_log(
+        &self,
+        tx_hash: Felt,
+        event_selector: Felt,
+        event_name: &str,
+    ) -> Result<StarknetEventLog> {
         let receipt = self
             .provider
             .get_transaction_receipt(tx_hash)
@@ -423,8 +439,6 @@ impl StarknetBridgeClient {
                     "Failed to get transaction receipt: {e}"
                 ))
             })?;
-
-        let init_transfer_selector = selector!("InitTransfer");
 
         let events = match &receipt.receipt {
             starknet::core::types::TransactionReceipt::Invoke(r) => &r.events,
@@ -439,11 +453,11 @@ impl StarknetBridgeClient {
         let (log_index, event) = events
             .iter()
             .enumerate()
-            .find(|(_, e)| !e.keys.is_empty() && e.keys[0] == init_transfer_selector)
+            .find(|(_, e)| !e.keys.is_empty() && e.keys[0] == event_selector)
             .ok_or_else(|| {
-                StarknetBridgeClientError::BlockchainDataError(
-                    "InitTransfer event not found in receipt".to_string(),
-                )
+                StarknetBridgeClientError::BlockchainDataError(format!(
+                    "{event_name} event not found in receipt for tx {tx_hash:#066x}"
+                ))
             })?;
 
         let (block_hash, block_number) = match &receipt.block {
@@ -458,7 +472,7 @@ impl StarknetBridgeClient {
             }
         };
 
-        Ok(StarknetInitTransferLog {
+        Ok(StarknetEventLog {
             from_address: event.from_address,
             keys: event.keys.clone(),
             data: event.data.clone(),
