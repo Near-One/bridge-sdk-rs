@@ -17,7 +17,7 @@ pub struct StarknetBridgeClientBuilder {
     endpoint: Option<String>,
     #[doc = r"Optional. Hex-encoded private key (Felt) for signing transactions."]
     private_key: Option<String>,
-    #[doc = r"Optional. Starknet account contract address (hex Felt)."]
+    #[doc = r"Optional. Starknet account address (hex Felt) matching the private key."]
     account_address: Option<String>,
     #[doc = r"Optional. OmniBridge contract address on Starknet (hex Felt)."]
     omni_bridge_address: Option<String>,
