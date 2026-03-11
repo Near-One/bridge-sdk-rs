@@ -28,7 +28,7 @@ pub struct StarknetInitTransferEvent {
     pub origin_nonce: u64,
     pub amount: u128,
     pub fee: u128,
-    pub native_token_fee: u128,
+    pub native_fee: u128,
     pub recipient: String,
     pub message: String,
 }
@@ -405,7 +405,7 @@ impl StarknetBridgeClient {
             origin_nonce,
             amount,
             fee,
-            native_token_fee,
+            native_fee: native_token_fee,
             recipient,
             message,
         })

@@ -1414,7 +1414,7 @@ impl OmniConnector {
                     amount: transfer_event.amount,
                     fee: Fee {
                         fee: transfer_event.fee.into(),
-                        native_fee: transfer_event.native_token_fee.into(),
+                        native_fee: transfer_event.native_fee.into(),
                     },
                     transfer_id: UnifiedTransferId {
                         origin_chain: chain_kind,
@@ -2709,7 +2709,7 @@ impl OmniConnector {
             &fee_recipient,
             &token_address,
             transfer_event.fee,
-            transfer_event.native_token_fee,
+            transfer_event.native_fee,
         )
         .await
     }
@@ -2794,7 +2794,7 @@ impl OmniConnector {
             &fee_recipient,
             &token_address,
             transfer_event.fee,
-            transfer_event.native_token_fee,
+            transfer_event.native_fee,
         )
         .await
     }

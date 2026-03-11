@@ -52,7 +52,7 @@ sol! {
         function logMetadata(address tokenAddress) external payable;
         function completedTransfers(uint64) external view returns (bool);
 
-        event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeTokenFee, string recipient, string message);
+        event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message);
         event DeployToken(address indexed tokenAddress, string token, string name, string symbol, uint8 decimals, uint8 originDecimals);
     }
 }
@@ -82,7 +82,7 @@ pub struct InitTransferFilter {
     pub origin_nonce: u64,
     pub amount: u128,
     pub fee: u128,
-    pub native_token_fee: u128,
+    pub native_fee: u128,
     pub recipient: String,
     pub message: String,
 }
@@ -373,7 +373,7 @@ impl EvmBridgeClient {
             origin_nonce: decoded.originNonce,
             amount: decoded.amount,
             fee: decoded.fee,
-            native_token_fee: decoded.nativeTokenFee,
+            native_fee: decoded.nativeFee,
             recipient: decoded.recipient.clone(),
             message: decoded.message.clone(),
         })
