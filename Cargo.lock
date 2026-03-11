@@ -4864,6 +4864,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-abi"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2fe0c8cdaf8369d8c78f2577d95673007c7f256c85752a66672be5244e2681a6"
+dependencies = [
+ "borsh 1.6.0",
+ "schemars 0.8.22",
+ "semver 1.0.27",
+ "serde",
+]
+
+[[package]]
 name = "near-account-id"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4876,6 +4888,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91f75ff8eee73815c247d0e17f3c0b705f0e993922a5548acd2ad377aeb67fca"
 dependencies = [
  "borsh 1.6.0",
+ "schemars 0.8.22",
  "serde",
 ]
 
@@ -4994,6 +5007,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "919d705b6dab5a7c6cc4b9a60e3025ed2f7cf3d4c3c32ad1a47264a4190e6409"
 dependencies = [
  "borsh 1.6.0",
+ "schemars 0.8.22",
  "serde",
 ]
 
@@ -5180,6 +5194,7 @@ dependencies = [
  "base64 0.22.1",
  "borsh 1.6.0",
  "bs58 0.5.1",
+ "near-abi",
  "near-account-id 2.5.0",
  "near-crypto",
  "near-gas",
@@ -5191,6 +5206,7 @@ dependencies = [
  "near-token",
  "near-vm-runner",
  "once_cell",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_with",
@@ -5244,6 +5260,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34de6b54d82d0790b2a56b677e7b4ecb7f021a7e8559f8611065c890d56cfcda"
 dependencies = [
  "borsh 1.6.0",
+ "schemars 0.8.22",
  "serde",
 ]
 
@@ -5579,7 +5596,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=55c6f42b84b018cbcc41b664805e8a5d776defd5#55c6f42b84b018cbcc41b664805e8a5d776defd5"
+source = "git+https://github.com/near-one/omni-bridge?rev=5677f0db5e9799ba503ee85eeef8fd6f977f4d36#5677f0db5e9799ba503ee85eeef8fd6f977f4d36"
 dependencies = [
  "alloy",
  "borsh 1.6.0",
