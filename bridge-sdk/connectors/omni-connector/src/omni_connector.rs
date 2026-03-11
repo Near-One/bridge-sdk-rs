@@ -53,7 +53,7 @@ pub struct OmniConnector {
     arb_bridge_client: Option<EvmBridgeClient>,
     bnb_bridge_client: Option<EvmBridgeClient>,
     pol_bridge_client: Option<EvmBridgeClient>,
-    hyper_evm_bridge_client: Option<EvmBridgeClient>,
+    hyperevm_bridge_client: Option<EvmBridgeClient>,
     abs_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
@@ -2425,7 +2425,7 @@ impl OmniConnector {
             ChainKind::Arb => self.arb_bridge_client.as_ref(),
             ChainKind::Bnb => self.bnb_bridge_client.as_ref(),
             ChainKind::Pol => self.pol_bridge_client.as_ref(),
-            ChainKind::HyperEvm => self.hyper_evm_bridge_client.as_ref(),
+            ChainKind::HyperEvm => self.hyperevm_bridge_client.as_ref(),
             ChainKind::Abs => self.abs_bridge_client.as_ref(),
             ChainKind::Near
             | ChainKind::Sol

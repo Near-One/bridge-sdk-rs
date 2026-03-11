@@ -1594,7 +1594,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .arb_bridge_client(Some(arb_bridge_client))
         .bnb_bridge_client(Some(bnb_bridge_client))
         .pol_bridge_client(Some(pol_bridge_client))
-        .hyper_evm_bridge_client(Some(hyperevm_bridge_client))
+        .hyperevm_bridge_client(Some(hyperevm_bridge_client))
         .abs_bridge_client(Some(abs_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
