@@ -58,6 +58,7 @@ ETH_PRIVATE_KEY=<eth-private-key>
 BASE_PRIVATE_KEY=<base-private-key>
 ARB_PRIVATE_KEY=<arbitrum-private-key>
 HYPEREVM_PRIVATE_KEY=<hyperevm-private-key>
+ABS_PRIVATE_KEY=<abs-private-key>
 
 # you can provide solana's keypair as base58 string
 SOLANA_KEYPAIR=<solana-keypair-bs58>
