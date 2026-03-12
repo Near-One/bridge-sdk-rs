@@ -1789,6 +1789,7 @@ version = "0.3.37"
 dependencies = [
  "alloy",
  "clap",
+ "contract-interface",
  "dotenv",
  "evm-bridge-client",
  "light-client",
@@ -5596,7 +5597,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=5677f0db5e9799ba503ee85eeef8fd6f977f4d36#5677f0db5e9799ba503ee85eeef8fd6f977f4d36"
+source = "git+https://github.com/near-one/omni-bridge?rev=9e02ab5bcff3901bc68492623f8915b798fc0fc0#9e02ab5bcff3901bc68492623f8915b798fc0fc0"
 dependencies = [
  "alloy",
  "borsh 1.6.0",

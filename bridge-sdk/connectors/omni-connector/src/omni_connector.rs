@@ -7,6 +7,7 @@ use derive_builder::Builder;
 use light_client::LightClient;
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
+use omni_types::mpc_types::MpcFinality;
 use utxo_bridge_client::error::UtxoClientError;
 use utxo_utils::address::{Network, UTXOAddress};
 
@@ -34,6 +35,7 @@ use solana_bridge_client::{
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
+use std::collections::HashMap;
 use std::str::FromStr;
 use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
@@ -64,6 +66,7 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
+    mpc_finalities: Option<HashMap<ChainKind, MpcFinality>>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -1124,9 +1127,8 @@ impl OmniConnector {
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
         use mpc_contract_interface::types::{
-            EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId,
-            ExtractedValue, ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-            Hash160, Hash256,
+            EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
+            ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
         };
 
         let evm_client = self.evm_bridge_client(ChainKind::Abs)?;
@@ -1177,9 +1179,11 @@ impl OmniConnector {
             topics: rpc_log.topics().iter().map(|t| Hash256(t.0)).collect(),
         };
 
-        let finality = match self.network()? {
-            Network::Mainnet => EvmFinality::Safe,
-            Network::Testnet => EvmFinality::Latest,
+        let mpc_finalities = self.get_mpc_finalities()?;
+        let Some(MpcFinality::Evm(finality)) = mpc_finalities.get(&ChainKind::Abs).cloned() else {
+            return Err(BridgeSdkError::ConfigError(
+                "No mpc finality provided for Abs".to_string(),
+            ));
         };
 
         let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
@@ -1210,7 +1214,7 @@ impl OmniConnector {
     ) -> Result<Vec<u8>> {
         use mpc_contract_interface::types::{
             ExtractedValue, ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-            StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality, StarknetLog,
+            StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog,
             StarknetRpcRequest, StarknetTxId,
         };
 
@@ -1242,10 +1246,18 @@ impl OmniConnector {
                 .collect(),
         };
 
+        let mpc_finalities = self.get_mpc_finalities()?;
+        let Some(MpcFinality::Starknet(finality)) = mpc_finalities.get(&ChainKind::Strk).cloned()
+        else {
+            return Err(BridgeSdkError::ConfigError(
+                "No mpc finality provided for Abs".to_string(),
+            ));
+        };
+
         let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: StarknetTxId(StarknetFelt(tx_hash.to_bytes_be())),
-                finality: StarknetFinality::AcceptedOnL2,
+                finality,
                 extractors: vec![StarknetExtractor::Log {
                     log_index: log.log_index,
                 }],
@@ -2490,6 +2502,12 @@ impl OmniConnector {
         };
 
         Ok(enable_orchard)
+    }
+
+    pub fn get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
+        self.mpc_finalities.clone().ok_or_else(|| {
+            BridgeSdkError::ConfigError("MPC finalities are not configured".to_string())
+        })
     }
 
     pub fn denormalize_amount(&self, decimals: &Decimals, amount: u128) -> Result<u128> {
