@@ -10,7 +10,7 @@ use near_primitives::types::AccountId;
 use utxo_bridge_client::error::UtxoClientError;
 use utxo_utils::address::{Network, UTXOAddress};
 
-use omni_types::locker_args::{ClaimFeeArgs, StorageDepositAction};
+use omni_types::locker_args::StorageDepositAction;
 use omni_types::prover_args::{
     EvmProof, EvmVerifyProofArgs, MpcVerifyProofArgs, WormholeVerifyProofArgs,
 };
@@ -155,6 +155,21 @@ pub enum BindTokenArgs {
         transaction_options: TransactionOptions,
     },
     BindTokenWithMpcProofTx {
+        chain_kind: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    },
+}
+
+pub enum ClaimFeeArgs {
+    /// Pre-built prover args (existing low-level path).
+    ClaimFeeWithArgs {
+        chain_kind: ChainKind,
+        prover_args: Vec<u8>,
+        transaction_options: TransactionOptions,
+    },
+    /// MPC-based proof — connector fetches the FinTransfer log and builds the payload internally.
+    ClaimFeeWithMpcProofTx {
         chain_kind: ChainKind,
         tx_hash: String,
         transaction_options: TransactionOptions,
@@ -1118,6 +1133,7 @@ impl OmniConnector {
         let rpc_log = match proof_kind {
             ProofKind::InitTransfer => evm_client.get_init_transfer_log(tx_hash).await?,
             ProofKind::DeployToken => evm_client.get_deploy_token_log(tx_hash).await?,
+            ProofKind::FinTransfer => evm_client.get_fin_transfer_log(tx_hash).await?,
             other => {
                 return Err(BridgeSdkError::InvalidArgument(format!(
                     "Unsupported proof kind for Abstract MPC payload: {other:?}"
@@ -1202,6 +1218,7 @@ impl OmniConnector {
         let log = match proof_kind {
             ProofKind::InitTransfer => strk_client.get_init_transfer_log(tx_hash).await?,
             ProofKind::DeployToken => strk_client.get_deploy_token_log(tx_hash).await?,
+            ProofKind::FinTransfer => strk_client.get_fin_transfer_log(tx_hash).await?,
             other => {
                 return Err(BridgeSdkError::InvalidArgument(format!(
                     "Unsupported proof kind for Starknet MPC payload: {other:?}"
@@ -1245,7 +1262,7 @@ impl OmniConnector {
 
     pub async fn near_claim_fee(
         &self,
-        claim_fee_args: ClaimFeeArgs,
+        claim_fee_args: omni_types::locker_args::ClaimFeeArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -1300,6 +1317,32 @@ impl OmniConnector {
         near_bridge_client
             .bind_token(
                 omni_types::locker_args::BindTokenArgs {
+                    chain_kind,
+                    prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
+                        BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
+                    })?,
+                },
+                transaction_options,
+            )
+            .await
+    }
+
+    pub async fn near_claim_fee_with_mpc_proof(
+        &self,
+        chain_kind: ChainKind,
+        sign_payload: Vec<u8>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let verify_proof_args = MpcVerifyProofArgs {
+            proof_kind: ProofKind::FinTransfer,
+            sign_payload,
+        };
+
+        near_bridge_client
+            .claim_fee(
+                omni_types::locker_args::ClaimFeeArgs {
                     chain_kind,
                     prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
@@ -2312,6 +2355,60 @@ impl OmniConnector {
                 .starknet_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
                 .await
                 .map(|hash| format!("{hash:#066x}")),
+        }
+    }
+
+    pub async fn claim_fee(&self, claim_fee_args: ClaimFeeArgs) -> Result<String> {
+        match claim_fee_args {
+            ClaimFeeArgs::ClaimFeeWithArgs {
+                chain_kind,
+                prover_args,
+                transaction_options,
+            } => self
+                .near_claim_fee(
+                    omni_types::locker_args::ClaimFeeArgs {
+                        chain_kind,
+                        prover_args,
+                    },
+                    transaction_options,
+                )
+                .await
+                .map(|hash| hash.to_string()),
+            ClaimFeeArgs::ClaimFeeWithMpcProofTx {
+                chain_kind,
+                tx_hash,
+                transaction_options,
+            } => {
+                let sign_payload = match chain_kind {
+                    ChainKind::Abs => {
+                        let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
+                            BridgeSdkError::InvalidArgument(format!(
+                                "Failed to parse EVM tx hash: {tx_hash}"
+                            ))
+                        })?;
+                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::FinTransfer)
+                            .await?
+                    }
+                    ChainKind::Strk => {
+                        let felt =
+                            starknet::core::types::Felt::from_hex(&tx_hash).map_err(|_| {
+                                BridgeSdkError::InvalidArgument(format!(
+                                    "Failed to parse Starknet tx hash: {tx_hash}"
+                                ))
+                            })?;
+                        self.build_strk_mpc_sign_payload(felt, ProofKind::FinTransfer)
+                            .await?
+                    }
+                    other => {
+                        return Err(BridgeSdkError::InvalidArgument(format!(
+                            "MPC proof claim_fee is not supported for chain {other:?}"
+                        )));
+                    }
+                };
+                self.near_claim_fee_with_mpc_proof(chain_kind, sign_payload, transaction_options)
+                    .await
+                    .map(|hash| hash.to_string())
+            }
         }
     }
 

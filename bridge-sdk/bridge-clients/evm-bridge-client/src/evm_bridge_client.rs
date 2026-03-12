@@ -54,6 +54,7 @@ sol! {
 
         event InitTransfer(address indexed sender, address indexed tokenAddress, uint64 indexed originNonce, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message);
         event DeployToken(address indexed tokenAddress, string token, string name, string symbol, uint8 decimals, uint8 originDecimals);
+        event FinTransfer(uint8 originChain, uint64 originNonce, address tokenAddress, uint128 amount, address recipient, string feeRecipient);
     }
 }
 
@@ -386,6 +387,11 @@ impl EvmBridgeClient {
 
     pub async fn get_deploy_token_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
         self.get_event_log(tx_hash, OmniBridge::DeployToken::SIGNATURE)
+            .await
+    }
+
+    pub async fn get_fin_transfer_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
+        self.get_event_log(tx_hash, OmniBridge::FinTransfer::SIGNATURE)
             .await
     }
 
