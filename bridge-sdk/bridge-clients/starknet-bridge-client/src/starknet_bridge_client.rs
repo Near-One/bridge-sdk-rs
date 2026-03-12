@@ -90,7 +90,7 @@ impl StarknetBridgeClient {
     }
 
     async fn wait_for_tx(&self, tx_hash: Felt) -> Result<TransactionReceiptWithBlockInfo> {
-        const MAX_RETRIES: u32 = 360;
+        const MAX_RETRIES: u32 = 30;
         for _ in 0..MAX_RETRIES {
             match self.provider.get_transaction_receipt(tx_hash).await {
                 Ok(receipt) => match receipt.receipt.execution_result() {
@@ -102,7 +102,7 @@ impl StarknetBridgeClient {
                     }
                 },
                 Err(_) => {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 }
             }
         }
