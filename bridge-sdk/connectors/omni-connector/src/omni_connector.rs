@@ -1148,7 +1148,7 @@ impl OmniConnector {
         })?;
 
         let evm_log = EvmLog {
-            removed: rpc_log.removed,
+            removed: false,
             log_index,
             transaction_index: rpc_log.transaction_index.ok_or_else(|| {
                 BridgeSdkError::EthProofError("Transaction index missing (pending tx?)".into())
