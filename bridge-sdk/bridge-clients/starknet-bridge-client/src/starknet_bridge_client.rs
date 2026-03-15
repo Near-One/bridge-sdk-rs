@@ -107,7 +107,8 @@ impl StarknetBridgeClient {
             }
         }
         Err(StarknetBridgeClientError::TransactionError(format!(
-            "Transaction {tx_hash:#066x} was not confirmed after {MAX_RETRIES} seconds"
+            "Transaction {tx_hash:#066x} was not confirmed after {} seconds",
+            MAX_RETRIES * 10
         )))
     }
 
