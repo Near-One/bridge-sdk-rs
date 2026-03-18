@@ -1,5 +1,7 @@
 use clap::Subcommand;
 use core::panic;
+use mpc_contract_interface::types::{EvmFinality, StarknetFinality};
+use omni_types::mpc_types::MpcFinality;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
@@ -17,6 +19,7 @@ use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
+use starknet_bridge_client::StarknetBridgeClientBuilder;
 use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
@@ -54,6 +57,8 @@ fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, Str
         ChainKind::Arb => &config.arb_private_key,
         ChainKind::Bnb => &config.bnb_private_key,
         ChainKind::Pol => &config.pol_private_key,
+        ChainKind::HyperEvm => &config.hyperevm_private_key,
+        ChainKind::Abs => &config.abs_private_key,
         _ => return Err(format!("Unsupported EVM chain: {chain:?}")),
     }
     .as_ref()
@@ -323,6 +328,37 @@ pub enum OmniConnectorSubCommand {
             help = "Transaction hash of the sign_transfer call on NEAR"
         )]
         tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
+    #[clap(about = "Initialize a transfer on Starknet")]
+    StarknetInitTransfer {
+        #[clap(short, long, help = "Token address on Starknet (felt hex)")]
+        token: String,
+        #[clap(short, long, help = "Amount to transfer")]
+        amount: u128,
+        #[clap(short, long, help = "Recipient address on the destination chain")]
+        recipient: OmniAddress,
+        #[clap(short, long, help = "Fee to charge for the transfer")]
+        fee: Option<u128>,
+        #[clap(short, long, help = "Native fee to charge for the transfer")]
+        native_fee: Option<u128>,
+        #[clap(short, long, help = "Additional message")]
+        message: Option<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize a transfer on Starknet")]
+    StarknetFinTransfer {
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the sign_transfer call on NEAR"
+        )]
+        tx_hash: String,
+        #[clap(long, help = "Sender ID of the sign_transfer call on NEAR")]
+        sender_id: Option<AccountId>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -634,7 +670,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .unwrap();
                 }
             },
-            ChainKind::Eth | ChainKind::Arb | ChainKind::Base | ChainKind::Bnb | ChainKind::Pol => {
+            ChainKind::Eth
+            | ChainKind::Arb
+            | ChainKind::Base
+            | ChainKind::Bnb
+            | ChainKind::Pol
+            | ChainKind::HyperEvm
+            | ChainKind::Abs => {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
@@ -648,6 +690,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::SolanaDeployTokenWithTxHash {
                         near_tx_hash: tx_hash.parse().unwrap(),
+                        sender_id: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Strk => {
+                omni_connector(network, config_cli)
+                    .deploy_token(DeployTokenArgs::StarknetDeployTokenWithTxHash {
+                        near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                         sender_id: None,
                     })
                     .await
@@ -817,6 +868,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 | ChainKind::Base
                 | ChainKind::Bnb
                 | ChainKind::Pol
+                | ChainKind::HyperEvm
                 | ChainKind::Sol => {
                     let vaa = connector
                         .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
@@ -829,6 +881,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                             destination_chain,
                             storage_deposit_actions,
                             vaa,
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                }
+                ChainKind::Abs | ChainKind::Strk => {
+                    connector
+                        .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
+                            chain_kind: chain,
+                            destination_chain,
+                            storage_deposit_actions,
+                            tx_hash,
                             transaction_options: TransactionOptions::default(),
                         })
                         .await
@@ -928,6 +992,48 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     chain_kind: chain,
                     tx_nonce: None,
+                })
+                .await
+                .unwrap();
+        }
+
+        OmniConnectorSubCommand::StarknetInitTransfer {
+            token,
+            amount,
+            recipient,
+            fee,
+            native_fee,
+            message,
+            config_cli,
+        } => {
+            let (fee, native_fee) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf),
+                (Some(f), None) => (f, 0),
+                (None, Some(nf)) => (0, nf),
+                _ => (0, 0),
+            };
+
+            omni_connector(network, config_cli)
+                .init_transfer(InitTransferArgs::StarknetInitTransfer {
+                    token,
+                    amount,
+                    recipient: recipient.to_string(),
+                    fee,
+                    native_fee,
+                    message: message.unwrap_or_default(),
+                })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::StarknetFinTransfer {
+            tx_hash,
+            sender_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .fin_transfer(FinTransferArgs::StarknetFinTransferWithTxHash {
+                    near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    sender_id,
                 })
                 .await
                 .unwrap();
@@ -1058,6 +1164,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
                         chain_kind: chain,
                         tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Abs | ChainKind::Strk => {
+                omni_connector(network, config_cli)
+                    .bind_token(BindTokenArgs::BindTokenWithMpcProofTx {
+                        chain_kind: chain,
+                        tx_hash,
                         transaction_options: TransactionOptions::default(),
                     })
                     .await
@@ -1354,6 +1470,22 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let hyperevm_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.hyperevm_rpc)
+        .private_key(combined_config.hyperevm_private_key)
+        .omni_bridge_address(combined_config.hyperevm_bridge_token_factory_address)
+        .wormhole_core_address(combined_config.hyperevm_wormhole_address)
+        .build()
+        .unwrap();
+
+    let abs_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.abs_rpc)
+        .private_key(combined_config.abs_private_key)
+        .omni_bridge_address(combined_config.abs_bridge_token_factory_address)
+        .wormhole_core_address(None)
+        .build()
+        .unwrap();
+
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
         .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
         .program_id(
@@ -1447,6 +1579,29 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let starknet_bridge_client = StarknetBridgeClientBuilder::default()
+        .endpoint(combined_config.starknet_rpc)
+        .private_key(combined_config.starknet_private_key)
+        .account_address(combined_config.starknet_account_address)
+        .omni_bridge_address(combined_config.starknet_bridge_address)
+        .chain_id(combined_config.starknet_chain_id)
+        .build()
+        .unwrap();
+
+    let mut mpc_finalities = HashMap::new();
+    match network {
+        Network::Mainnet => {
+            mpc_finalities.insert(ChainKind::Abs, MpcFinality::Evm(EvmFinality::Safe));
+        }
+        Network::Testnet | Network::Devnet => {
+            mpc_finalities.insert(ChainKind::Abs, MpcFinality::Evm(EvmFinality::Latest));
+        }
+    }
+    mpc_finalities.insert(
+        ChainKind::Strk,
+        MpcFinality::Starknet(StarknetFinality::AcceptedOnL2),
+    );
+
     OmniConnectorBuilder::default()
         .network(Some(network.into()))
         .near_bridge_client(Some(near_bridge_client))
@@ -1455,7 +1610,10 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .arb_bridge_client(Some(arb_bridge_client))
         .bnb_bridge_client(Some(bnb_bridge_client))
         .pol_bridge_client(Some(pol_bridge_client))
+        .hyperevm_bridge_client(Some(hyperevm_bridge_client))
+        .abs_bridge_client(Some(abs_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
+        .starknet_bridge_client(Some(starknet_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
         .zcash_bridge_client(Some(zcash_bridge_client))
@@ -1463,6 +1621,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .btc_light_client(Some(btc_light_client))
         .zcash_light_client(Some(zcash_light_client))
         .enable_orchard(combined_config.enable_orchard)
+        .mpc_finalities(Some(mpc_finalities))
         .build()
         .unwrap()
 }
