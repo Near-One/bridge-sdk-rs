@@ -346,6 +346,11 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client.get_mpc_finalities().await
+    }
+
     pub async fn near_is_fast_transfer_finalised(
         &self,
         fast_transfer_id: FastTransferId,

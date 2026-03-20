@@ -10,6 +10,7 @@ use near_rpc_client::{ChangeRequest, ViewRequest};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
+    mpc_types::MpcFinality,
     ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
     UnifiedTransferId,
 };
@@ -100,6 +101,8 @@ pub struct NearBridgeClient {
     signer: Option<AccountId>,
     #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<AccountId>,
+    #[doc = r"`MpcOmniProver` account id on Near"]
+    mpc_omni_prover_id: Option<AccountId>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
     utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
 }
@@ -107,12 +110,12 @@ pub struct NearBridgeClient {
 impl NearBridgeClient {
     pub async fn get_transfer_message(&self, transfer_id: TransferId) -> Result<TransferMessage> {
         let endpoint = self.endpoint()?;
-        let token_id = self.omni_bridge_id()?;
+        let omni_bridge = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: omni_bridge,
                 method_name: "get_transfer_message".to_string(),
                 args: serde_json::json!({
                     "transfer_id": transfer_id
@@ -128,12 +131,12 @@ impl NearBridgeClient {
 
     pub async fn is_transfer_finalised(&self, transfer_id: TransferId) -> Result<bool> {
         let endpoint = self.endpoint()?;
-        let token_id = self.omni_bridge_id()?;
+        let omni_bridge = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: omni_bridge,
                 method_name: "is_transfer_finalised".to_string(),
                 args: serde_json::json!({
                     "transfer_id": transfer_id
@@ -149,12 +152,12 @@ impl NearBridgeClient {
 
     pub async fn get_token_id(&self, token_address: OmniAddress) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
-        let token_id = self.omni_bridge_id()?;
+        let omni_bridge = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: omni_bridge,
                 method_name: "get_token_id".to_string(),
                 args: serde_json::json!({
                     "address": token_address
@@ -170,12 +173,12 @@ impl NearBridgeClient {
 
     pub async fn get_token_decimals(&self, token_address: OmniAddress) -> Result<Decimals> {
         let endpoint = self.endpoint()?;
-        let token_id = self.omni_bridge_id()?;
+        let omni_bridge = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: omni_bridge,
                 method_name: "get_token_decimals".to_string(),
                 args: serde_json::json!({
                     "address": token_address
@@ -191,12 +194,12 @@ impl NearBridgeClient {
 
     pub async fn get_native_token_id(&self, origin_chain: ChainKind) -> Result<AccountId> {
         let endpoint = self.endpoint()?;
-        let token_id = self.omni_bridge_id()?;
+        let omni_bridge = self.omni_bridge_id()?;
 
         let response = near_rpc_client::view(
             endpoint,
             ViewRequest {
-                contract_account_id: token_id,
+                contract_account_id: omni_bridge,
                 method_name: "get_native_token_id".to_string(),
                 args: serde_json::json!({
                     "chain": origin_chain
@@ -231,6 +234,27 @@ impl NearBridgeClient {
 
         let status = serde_json::from_slice::<Option<FastTransferStatus>>(&response)?;
         Ok(status)
+    }
+
+    pub async fn get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
+        let endpoint = self.endpoint()?;
+        let mpc_omni_prover = self.mpc_omni_prover_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: mpc_omni_prover,
+                method_name: "get_finalities".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await?;
+
+        let mpc_finalities = serde_json::from_slice::<Vec<(ChainKind, MpcFinality)>>(&response)?
+            .into_iter()
+            .collect();
+
+        Ok(mpc_finalities)
     }
 
     pub async fn is_fast_transfer_finalised(
@@ -832,7 +856,7 @@ impl NearBridgeClient {
             ViewRequest {
                 contract_account_id: omni_bridge_id,
                 method_name: method_name.to_string(),
-                args: serde_json::json!({}),
+                args: serde_json::Value::Null,
             },
         )
         .await?;
@@ -980,6 +1004,18 @@ impl NearBridgeClient {
                 "OmniBridge account id is not set".to_string(),
             ))
             .map_err(|_| BridgeSdkError::ConfigError("Invalid omni bridge account id".to_string()))
+            .cloned()
+    }
+
+    pub fn mpc_omni_prover_id(&self) -> Result<AccountId> {
+        self.mpc_omni_prover_id
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "MpcOmniProver account id is not set".to_string(),
+            ))
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("Invalid mpc omni prover account id".to_string())
+            })
             .cloned()
     }
 }

@@ -1,6 +1,6 @@
 use clap::Subcommand;
 use core::panic;
-use mpc_contract_interface::types::{EvmFinality, StarknetFinality};
+use near_mpc_contract_interface::types::{EvmFinality, StarknetFinality};
 use omni_types::mpc_types::MpcFinality;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
@@ -9,7 +9,9 @@ use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
-use near_bridge_client::{btc::format_max_gas_fee, NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts};
+use near_bridge_client::{
+    btc::format_max_gas_fee, NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts,
+};
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
     BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
@@ -241,7 +243,11 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u128>,
-        #[clap(short, long, help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)")]
+        #[clap(
+            short,
+            long,
+            help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)"
+        )]
         message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -391,7 +397,11 @@ pub enum OmniConnectorSubCommand {
         fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u64>,
-        #[clap(short, long, help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)")]
+        #[clap(
+            short,
+            long,
+            help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)"
+        )]
         message: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -1424,6 +1434,11 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .omni_bridge_id(
             combined_config
                 .near_token_locker_id
+                .map(|account| account.parse().unwrap()),
+        )
+        .mpc_omni_prover_id(
+            combined_config
+                .near_mpc_omni_prover_id
                 .map(|account| account.parse().unwrap()),
         )
         .utxo_bridges(utxo_bridges)
