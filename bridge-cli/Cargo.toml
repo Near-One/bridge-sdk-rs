@@ -29,4 +29,4 @@ utxo-bridge-client = { path = "../bridge-sdk/bridge-clients/utxo-bridge-client" 
 starknet-bridge-client = { path = "../bridge-sdk/bridge-clients/starknet-bridge-client" }
 utxo-utils = { path = "../bridge-sdk/utxo-utils" }
 near-sdk.workspace = true
-mpc-contract-interface.workspace = true
+near-mpc-contract-interface.workspace = true

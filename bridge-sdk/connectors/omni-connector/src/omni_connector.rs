@@ -5,6 +5,12 @@ use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use light_client::LightClient;
+use near_mpc_contract_interface::types::{
+    EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
+    ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
+    StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog, StarknetRpcRequest,
+    StarknetTxId,
+};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 use omni_types::mpc_types::MpcFinality;
@@ -1126,11 +1132,6 @@ impl OmniConnector {
         tx_hash: TxHash,
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
-        use mpc_contract_interface::types::{
-            EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
-            ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
-        };
-
         let evm_client = self.evm_bridge_client(ChainKind::Abs)?;
         let rpc_log = match proof_kind {
             ProofKind::InitTransfer => evm_client.get_init_transfer_log(tx_hash).await?,
@@ -1212,12 +1213,6 @@ impl OmniConnector {
         tx_hash: starknet::core::types::Felt,
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
-        use mpc_contract_interface::types::{
-            ExtractedValue, ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1,
-            StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog,
-            StarknetRpcRequest, StarknetTxId,
-        };
-
         let strk_client = self.starknet_bridge_client()?;
         let log = match proof_kind {
             ProofKind::InitTransfer => strk_client.get_init_transfer_log(tx_hash).await?,
