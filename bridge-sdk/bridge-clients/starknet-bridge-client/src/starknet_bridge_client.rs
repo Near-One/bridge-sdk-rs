@@ -332,44 +332,26 @@ impl StarknetBridgeClient {
     }
 
     /// Check if a transfer with the given nonce has been finalised on Starknet.
-    ///
-    /// The contract stores completed transfers as a bitmap:
-    ///   slot = nonce / 251, bit = nonce % 251
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
         let bridge = self.omni_bridge_address()?;
-
-        let slot = nonce / 251;
-
         let result = self
             .provider
             .call(
                 FunctionCall {
                     contract_address: bridge,
-                    entry_point_selector: selector!("completed_transfers"),
-                    calldata: vec![Felt::from(slot)],
+                    entry_point_selector: selector!("is_transfer_finalised"),
+                    calldata: vec![Felt::from(nonce)],
                 },
                 BlockId::Tag(BlockTag::Latest),
             )
             .await
             .map_err(|e| {
                 StarknetBridgeClientError::ProviderError(format!(
-                    "Failed to call completed_transfers: {e}"
+                    "Failed to call is_transfer_finalised: {e}"
                 ))
             })?;
 
-        if result.is_empty() {
-            return Ok(false);
-        }
-
-        let bitmap_felt = result[0];
-        let bitmap_bytes = bitmap_felt.to_bytes_be();
-
-        let bit_position = (nonce % 251) as usize;
-
-        let byte_index = 31 - (bit_position / 8);
-        let bit_in_byte = bit_position % 8;
-
-        Ok(bitmap_bytes[byte_index] & (1 << bit_in_byte) != 0)
+        Ok(!result.is_empty() && result[0] != Felt::ZERO)
     }
 
     /// Extract an `InitTransfer` event from a Starknet transaction receipt.
