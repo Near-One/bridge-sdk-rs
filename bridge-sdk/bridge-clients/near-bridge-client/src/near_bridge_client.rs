@@ -856,7 +856,7 @@ impl NearBridgeClient {
             ViewRequest {
                 contract_account_id: omni_bridge_id,
                 method_name: method_name.to_string(),
-                args: serde_json::Value::Null,
+                args: serde_json::json!({}),
             },
         )
         .await?;
