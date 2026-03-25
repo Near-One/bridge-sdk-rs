@@ -20,6 +20,11 @@ pub use builder::StarknetBridgeClientBuilder;
 mod builder;
 pub mod error;
 
+/// STRK native token contract address on Starknet.
+const STRK_TOKEN: Felt = Felt::from_hex_unchecked(
+    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+);
+
 /// Event data extracted from a Starknet `InitTransfer` receipt.
 #[derive(Debug)]
 pub struct StarknetInitTransferEvent {
@@ -228,7 +233,8 @@ impl StarknetBridgeClient {
 
     /// Initiate a transfer from Starknet.
     ///
-    /// This issues a multicall: first ERC-20 `approve`, then `init_transfer`.
+    /// This issues a multicall: ERC-20 `approve` for the transfer token (amount + fee),
+    /// optionally ERC-20 `approve` for STRK (native_fee), then `init_transfer`.
     #[tracing::instrument(skip_all, name = "STARKNET INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -242,12 +248,33 @@ impl StarknetBridgeClient {
     ) -> Result<Felt> {
         let bridge = self.omni_bridge_address()?;
 
-        // ERC-20 approve call (amount as u256 = [low, high])
-        let approve_call = Call {
-            to: token,
-            selector: selector!("approve"),
-            calldata: vec![bridge, Self::encode_u128(amount), Felt::ZERO],
-        };
+        let mut calls = Vec::new();
+
+        // Approve transfer token for amount + fee
+        let token_total: u128 = amount.checked_add(fee).ok_or_else(|| {
+            StarknetBridgeClientError::InvalidArgument(
+                "amount + fee overflows u128".to_string(),
+            )
+        })?;
+
+        if token_total > 0 {
+            calls.push(Call {
+                to: token,
+                selector: selector!("approve"),
+                calldata: vec![bridge, Self::encode_u128(token_total), Felt::ZERO],
+            });
+        }
+
+        // Approve STRK token for native_fee.
+        // On Starknet there is no msg.value, so the bridge contract pulls the
+        // native fee from the caller via ERC-20 transferFrom on STRK.
+        if native_fee > 0 {
+            calls.push(Call {
+                to: STRK_TOKEN,
+                selector: selector!("approve"),
+                calldata: vec![bridge, Self::encode_u128(native_fee), Felt::ZERO],
+            });
+        }
 
         // init_transfer call
         let mut calldata = vec![
@@ -259,13 +286,13 @@ impl StarknetBridgeClient {
         calldata.extend(Self::encode_byte_array(&recipient));
         calldata.extend(Self::encode_byte_array(&message));
 
-        let init_call = Call {
+        calls.push(Call {
             to: bridge,
             selector: selector!("init_transfer"),
             calldata,
-        };
+        });
 
-        self.send_and_wait(vec![approve_call, init_call]).await
+        self.send_and_wait(calls).await
     }
 
     /// Finalize a transfer to Starknet using a `SignTransferEvent` from Near.
