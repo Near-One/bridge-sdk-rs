@@ -8,9 +8,9 @@ use alloy::{
 };
 use error::Result;
 use ethereum_types::H256 as EthH256;
-use omni_types::prover_args::EvmProof;
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
+use omni_types::{prover_args::EvmProof, ChainKind};
 use omni_types::{EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
 
@@ -45,9 +45,19 @@ sol! {
             string feeRecipient;
             bytes message;
         }
+        struct TransferMessagePayloadWithoutMessage {
+            uint64 destinationNonce;
+            uint8 originChain;
+            uint64 originNonce;
+            address tokenAddress;
+            uint128 amount;
+            address recipient;
+            string feeRecipient;
+        }
 
         function deployToken(bytes signatureData, MetadataPayload metadata) external returns (address);
         function finTransfer(bytes, TransferMessagePayload) external;
+        function finTransfer(bytes, TransferMessagePayloadWithoutMessage) external;
         function initTransfer(address tokenAddress, uint128 amount, uint128 fee, uint128 nativeFee, string recipient, string message) external payable;
         function logMetadata(address tokenAddress) external payable;
         function completedTransfers(uint64) external view returns (bool);
@@ -288,6 +298,7 @@ impl EvmBridgeClient {
     #[tracing::instrument(skip_all, name = "EVM FIN TRANSFER")]
     pub async fn fin_transfer(
         &self,
+        chain_kind: ChainKind,
         transfer_log: OmniBridgeEvent,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
@@ -303,34 +314,70 @@ impl EvmBridgeClient {
             )));
         };
 
-        let bridge_deposit = OmniBridge::TransferMessagePayload {
-            destinationNonce: message_payload.destination_nonce,
-            originChain: message_payload.transfer_id.origin_chain.into(),
-            originNonce: message_payload.transfer_id.origin_nonce,
-            tokenAddress: Self::convert_omni_address(message_payload.token_address)?,
-            amount: message_payload.amount.into(),
-            recipient: Self::convert_omni_address(message_payload.recipient)?,
-            feeRecipient: message_payload
-                .fee_recipient
-                .map_or_else(String::new, |addr| addr.to_string()),
-            message: Bytes::from(message_payload.message),
-        };
+        match chain_kind {
+            ChainKind::HyperEvm | ChainKind::Abs => {
+                let bridge_deposit = OmniBridge::TransferMessagePayload {
+                    destinationNonce: message_payload.destination_nonce,
+                    originChain: message_payload.transfer_id.origin_chain.into(),
+                    originNonce: message_payload.transfer_id.origin_nonce,
+                    tokenAddress: Self::convert_omni_address(message_payload.token_address)?,
+                    amount: message_payload.amount.into(),
+                    recipient: Self::convert_omni_address(message_payload.recipient)?,
+                    feeRecipient: message_payload
+                        .fee_recipient
+                        .map_or_else(String::new, |addr| addr.to_string()),
+                    message: Bytes::from(message_payload.message),
+                };
 
-        let call_builder = self.prepare_tx_for_sending(
-            omni_bridge.finTransfer(Bytes::from(signature.to_bytes()), bridge_deposit),
-            tx_nonce,
-            self.get_wormhole_fee().await.ok(),
-            Some(FIN_TRANSFER_GAS),
-        );
+                let call_builder = self.prepare_tx_for_sending(
+                    omni_bridge.finTransfer_0(Bytes::from(signature.to_bytes()), bridge_deposit),
+                    tx_nonce,
+                    self.get_wormhole_fee().await.ok(),
+                    Some(FIN_TRANSFER_GAS),
+                );
 
-        let receipt = call_builder.send().await?.get_receipt().await?;
+                let receipt = call_builder.send().await?.get_receipt().await?;
+                tracing::info!(
+                    tx_hash = format!("{:?}", receipt.transaction_hash),
+                    "Sent finalize transfer transaction"
+                );
+                Ok(receipt.transaction_hash)
+            }
+            ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
+                let bridge_deposit = OmniBridge::TransferMessagePayloadWithoutMessage {
+                    destinationNonce: message_payload.destination_nonce,
+                    originChain: message_payload.transfer_id.origin_chain.into(),
+                    originNonce: message_payload.transfer_id.origin_nonce,
+                    tokenAddress: Self::convert_omni_address(message_payload.token_address)?,
+                    amount: message_payload.amount.into(),
+                    recipient: Self::convert_omni_address(message_payload.recipient)?,
+                    feeRecipient: message_payload
+                        .fee_recipient
+                        .map_or_else(String::new, |addr| addr.to_string()),
+                };
 
-        tracing::info!(
-            tx_hash = format!("{:?}", receipt.transaction_hash),
-            "Sent finalize transfer transaction"
-        );
+                let call_builder = self.prepare_tx_for_sending(
+                    omni_bridge.finTransfer_1(Bytes::from(signature.to_bytes()), bridge_deposit),
+                    tx_nonce,
+                    self.get_wormhole_fee().await.ok(),
+                    Some(FIN_TRANSFER_GAS),
+                );
 
-        Ok(receipt.transaction_hash)
+                let receipt = call_builder.send().await?.get_receipt().await?;
+                tracing::info!(
+                    tx_hash = format!("{:?}", receipt.transaction_hash),
+                    "Sent finalize transfer transaction"
+                );
+                Ok(receipt.transaction_hash)
+            }
+            ChainKind::Near
+            | ChainKind::Sol
+            | ChainKind::Btc
+            | ChainKind::Zcash
+            | ChainKind::Strk => Err(EvmBridgeClientError::InvalidArgument(format!(
+                "Expected evm chain but got {chain_kind:?}"
+            ))),
+        }
     }
 
     pub async fn get_proof_for_event(

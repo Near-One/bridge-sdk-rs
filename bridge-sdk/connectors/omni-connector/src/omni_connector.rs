@@ -1630,7 +1630,9 @@ impl OmniConnector {
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
         let evm_bridge_client = self.evm_bridge_client(chain_kind)?;
-        let tx_hash = evm_bridge_client.fin_transfer(event, tx_nonce).await?;
+        let tx_hash = evm_bridge_client
+            .fin_transfer(chain_kind, event, tx_nonce)
+            .await?;
         Ok(tx_hash)
     }
 
@@ -1648,7 +1650,7 @@ impl OmniConnector {
             .await?;
 
         let tx_hash = evm_bridge_client
-            .fin_transfer(serde_json::from_str(&transfer_log)?, tx_nonce)
+            .fin_transfer(chain_kind, serde_json::from_str(&transfer_log)?, tx_nonce)
             .await?;
 
         Ok(tx_hash)
