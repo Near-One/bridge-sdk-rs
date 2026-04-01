@@ -140,6 +140,29 @@ impl EvmBridgeClient {
         Ok(block.header.number)
     }
 
+    /// Gets block number for a specific block tag (e.g., Safe, Finalized, Latest).
+    pub async fn get_block_number_by_tag(&self, tag: alloy::eips::BlockNumberOrTag) -> Result<u64> {
+        let block = self
+            .provider
+            .get_block_by_number(tag)
+            .await?
+            .ok_or_else(|| {
+                EvmBridgeClientError::BlockchainDataError(
+                    "Block not found for the given tag".to_string(),
+                )
+            })?;
+
+        Ok(block.header.number)
+    }
+
+    /// Gets the transaction receipt, returning `None` if the transaction is not found.
+    pub async fn get_transaction_receipt(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Option<alloy::rpc::types::TransactionReceipt>> {
+        Ok(self.provider.get_transaction_receipt(tx_hash).await?)
+    }
+
     /// Checks if the transfer is already finalised on EVM
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
         let omni_bridge = self.omni_bridge()?;

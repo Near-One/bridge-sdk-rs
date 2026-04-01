@@ -4,7 +4,7 @@ use error::Result;
 use starknet::{
     accounts::{Account, SingleOwnerAccount},
     core::types::{
-        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall,
+        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall, TransactionFinalityStatus,
         TransactionReceiptWithBlockInfo,
     },
     macros::selector,
@@ -376,6 +376,28 @@ impl StarknetBridgeClient {
             })?;
 
         Ok(!result.is_empty() && result[0] != Felt::ZERO)
+    }
+
+    /// Gets the finality status of a transaction.
+    /// Returns `None` if the transaction receipt is not found.
+    pub async fn get_transaction_finality_status(
+        &self,
+        tx_hash: Felt,
+    ) -> Result<Option<TransactionFinalityStatus>> {
+        match self.provider.get_transaction_receipt(tx_hash).await {
+            Ok(receipt) => Ok(Some(*receipt.receipt.finality_status())),
+            Err(err) => {
+                let err_str = err.to_string();
+                if err_str.contains("not found")
+                    || err_str.contains("TXN_HASH_NOT_FOUND")
+                    || err_str.contains("hash_not_found")
+                {
+                    Ok(None)
+                } else {
+                    Err(StarknetBridgeClientError::ProviderError(err_str))
+                }
+            }
+        }
     }
 
     /// Extract an `InitTransfer` event from a Starknet transaction receipt.

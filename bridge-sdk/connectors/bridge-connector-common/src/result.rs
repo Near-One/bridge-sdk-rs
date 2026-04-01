@@ -63,6 +63,8 @@ pub enum BridgeSdkError {
     StarknetRpcError(String),
     #[error("Error working with Starknet: {0}")]
     StarknetOtherError(String),
+    #[error("Transaction has not reached the required MPC finality")]
+    MpcFinalityNotReached,
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {
