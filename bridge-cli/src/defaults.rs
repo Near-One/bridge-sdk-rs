@@ -1,7 +1,7 @@
 /// Mainnet
 pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
-pub const NEAR_MPC_OMNI_PROVER_ID_MAINNET: &str = "";
+pub const NEAR_MPC_OMNI_PROVER_ID_MAINNET: &str = "mpc-prover.bridge.near";
 pub const BRIDGE_INDEXER_API_MAINNET: &str = "https://mainnet.api.bridge.nearone.org";
 pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 pub const BTC_LIGHT_CLIENT_ID_MAINNET: &str = "btc-client.bridge.near";
@@ -38,7 +38,7 @@ pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee7
 
 pub const ABS_RPC_MAINNET: &str = "https://api.mainnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0xd2490A00bDB97C1EDE4fdf207CFE2664AFB9C20D";
 
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
@@ -61,7 +61,7 @@ pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x0000000000000000000000000000000000000000000000000000000000000000";
+    "0x05f9a4a841dfb7bb3cde33073b2450fe45dcd407fb6c0985a274b0e943ad8598";
 pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
 /// Testnet
