@@ -109,10 +109,7 @@ async fn fetch_indexer_fees(
     .await
     .map_err(|e| format!("Failed to fetch transfer fee: {e}"))?;
 
-    let transferred_fee = fee
-        .transferred_token_fee
-        .ok_or("Missing transferred_token_fee in response")?
-        .0;
+    let transferred_fee = fee.transferred_token_fee.map(|v| v.0).unwrap_or_default();
 
     Ok((
         transferred_fee,
