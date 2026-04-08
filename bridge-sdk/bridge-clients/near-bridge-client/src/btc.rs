@@ -640,22 +640,62 @@ impl NearBridgeClient {
         fee: u128,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
-        let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(chain)?;
+        let api_url = self
+            .bridge_indexer_api_url()?
+            .join("api/v3/utxo/get_user_deposit_address")
+            .map_err(|e| {
+                BridgeSdkError::ConfigError(format!("Failed to construct api endpoint url: {e}"))
+            })?;
 
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: btc_connector,
-                method_name: "get_user_deposit_address".to_string(),
-                args: serde_json::json!({
-                    "deposit_msg": deposit_msg
-                }),
-            },
-        )
-        .await?;
+        let chain_name = match chain {
+            ChainKind::Btc => "btc",
+            ChainKind::Zcash => "zcash",
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Unsupported UTXO chain: {chain:?}"
+                )))
+            }
+        };
 
-        let btc_address = serde_json::from_slice::<String>(&response)?;
+        #[derive(serde::Serialize)]
+        struct DepositAddressRequest {
+            chain: String,
+            recipient: String,
+            safe_deposit: Option<SafeDepositMsg>,
+        }
+
+        let request_body = DepositAddressRequest {
+            chain: chain_name.to_string(),
+            recipient: deposit_msg.recipient_id.to_string(),
+            safe_deposit: deposit_msg.safe_deposit,
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!("Failed to build HTTP client: {e}"))
+            })?;
+
+        let response = client
+            .post(api_url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!(
+                    "Failed to fetch deposit address from bridge indexer: {e}"
+                ))
+            })?
+            .error_for_status()
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!("Bridge indexer API returned error: {e}"))
+            })?;
+
+        let btc_address: String = response.json().await.map_err(|e| {
+            BridgeSdkError::UnknownError(format!("Failed to parse deposit address response: {e}"))
+        })?;
+
         Ok(btc_address)
     }
 

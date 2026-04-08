@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.45"
+version = "0.3.46"
 dependencies = [
  "alloy",
  "clap",
@@ -4921,7 +4921,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -4939,6 +4939,7 @@ dependencies = [
  "near-sdk",
  "near-token",
  "omni-types",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_with",

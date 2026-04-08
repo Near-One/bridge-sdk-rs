@@ -21,9 +21,8 @@ mod builder;
 pub mod error;
 
 /// STRK native token contract address on Starknet.
-const STRK_TOKEN: Felt = Felt::from_hex_unchecked(
-    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-);
+const STRK_TOKEN: Felt =
+    Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 
 /// Event data extracted from a Starknet `InitTransfer` receipt.
 #[derive(Debug)]
@@ -252,9 +251,7 @@ impl StarknetBridgeClient {
 
         // Approve transfer token for amount + fee
         let token_total: u128 = amount.checked_add(fee).ok_or_else(|| {
-            StarknetBridgeClientError::InvalidArgument(
-                "amount + fee overflows u128".to_string(),
-            )
+            StarknetBridgeClientError::InvalidArgument("amount + fee overflows u128".to_string())
         })?;
 
         if token_total > 0 {
