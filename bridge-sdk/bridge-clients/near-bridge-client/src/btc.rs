@@ -104,6 +104,8 @@ pub struct FinBtcTransferArgs {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+    pub coinbase_tx_id: String,
+    pub coinbase_merkle_proof: Vec<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -112,6 +114,8 @@ pub struct BtcVerifyWithdrawArgs {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+    pub coinbase_tx_id: String,
+    pub coinbase_merkle_proof: Vec<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

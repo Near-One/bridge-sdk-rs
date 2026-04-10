@@ -588,6 +588,8 @@ impl OmniConnector {
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
+            coinbase_tx_id: proof_data.coinbase_tx_id,
+            coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
         };
 
         near_bridge_client
@@ -622,6 +624,8 @@ impl OmniConnector {
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
+            coinbase_tx_id: proof_data.coinbase_tx_id,
+            coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
         };
 
         near_bridge_client
@@ -669,6 +673,8 @@ impl OmniConnector {
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
+            coinbase_tx_id: proof_data.coinbase_tx_id,
+            coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
         };
 
         near_bridge_client
