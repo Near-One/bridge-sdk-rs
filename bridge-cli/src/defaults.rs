@@ -1,7 +1,7 @@
 /// Mainnet
 pub const NEAR_RPC_MAINNET: &str = "https://archival-rpc.mainnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_MAINNET: &str = "omni.bridge.near";
-pub const NEAR_MPC_OMNI_PROVER_ID_MAINNET: &str = "";
+pub const NEAR_MPC_OMNI_PROVER_ID_MAINNET: &str = "mpc-prover.bridge.near";
 pub const BRIDGE_INDEXER_API_MAINNET: &str = "https://mainnet.api.bridge.nearone.org";
 pub const ETH_LIGHT_CLIENT_ID_MAINNET: &str = "client-eth2.bridge.near";
 pub const BTC_LIGHT_CLIENT_ID_MAINNET: &str = "btc-client.bridge.near";
