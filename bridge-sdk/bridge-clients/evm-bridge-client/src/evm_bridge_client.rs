@@ -189,7 +189,7 @@ impl EvmBridgeClient {
             .header
             .number;
 
-        if tx_block_number >= finalized_block {
+        if tx_block_number > finalized_block {
             return Err(EvmBridgeClientError::MpcFinalityNotReached);
         }
 
@@ -392,12 +392,13 @@ impl EvmBridgeClient {
                     Some(FIN_TRANSFER_GAS),
                 );
 
-                let receipt = call_builder.send().await?.get_receipt().await?;
+                let pending = call_builder.send().await?;
+                let tx_hash = *pending.tx_hash();
                 tracing::info!(
-                    tx_hash = format!("{:?}", receipt.transaction_hash),
+                    tx_hash = format!("{tx_hash:?}"),
                     "Sent finalize transfer transaction"
                 );
-                Ok(receipt.transaction_hash)
+                Ok(tx_hash)
             }
             ChainKind::Eth | ChainKind::Base | ChainKind::Arb | ChainKind::Bnb | ChainKind::Pol => {
                 let bridge_deposit = OmniBridge::TransferMessagePayloadWithoutMessage {
@@ -419,12 +420,13 @@ impl EvmBridgeClient {
                     Some(FIN_TRANSFER_GAS),
                 );
 
-                let receipt = call_builder.send().await?.get_receipt().await?;
+                let pending = call_builder.send().await?;
+                let tx_hash = *pending.tx_hash();
                 tracing::info!(
-                    tx_hash = format!("{:?}", receipt.transaction_hash),
+                    tx_hash = format!("{tx_hash:?}"),
                     "Sent finalize transfer transaction"
                 );
-                Ok(receipt.transaction_hash)
+                Ok(tx_hash)
             }
             ChainKind::Near
             | ChainKind::Sol

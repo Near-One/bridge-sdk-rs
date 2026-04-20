@@ -20,7 +20,7 @@ pub struct StarknetBridgeClientBuilder {
     private_key: Option<String>,
     #[doc = r"Optional. Starknet account address (hex Felt) matching the private key."]
     account_address: Option<String>,
-    #[doc = r"Optional. OmniBridge contract address on Starknet (hex Felt)."]
+    #[doc = r"Optional. `OmniBridge` contract address on Starknet (hex Felt)."]
     omni_bridge_address: Option<String>,
     #[doc = r"Optional. Chain ID string (e.g. `SN_MAIN`, `SN_SEPOLIA`)."]
     chain_id: Option<String>,

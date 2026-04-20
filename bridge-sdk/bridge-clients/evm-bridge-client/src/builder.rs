@@ -16,7 +16,7 @@ pub struct EvmBridgeClientBuilder {
     endpoint: Option<String>,
     #[doc = r"Optional. EVM private key. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     private_key: Option<String>,
-    #[doc = r"Optional. `OmniBridge` address on EVM. Needed for all read/write OmniBridge operations"]
+    #[doc = r"Optional. `OmniBridge` address on EVM. Needed for all read/write `OmniBridge` operations"]
     omni_bridge_address: Option<String>,
     #[doc = r"Optional. Wormhole core address on EVM. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     wormhole_core_address: Option<String>,
