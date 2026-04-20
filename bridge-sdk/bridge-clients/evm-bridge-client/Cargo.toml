@@ -13,6 +13,7 @@ derive_builder.workspace = true
 hex.workspace = true
 near-crypto.workspace = true
 near-jsonrpc-client.workspace = true
+near-mpc-contract-interface.workspace = true
 near-primitives.workspace = true
 near-token.workspace = true
 omni-types.workspace = true

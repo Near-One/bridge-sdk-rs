@@ -6,10 +6,10 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use light_client::LightClient;
 use near_mpc_contract_interface::types::{
-    EvmExtractedValue, EvmExtractor, EvmFinality, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
+    EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
     ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
-    StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetFinality, StarknetLog,
-    StarknetRpcRequest, StarknetTxId,
+    StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog, StarknetRpcRequest,
+    StarknetTxId,
 };
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
@@ -72,7 +72,6 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
-    mpc_finalities: Option<HashMap<ChainKind, MpcFinality>>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -1138,39 +1137,7 @@ impl OmniConnector {
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
         let evm_client = self.evm_bridge_client(ChainKind::Abs)?;
-
-        let mpc_finalities = self.get_mpc_finalities()?;
-        let Some(MpcFinality::Evm(finality)) = mpc_finalities.get(&ChainKind::Abs).cloned() else {
-            return Err(BridgeSdkError::ConfigError(
-                "No mpc finality provided for Abs".to_string(),
-            ));
-        };
-
-        // Check that the transaction has reached the required finality level
-        let block_tag = match &finality {
-            EvmFinality::Latest => alloy::eips::BlockNumberOrTag::Latest,
-            EvmFinality::Safe => alloy::eips::BlockNumberOrTag::Safe,
-            EvmFinality::Finalized => alloy::eips::BlockNumberOrTag::Finalized,
-            _ => {
-                return Err(BridgeSdkError::ConfigError(
-                    "Unsupported EVM finality variant for Abs".to_string(),
-                ));
-            }
-        };
-
-        let receipt = evm_client
-            .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or(BridgeSdkError::MpcFinalityNotReached)?;
-
-        let tx_block_number = receipt
-            .block_number
-            .ok_or(BridgeSdkError::MpcFinalityNotReached)?;
-
-        let finalized_block = evm_client.get_block_number_by_tag(block_tag).await?;
-        if tx_block_number >= finalized_block {
-            return Err(BridgeSdkError::MpcFinalityNotReached);
-        }
+        let finality = evm_client.check_mpc_finality(tx_hash).await?;
 
         let rpc_log = match proof_kind {
             ProofKind::InitTransfer => evm_client.get_init_transfer_log(tx_hash).await?,
@@ -1246,40 +1213,7 @@ impl OmniConnector {
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
         let strk_client = self.starknet_bridge_client()?;
-
-        let mpc_finalities = self.get_mpc_finalities()?;
-        let Some(MpcFinality::Starknet(finality)) = mpc_finalities.get(&ChainKind::Strk).cloned()
-        else {
-            return Err(BridgeSdkError::ConfigError(
-                "No mpc finality provided for Strk".to_string(),
-            ));
-        };
-
-        // Check that the transaction has reached the required finality level
-        let status = strk_client
-            .get_transaction_finality_status(tx_hash)
-            .await?
-            .ok_or(BridgeSdkError::MpcFinalityNotReached)?;
-
-        let is_finalized = match &finality {
-            StarknetFinality::AcceptedOnL2 => matches!(
-                status,
-                starknet::core::types::TransactionFinalityStatus::AcceptedOnL2
-                    | starknet::core::types::TransactionFinalityStatus::AcceptedOnL1
-            ),
-            StarknetFinality::AcceptedOnL1 => matches!(
-                status,
-                starknet::core::types::TransactionFinalityStatus::AcceptedOnL1
-            ),
-            _ => {
-                return Err(BridgeSdkError::ConfigError(
-                    "Unsupported Starknet finality variant".to_string(),
-                ));
-            }
-        };
-        if !is_finalized {
-            return Err(BridgeSdkError::MpcFinalityNotReached);
-        }
+        let finality = strk_client.check_mpc_finality(tx_hash).await?;
 
         let log = match proof_kind {
             ProofKind::InitTransfer => strk_client.get_init_transfer_log(tx_hash).await?,
@@ -2562,12 +2496,6 @@ impl OmniConnector {
         };
 
         Ok(enable_orchard)
-    }
-
-    pub fn get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
-        self.mpc_finalities.clone().ok_or_else(|| {
-            BridgeSdkError::ConfigError("MPC finalities are not configured".to_string())
-        })
     }
 
     pub fn denormalize_amount(&self, decimals: &Decimals, amount: u128) -> Result<u128> {

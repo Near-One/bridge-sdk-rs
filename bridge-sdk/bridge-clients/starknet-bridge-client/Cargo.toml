@@ -8,6 +8,7 @@ rust-version = "1.88.0"
 starknet.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+near-mpc-contract-interface.workspace = true
 omni-types.workspace = true
 hex.workspace = true
 serde_json.workspace = true

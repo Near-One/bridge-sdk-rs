@@ -126,6 +126,7 @@ impl From<StarknetBridgeClientError> for BridgeSdkError {
             StarknetBridgeClientError::ConfigError(e) => Self::ConfigError(e),
             StarknetBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             StarknetBridgeClientError::TransactionError(e) => Self::StarknetOtherError(e),
+            StarknetBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }
@@ -146,6 +147,7 @@ impl From<EvmBridgeClientError> for BridgeSdkError {
             EvmBridgeClientError::EthProofError(e) => Self::EthProofError(e.to_string()),
             EvmBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             EvmBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            EvmBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }

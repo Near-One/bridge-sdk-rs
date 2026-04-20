@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use near_mpc_contract_interface::types::StarknetFinality;
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::{BlockId, BlockTag, Felt},
@@ -23,6 +24,8 @@ pub struct StarknetBridgeClientBuilder {
     omni_bridge_address: Option<String>,
     #[doc = r"Optional. Chain ID string (e.g. `SN_MAIN`, `SN_SEPOLIA`)."]
     chain_id: Option<String>,
+    #[doc = r"Optional. MPC finality level required before an MPC sign payload can be built."]
+    mpc_finality: Option<StarknetFinality>,
 }
 
 impl StarknetBridgeClientBuilder {
@@ -53,6 +56,12 @@ impl StarknetBridgeClientBuilder {
     #[must_use]
     pub fn chain_id(mut self, chain_id: Option<String>) -> Self {
         self.chain_id = chain_id;
+        self
+    }
+
+    #[must_use]
+    pub fn mpc_finality(mut self, mpc_finality: Option<StarknetFinality>) -> Self {
+        self.mpc_finality = mpc_finality;
         self
     }
 
@@ -111,6 +120,7 @@ impl StarknetBridgeClientBuilder {
             provider,
             account,
             omni_bridge_address,
+            mpc_finality: self.mpc_finality,
         })
     }
 }

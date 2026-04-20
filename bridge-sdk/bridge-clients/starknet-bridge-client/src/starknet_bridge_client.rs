@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use error::Result;
+use near_mpc_contract_interface::types::StarknetFinality;
 use starknet::{
     accounts::{Account, SingleOwnerAccount},
     core::types::{
@@ -55,6 +56,7 @@ pub struct StarknetBridgeClient {
     pub(crate) provider: Arc<JsonRpcClient<HttpTransport>>,
     pub(crate) account: Option<Arc<StarknetAccount>>,
     pub(crate) omni_bridge_address: Option<Felt>,
+    pub(crate) mpc_finality: Option<StarknetFinality>,
 }
 
 impl StarknetBridgeClient {
@@ -378,26 +380,52 @@ impl StarknetBridgeClient {
         Ok(!result.is_empty() && result[0] != Felt::ZERO)
     }
 
-    /// Gets the finality status of a transaction.
-    /// Returns `None` if the transaction receipt is not found.
-    pub async fn get_transaction_finality_status(
-        &self,
-        tx_hash: Felt,
-    ) -> Result<Option<TransactionFinalityStatus>> {
-        match self.provider.get_transaction_receipt(tx_hash).await {
-            Ok(receipt) => Ok(Some(*receipt.receipt.finality_status())),
+    /// Returns the configured MPC finality level for this chain.
+    pub fn mpc_finality(&self) -> Result<StarknetFinality> {
+        self.mpc_finality.clone().ok_or_else(|| {
+            StarknetBridgeClientError::ConfigError("MPC finality is not configured".to_string())
+        })
+    }
+
+    /// Verifies that `tx_hash` has reached the configured MPC finality level
+    /// and returns that finality so it can be embedded in the MPC sign payload.
+    pub async fn check_mpc_finality(&self, tx_hash: Felt) -> Result<StarknetFinality> {
+        let finality = self.mpc_finality()?;
+
+        let status = match self.provider.get_transaction_receipt(tx_hash).await {
+            Ok(receipt) => *receipt.receipt.finality_status(),
             Err(err) => {
                 let err_str = err.to_string();
                 if err_str.contains("not found")
                     || err_str.contains("TXN_HASH_NOT_FOUND")
                     || err_str.contains("hash_not_found")
                 {
-                    Ok(None)
-                } else {
-                    Err(StarknetBridgeClientError::ProviderError(err_str))
+                    return Err(StarknetBridgeClientError::MpcFinalityNotReached);
                 }
+                return Err(StarknetBridgeClientError::ProviderError(err_str));
             }
+        };
+
+        let is_finalized = match &finality {
+            StarknetFinality::AcceptedOnL2 => matches!(
+                status,
+                TransactionFinalityStatus::AcceptedOnL2 | TransactionFinalityStatus::AcceptedOnL1
+            ),
+            StarknetFinality::AcceptedOnL1 => {
+                matches!(status, TransactionFinalityStatus::AcceptedOnL1)
+            }
+            _ => {
+                return Err(StarknetBridgeClientError::ConfigError(
+                    "Unsupported Starknet finality variant".to_string(),
+                ));
+            }
+        };
+
+        if !is_finalized {
+            return Err(StarknetBridgeClientError::MpcFinalityNotReached);
         }
+
+        Ok(finality)
     }
 
     /// Extract an `InitTransfer` event from a Starknet transaction receipt.
