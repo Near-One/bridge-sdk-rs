@@ -38,7 +38,7 @@ pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee7
 
 pub const ABS_RPC_MAINNET: &str = "https://api.mainnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0xd2490A00bDB97C1EDE4fdf207CFE2664AFB9C20D";
 
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
@@ -61,7 +61,7 @@ pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x0000000000000000000000000000000000000000000000000000000000000000";
+    "0x05f9a4a841dfb7bb3cde33073b2450fe45dcd407fb6c0985a274b0e943ad8598";
 pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
 /// Testnet
