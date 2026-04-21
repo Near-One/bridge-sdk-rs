@@ -94,6 +94,8 @@ pub struct DepositMsg {
     pub extra_msg: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_deposit: Option<SafeDepositMsg>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refund_address: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -637,9 +639,11 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
+        refund_address: Option<String>,
         fee: u128,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
+        let deposit_msg =
+            self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -807,6 +811,7 @@ impl NearBridgeClient {
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
         recipient_id: &OmniAddress,
+        refund_address: Option<String>,
         fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
@@ -830,6 +835,7 @@ impl NearBridgeClient {
                 })
                 .to_string(),
             }),
+            refund_address,
         })
     }
 
