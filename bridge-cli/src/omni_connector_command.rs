@@ -43,6 +43,33 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
+/// CLI recipient for a BTC deposit.
+///
+/// * `<chain>:<address>` (e.g. `eth:0xabc...`, `near:alice.near`) → routed through
+///   the Omni Bridge.
+/// * Plain NEAR account (e.g. `alice.near`, no colon) → direct nBTC mint on NEAR.
+#[derive(Clone, Debug)]
+pub enum DepositRecipient {
+    OmniBridge(OmniAddress),
+    NearDirect(AccountId),
+}
+
+impl FromStr for DepositRecipient {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.contains(':') {
+            OmniAddress::from_str(s)
+                .map(DepositRecipient::OmniBridge)
+                .map_err(|e| e.to_string())
+        } else {
+            AccountId::from_str(s)
+                .map(DepositRecipient::NearDirect)
+                .map_err(|e| e.to_string())
+        }
+    }
+}
+
 impl From<Network> for utxo_utils::address::Network {
     fn from(value: Network) -> Self {
         match value {
@@ -583,12 +610,16 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         vout: usize,
-        #[clap(short, long, help = "Original deposit recipient on NEAR (OmniAddress)")]
-        recipient_id: OmniAddress,
         #[clap(
             short,
             long,
-            help = "The Omni Bridge Fee in satoshi that was used at deposit time",
+            help = "Original deposit recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
+        )]
+        recipient_id: DepositRecipient,
+        #[clap(
+            short,
+            long,
+            help = "The Omni Bridge Fee in satoshi used at deposit time (ignored for direct NEAR deposits)",
             default_value = "0"
         )]
         fee: u128,
@@ -1380,15 +1411,24 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             gas_fee,
             config_cli,
         } => {
+            let btc_deposit_args = match recipient_id {
+                DepositRecipient::OmniBridge(recipient_id) => BtcDepositArgs::OmniDepositArgs {
+                    recipient_id,
+                    fee,
+                    refund_address: Some(refund_address.clone()),
+                },
+                DepositRecipient::NearDirect(recipient_id) => {
+                    BtcDepositArgs::NearDirectDepositArgs {
+                        recipient_id,
+                        refund_address: Some(refund_address.clone()),
+                    }
+                }
+            };
             omni_connector(network, config_cli)
                 .btc_request_refund(
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        fee,
-                        refund_address: Some(refund_address.clone()),
-                    },
+                    btc_deposit_args,
                     refund_address,
                     gas_fee,
                     TransactionOptions::default(),
