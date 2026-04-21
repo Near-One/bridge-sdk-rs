@@ -295,6 +295,7 @@ pub enum BtcDepositArgs {
     OmniDepositArgs {
         recipient_id: OmniAddress,
         fee: u128,
+        refund_address: Option<String>,
     },
     DepositMsg {
         msg: DepositMsg,
@@ -576,9 +577,21 @@ impl OmniConnector {
 
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
-            BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
-                near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, fee)?
-            }
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id: OmniAddress::Near(account_id),
+                fee: _,
+                refund_address,
+            } => near_bridge_client
+                .get_deposit_msg_for_near_account(account_id, refund_address),
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                fee,
+                refund_address,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(
+                &recipient_id,
+                fee,
+                refund_address,
+            )?,
         };
 
         let args = FinBtcTransferArgs {
@@ -705,9 +718,21 @@ impl OmniConnector {
 
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
-            BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
-                near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, fee)?
-            }
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id: OmniAddress::Near(account_id),
+                fee: _,
+                refund_address,
+            } => near_bridge_client
+                .get_deposit_msg_for_near_account(account_id, refund_address),
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                fee,
+                refund_address,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(
+                &recipient_id,
+                fee,
+                refund_address,
+            )?,
         };
 
         let args = BtcRequestRefundArgs {
@@ -765,10 +790,25 @@ impl OmniConnector {
         chain: ChainKind,
         recipient_id: &OmniAddress,
         fee: u128,
+        refund_address: Option<String>,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain, recipient_id, fee)
+            .get_btc_address(chain, recipient_id, fee, refund_address)
+            .await
+    }
+
+    /// Fetch a BTC deposit address that mints nBTC directly to a NEAR account,
+    /// bypassing the Omni Bridge wrapper.
+    pub async fn get_btc_address_for_near_account(
+        &self,
+        chain: ChainKind,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_btc_address_for_near_account(chain, recipient_id, refund_address)
             .await
     }
 
@@ -1581,7 +1621,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
 
         let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, &recipient, fee)
+            .get_btc_address(chain_kind, &recipient, fee, None)
             .await?;
         let tx_data = utxo_bridge_client
             .get_bridge_transaction_data(&tx_hash, &deposit_address)

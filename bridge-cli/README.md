@@ -35,7 +35,7 @@ cargo build --release
 ./target/release/bridge-cli
 
 # Or install globally with
-cargo install --path ./bridge-cli
+cargo install --locked --path ./bridge-cli
 ```
 
 

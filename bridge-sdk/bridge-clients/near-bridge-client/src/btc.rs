@@ -731,8 +731,30 @@ impl NearBridgeClient {
         chain: ChainKind,
         recipient_id: &OmniAddress,
         fee: u128,
+        refund_address: Option<String>,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
+        let deposit_msg =
+            self.get_deposit_msg_for_omni_bridge(recipient_id, fee, refund_address)?;
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+    }
+
+    /// Fetch the BTC deposit address for a `DepositMsg` that mints nBTC directly
+    /// to a NEAR account (without the Omni Bridge wrapper).
+    pub async fn get_btc_address_for_near_account(
+        &self,
+        chain: ChainKind,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> Result<String> {
+        let deposit_msg = self.get_deposit_msg_for_near_account(recipient_id, refund_address);
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+    }
+
+    async fn get_btc_address_from_deposit_msg(
+        &self,
+        chain: ChainKind,
+        deposit_msg: &DepositMsg,
+    ) -> Result<String> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -901,6 +923,7 @@ impl NearBridgeClient {
         &self,
         recipient_id: &OmniAddress,
         fee: u128,
+        refund_address: Option<String>,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
             return Err(BridgeSdkError::InvalidArgument(
@@ -912,7 +935,7 @@ impl NearBridgeClient {
             recipient_id: omni_bridge_id,
             post_actions: None,
             extra_msg: None,
-            refund_address: None,
+            refund_address,
             safe_deposit: Some(SafeDepositMsg {
                 msg: json!({
                     "UtxoFinTransfer": {
@@ -925,6 +948,22 @@ impl NearBridgeClient {
                 .to_string(),
             }),
         })
+    }
+
+    /// Build a `DepositMsg` that mints nBTC directly to a NEAR account, bypassing
+    /// the Omni Bridge safe-deposit wrapper.
+    pub fn get_deposit_msg_for_near_account(
+        &self,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> DepositMsg {
+        DepositMsg {
+            recipient_id,
+            post_actions: None,
+            extra_msg: None,
+            safe_deposit: None,
+            refund_address,
+        }
     }
 
     pub async fn get_btc_tx_data(

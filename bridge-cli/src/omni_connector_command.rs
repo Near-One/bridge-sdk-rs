@@ -526,6 +526,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "BTC refund address that was baked into the deposit_msg at deposit time (if any). Must match what was used in get-bitcoin-address."
+        )]
+        refund_address: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -631,6 +636,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Optional BTC refund address baked into the deposit_msg; use the same value when calling request-refund"
+        )]
+        refund_address: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1293,6 +1303,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             vout,
             recipient_id,
             fee,
+            refund_address,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1300,7 +1311,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        fee,
+                        refund_address,
+                    },
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
@@ -1369,7 +1384,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .btc_request_refund(
                     btc_tx_hash,
                     vout,
-                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        fee,
+                        refund_address: Some(refund_address.clone()),
+                    },
                     refund_address,
                     gas_fee,
                     TransactionOptions::default(),
@@ -1408,11 +1427,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             recipient_id,
             fee,
+            refund_address,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, fee)
+                .get_btc_address(chain.into(), &recipient_id, fee, refund_address)
                 .await
                 .unwrap();
 
