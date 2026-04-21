@@ -730,11 +730,11 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
-        fee: u128,
         refund_address: Option<String>,
+        fee: u128,
     ) -> Result<String> {
         let deposit_msg =
-            self.get_deposit_msg_for_omni_bridge(recipient_id, fee, refund_address)?;
+            self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
         self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
     }
 
@@ -922,8 +922,8 @@ impl NearBridgeClient {
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
         recipient_id: &OmniAddress,
-        fee: u128,
         refund_address: Option<String>,
+        fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
             return Err(BridgeSdkError::InvalidArgument(
