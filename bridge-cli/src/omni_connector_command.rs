@@ -567,6 +567,40 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(about = "Request a refund for a never-finalized BTC deposit (Bitcoin only)")]
+    BtcRequestRefund {
+        #[clap(short, long, help = "Bitcoin deposit tx hash")]
+        btc_tx_hash: String,
+        #[clap(
+            short,
+            long,
+            help = "The index of the deposit output in the Bitcoin transaction",
+            default_value = "0"
+        )]
+        vout: usize,
+        #[clap(short, long, help = "Original deposit recipient on NEAR (OmniAddress)")]
+        recipient_id: OmniAddress,
+        #[clap(
+            short,
+            long,
+            help = "The Omni Bridge Fee in satoshi that was used at deposit time",
+            default_value = "0"
+        )]
+        fee: u128,
+        #[clap(long, help = "BTC address to send the refund to")]
+        refund_address: String,
+        #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
+        gas_fee: Option<u128>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Verify the refund BTC transaction is confirmed (Bitcoin only)")]
+    BtcVerifyRefundFinalize {
+        #[clap(short, long, help = "Refund Bitcoin tx hash")]
+        btc_tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Finalize Transfer from Near on Bitcoin")]
     BtcFinTransfer {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -1319,6 +1353,36 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     btc_tx_hash,
                     TransactionOptions::default(),
                 )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcRequestRefund {
+            btc_tx_hash,
+            vout,
+            recipient_id,
+            fee,
+            refund_address,
+            gas_fee,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .btc_request_refund(
+                    btc_tx_hash,
+                    vout,
+                    BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    refund_address,
+                    gas_fee,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcVerifyRefundFinalize {
+            btc_tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .btc_verify_refund_finalize(btc_tx_hash, TransactionOptions::default())
                 .await
                 .unwrap();
         }

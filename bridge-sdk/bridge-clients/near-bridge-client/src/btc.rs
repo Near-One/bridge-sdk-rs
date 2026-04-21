@@ -28,6 +28,8 @@ const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
+const BTC_REQUEST_REFUND_GAS: u64 = 300_000_000_000_000;
+const BTC_VERIFY_REFUND_FINALIZE_GAS: u64 = 300_000_000_000_000;
 const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
@@ -39,6 +41,8 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
+const BTC_REQUEST_REFUND_DEPOSIT: u128 = 0;
+const BTC_VERIFY_REFUND_FINALIZE_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
@@ -94,6 +98,8 @@ pub struct DepositMsg {
     pub extra_msg: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_deposit: Option<SafeDepositMsg>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refund_address: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -108,6 +114,29 @@ pub struct FinBtcTransferArgs {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
+    pub tx_id: String,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcRequestRefundArgs {
+    pub deposit_msg: DepositMsg,
+    pub refund_address: String,
+    pub tx_bytes: Vec<u8>,
+    pub vout: usize,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub gas_fee: Option<u128>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcVerifyRefundFinalizeArgs {
     pub tx_id: String,
     pub tx_block_blockhash: String,
     pub tx_index: u64,
@@ -559,6 +588,70 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Submit a refund request for a never-finalized BTC deposit (Bitcoin only).
+    #[tracing::instrument(skip_all, name = "NEAR BTC REQUEST REFUND")]
+    pub async fn btc_request_refund(
+        &self,
+        args: BtcRequestRefundArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "request_refund".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_REQUEST_REFUND_GAS,
+                deposit: BTC_REQUEST_REFUND_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Request Refund transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    /// Verify that the refund BTC transaction has been confirmed (Bitcoin only).
+    #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY REFUND FINALIZE")]
+    pub async fn btc_verify_refund_finalize(
+        &self,
+        args: BtcVerifyRefundFinalizeArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "verify_refund_finalize".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_VERIFY_REFUND_FINALIZE_GAS,
+                deposit: BTC_VERIFY_REFUND_FINALIZE_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Verify Refund Finalize transaction"
+        );
+        Ok(tx_hash)
+    }
+
     #[tracing::instrument(skip_all, name = "ACTIVE UTXO MANAGEMENT")]
     pub async fn active_utxo_management(
         &self,
@@ -819,6 +912,7 @@ impl NearBridgeClient {
             recipient_id: omni_bridge_id,
             post_actions: None,
             extra_msg: None,
+            refund_address: None,
             safe_deposit: Some(SafeDepositMsg {
                 msg: json!({
                     "UtxoFinTransfer": {

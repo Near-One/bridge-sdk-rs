@@ -30,8 +30,8 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs, BtcVerifyWithdrawArgs, ChainSpecificData,
+    DepositMsg, FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -673,6 +673,90 @@ impl OmniConnector {
 
         near_bridge_client
             .btc_verify_active_utxo_management(chain, args, transaction_options)
+            .await
+    }
+
+    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn btc_request_refund(
+        &self,
+        btc_tx_hash: String,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        refund_address: String,
+        gas_fee: Option<u128>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
+
+        let light_client = self.light_client(ChainKind::Btc)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        let confirmations = near_bridge_client.get_confirmations(ChainKind::Btc).await?;
+
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
+        let deposit_msg = match deposit_args {
+            BtcDepositArgs::DepositMsg { msg } => msg,
+            BtcDepositArgs::OmniDepositArgs { recipient_id, fee } => {
+                near_bridge_client.get_deposit_msg_for_omni_bridge(&recipient_id, fee)?
+            }
+        };
+
+        let args = BtcRequestRefundArgs {
+            deposit_msg,
+            refund_address,
+            tx_bytes: proof_data.tx_bytes,
+            vout,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+            gas_fee,
+        };
+
+        near_bridge_client
+            .btc_request_refund(args, transaction_options)
+            .await
+    }
+
+    /// Verify that the refund BTC transaction has been confirmed on Bitcoin. Bitcoin only.
+    pub async fn btc_verify_refund_finalize(
+        &self,
+        btc_tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
+
+        let light_client = self.light_client(ChainKind::Btc)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        let confirmations = near_bridge_client.get_confirmations(ChainKind::Btc).await?;
+
+        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+
+        let args = BtcVerifyRefundFinalizeArgs {
+            tx_id: btc_tx_hash,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
+
+        near_bridge_client
+            .btc_verify_refund_finalize(args, transaction_options)
             .await
     }
 
