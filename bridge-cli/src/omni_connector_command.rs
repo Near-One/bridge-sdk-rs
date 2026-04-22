@@ -546,14 +546,18 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         vout: usize,
-        #[clap(short, long, help = "The BTC recipient on NEAR")]
-        recipient_id: OmniAddress,
+        #[clap(
+            short,
+            long,
+            help = "The BTC recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
+        )]
+        recipient_id: DepositRecipient,
         #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(
             short,
             long,
-            help = "The Omni Bridge Fee in satoshi",
+            help = "The Omni Bridge Fee in satoshi (ignored for direct NEAR deposits)",
             default_value = "0"
         )]
         fee: u128,
@@ -1335,16 +1339,25 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             config_cli,
         } => {
+            let btc_deposit_args = match recipient_id {
+                DepositRecipient::OmniBridge(recipient_id) => BtcDepositArgs::OmniDepositArgs {
+                    recipient_id,
+                    refund_address,
+                    fee,
+                },
+                DepositRecipient::NearDirect(recipient_id) => {
+                    BtcDepositArgs::NearDirectDepositArgs {
+                        recipient_id,
+                        refund_address,
+                    }
+                }
+            };
             omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::NearFinTransferBTC {
                     chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        refund_address,
-                        fee,
-                    },
+                    btc_deposit_args,
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
