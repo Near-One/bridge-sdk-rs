@@ -32,7 +32,6 @@ const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
-const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
 const BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT: u128 = 1_200_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
@@ -260,7 +259,7 @@ impl NearBridgeClient {
                 .to_string()
                 .into_bytes(),
                 gas: SIGN_BTC_TRANSACTION_GAS,
-                deposit: SIGN_BTC_TRANSACTION_DEPOSIT,
+                deposit: 1,
             },
             transaction_options.wait_until,
             transaction_options.wait_final_outcome_timeout_sec,
