@@ -10122,8 +10122,11 @@ dependencies = [
 name = "starknet-bridge-client"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "hex",
  "omni-types",
+ "reqwest",
+ "serde",
  "serde_json",
  "starknet",
  "thiserror 2.0.18",
