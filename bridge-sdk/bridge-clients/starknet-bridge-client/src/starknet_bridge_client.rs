@@ -8,17 +8,19 @@ use starknet::{
         TransactionReceiptWithBlockInfo,
     },
     macros::selector,
-    providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
+    providers::{JsonRpcClient, Provider},
     signers::LocalWallet,
 };
 
 use crate::error::StarknetBridgeClientError;
+use crate::rpc_transport::PositionalHttpTransport;
 use omni_types::near_events::OmniBridgeEvent;
 
 pub use builder::StarknetBridgeClientBuilder;
 
 mod builder;
 pub mod error;
+mod rpc_transport;
 
 /// STRK native token contract address on Starknet.
 const STRK_TOKEN: Felt = Felt::from_hex_unchecked(
@@ -49,11 +51,12 @@ pub struct StarknetEventLog {
     pub log_index: u64,
 }
 
-type StarknetAccount = SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>;
+type StarknetAccount =
+    SingleOwnerAccount<Arc<JsonRpcClient<PositionalHttpTransport>>, LocalWallet>;
 
 /// Starknet bridge client for the OmniBridge contract.
 pub struct StarknetBridgeClient {
-    pub(crate) provider: Arc<JsonRpcClient<HttpTransport>>,
+    pub(crate) provider: Arc<JsonRpcClient<PositionalHttpTransport>>,
     pub(crate) account: Option<Arc<StarknetAccount>>,
     pub(crate) omni_bridge_address: Option<Felt>,
 }

@@ -3,12 +3,13 @@ use std::sync::Arc;
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::{BlockId, BlockTag, Felt},
-    providers::{jsonrpc::HttpTransport, JsonRpcClient},
+    providers::JsonRpcClient,
     signers::{LocalWallet, SigningKey},
 };
 use url::Url;
 
 use crate::error::{Result, StarknetBridgeClientError};
+use crate::rpc_transport::PositionalHttpTransport;
 use crate::StarknetBridgeClient;
 
 #[derive(Default)]
@@ -65,7 +66,7 @@ impl StarknetBridgeClientBuilder {
             StarknetBridgeClientError::ConfigError("Invalid Starknet RPC endpoint URL".to_string())
         })?;
 
-        let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(url)));
+        let provider = Arc::new(JsonRpcClient::new(PositionalHttpTransport::new(url)));
 
         let account = if let (Some(pk), Some(addr)) = (self.private_key, self.account_address) {
             let private_key = parse_felt(&pk).map_err(|_| {

@@ -10120,10 +10120,13 @@ dependencies = [
 
 [[package]]
 name = "starknet-bridge-client"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
+ "async-trait",
  "hex",
  "omni-types",
+ "reqwest",
+ "serde",
  "serde_json",
  "starknet",
  "thiserror 2.0.18",
