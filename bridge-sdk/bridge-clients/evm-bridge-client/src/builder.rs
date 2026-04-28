@@ -5,6 +5,7 @@ use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::reqwest::Url;
+use near_mpc_contract_interface::types::EvmFinality;
 
 use crate::error::{EvmBridgeClientError, Result};
 use crate::EvmBridgeClient;
@@ -15,10 +16,12 @@ pub struct EvmBridgeClientBuilder {
     endpoint: Option<String>,
     #[doc = r"Optional. EVM private key. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     private_key: Option<String>,
-    #[doc = r"Optional. `OmniBridge` address on EVM. Needed for all read/write OmniBridge operations"]
+    #[doc = r"Optional. `OmniBridge` address on EVM. Needed for all read/write `OmniBridge` operations"]
     omni_bridge_address: Option<String>,
     #[doc = r"Optional. Wormhole core address on EVM. Needed for `log_metadata`, `deploy_token`, `mint`, `burn`"]
     wormhole_core_address: Option<String>,
+    #[doc = r"Optional. MPC finality level required before an MPC sign payload can be built for this chain."]
+    mpc_finality: Option<EvmFinality>,
 }
 
 impl EvmBridgeClientBuilder {
@@ -43,6 +46,12 @@ impl EvmBridgeClientBuilder {
     #[must_use]
     pub fn wormhole_core_address(mut self, wormhole_core_address: Option<String>) -> Self {
         self.wormhole_core_address = wormhole_core_address;
+        self
+    }
+
+    #[must_use]
+    pub fn mpc_finality(mut self, mpc_finality: Option<EvmFinality>) -> Self {
+        self.mpc_finality = mpc_finality;
         self
     }
 
@@ -100,6 +109,7 @@ impl EvmBridgeClientBuilder {
             signer_address,
             omni_bridge_address,
             wormhole_core_address,
+            mpc_finality: self.mpc_finality,
         })
     }
 }

@@ -14,4 +14,6 @@ pub enum StarknetBridgeClientError {
     InvalidArgument(String),
     #[error("Transaction error: {0}")]
     TransactionError(String),
+    #[error("Transaction has not reached the required MPC finality")]
+    MpcFinalityNotReached,
 }

@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use error::Result;
+use near_mpc_contract_interface::types::StarknetFinality;
 use starknet::{
     accounts::{Account, SingleOwnerAccount},
     core::types::{
-        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall,
+        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall, TransactionFinalityStatus,
         TransactionReceiptWithBlockInfo,
     },
     macros::selector,
@@ -23,9 +24,8 @@ pub mod error;
 mod rpc_transport;
 
 /// STRK native token contract address on Starknet.
-const STRK_TOKEN: Felt = Felt::from_hex_unchecked(
-    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-);
+const STRK_TOKEN: Felt =
+    Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
 
 /// Event data extracted from a Starknet `InitTransfer` receipt.
 #[derive(Debug)]
@@ -54,11 +54,12 @@ pub struct StarknetEventLog {
 type StarknetAccount =
     SingleOwnerAccount<Arc<JsonRpcClient<PositionalHttpTransport>>, LocalWallet>;
 
-/// Starknet bridge client for the OmniBridge contract.
+/// Starknet bridge client for the `OmniBridge` contract.
 pub struct StarknetBridgeClient {
     pub(crate) provider: Arc<JsonRpcClient<PositionalHttpTransport>>,
     pub(crate) account: Option<Arc<StarknetAccount>>,
     pub(crate) omni_bridge_address: Option<Felt>,
+    pub(crate) mpc_finality: Option<StarknetFinality>,
 }
 
 impl StarknetBridgeClient {
@@ -71,8 +72,7 @@ impl StarknetBridgeClient {
 
     fn account(&self) -> Result<&StarknetAccount> {
         self.account
-            .as_ref()
-            .map(|a| a.as_ref())
+            .as_deref()
             .ok_or(StarknetBridgeClientError::ConfigError(
                 "Starknet private key / account address is not set".to_string(),
             ))
@@ -130,7 +130,7 @@ impl StarknetBridgeClient {
         Felt::from(v)
     }
 
-    /// Encode a u256 as two Felts: [low_u128, high_u128].
+    /// Encode a u256 as two Felts: `[low_u128, high_u128]`.
     fn encode_u256(v: [u8; 32]) -> [Felt; 2] {
         let mut low_bytes = [0u8; 16];
         let mut high_bytes = [0u8; 16];
@@ -144,7 +144,7 @@ impl StarknetBridgeClient {
     /// Encode a Cairo `ByteArray` as calldata Felts.
     ///
     /// Cairo's `ByteArray` serialization:
-    ///   [num_full_31byte_words, ...word_felts, pending_word, pending_word_len]
+    ///   `[num_full_31byte_words, ...word_felts, pending_word, pending_word_len]`
     fn encode_byte_array(s: &str) -> Vec<Felt> {
         let bytes = s.as_bytes();
         let full_chunks = bytes.len() / 31;
@@ -184,7 +184,7 @@ impl StarknetBridgeClient {
         vec![r_low, r_high, s_low, s_high, Felt::from(v)]
     }
 
-    /// Log token metadata on the Starknet OmniBridge contract.
+    /// Log token metadata on the Starknet `OmniBridge` contract.
     #[tracing::instrument(skip_all, name = "STARKNET LOG METADATA")]
     pub async fn log_metadata(&self, token: Felt) -> Result<Felt> {
         let bridge = self.omni_bridge_address()?;
@@ -237,7 +237,7 @@ impl StarknetBridgeClient {
     /// Initiate a transfer from Starknet.
     ///
     /// This issues a multicall: ERC-20 `approve` for the transfer token (amount + fee),
-    /// optionally ERC-20 `approve` for STRK (native_fee), then `init_transfer`.
+    /// optionally ERC-20 `approve` for STRK (`native_fee`), then `init_transfer`.
     #[tracing::instrument(skip_all, name = "STARKNET INIT TRANSFER")]
     #[allow(clippy::too_many_arguments)]
     pub async fn init_transfer(
@@ -255,9 +255,7 @@ impl StarknetBridgeClient {
 
         // Approve transfer token for amount + fee
         let token_total: u128 = amount.checked_add(fee).ok_or_else(|| {
-            StarknetBridgeClientError::InvalidArgument(
-                "amount + fee overflows u128".to_string(),
-            )
+            StarknetBridgeClientError::InvalidArgument("amount + fee overflows u128".to_string())
         })?;
 
         if token_total > 0 {
@@ -384,6 +382,54 @@ impl StarknetBridgeClient {
         Ok(!result.is_empty() && result[0] != Felt::ZERO)
     }
 
+    /// Returns the configured MPC finality level for this chain.
+    pub fn mpc_finality(&self) -> Result<StarknetFinality> {
+        self.mpc_finality.clone().ok_or_else(|| {
+            StarknetBridgeClientError::ConfigError("MPC finality is not configured".to_string())
+        })
+    }
+
+    /// Verifies that `tx_hash` has reached the configured MPC finality level
+    /// and returns that finality so it can be embedded in the MPC sign payload.
+    pub async fn check_mpc_finality(&self, tx_hash: Felt) -> Result<StarknetFinality> {
+        let finality = self.mpc_finality()?;
+
+        let status = match self.provider.get_transaction_receipt(tx_hash).await {
+            Ok(receipt) => *receipt.receipt.finality_status(),
+            Err(err) => {
+                let err_str = err.to_string();
+                if err_str.contains("not found")
+                    || err_str.contains("TXN_HASH_NOT_FOUND")
+                    || err_str.contains("hash_not_found")
+                {
+                    return Err(StarknetBridgeClientError::MpcFinalityNotReached);
+                }
+                return Err(StarknetBridgeClientError::ProviderError(err_str));
+            }
+        };
+
+        let is_finalized = match &finality {
+            StarknetFinality::AcceptedOnL2 => matches!(
+                status,
+                TransactionFinalityStatus::AcceptedOnL2 | TransactionFinalityStatus::AcceptedOnL1
+            ),
+            StarknetFinality::AcceptedOnL1 => {
+                matches!(status, TransactionFinalityStatus::AcceptedOnL1)
+            }
+            _ => {
+                return Err(StarknetBridgeClientError::ConfigError(
+                    "Unsupported Starknet finality variant".to_string(),
+                ));
+            }
+        };
+
+        if !is_finalized {
+            return Err(StarknetBridgeClientError::MpcFinalityNotReached);
+        }
+
+        Ok(finality)
+    }
+
     /// Extract an `InitTransfer` event from a Starknet transaction receipt.
     pub async fn get_transfer_event(&self, tx_hash: Felt) -> Result<StarknetInitTransferEvent> {
         let log = self.get_init_transfer_log(tx_hash).await?;
@@ -396,7 +442,7 @@ impl StarknetBridgeClient {
 
         let sender = log.keys[1];
         let token_address = log.keys[2];
-        let origin_nonce = felt_to_u64(log.keys[3])?;
+        let origin_nonce = felt_to_u64(log.keys[3]);
 
         let data = &log.data;
         if data.len() < 3 {
@@ -405,9 +451,9 @@ impl StarknetBridgeClient {
             ));
         }
 
-        let amount = felt_to_u128(data[0])?;
-        let fee = felt_to_u128(data[1])?;
-        let native_token_fee = felt_to_u128(data[2])?;
+        let amount = felt_to_u128(data[0]);
+        let fee = felt_to_u128(data[1]);
+        let native_token_fee = felt_to_u128(data[2]);
 
         let (recipient, next_idx) = decode_byte_array(data, 3)?;
         let (message, _) = decode_byte_array(data, next_idx)?;
@@ -424,20 +470,20 @@ impl StarknetBridgeClient {
         })
     }
 
-    /// Returns the raw InitTransfer log with full metadata (block info, log index)
+    /// Returns the raw `InitTransfer` log with full metadata (block info, log index)
     /// for MPC proof construction.
     pub async fn get_init_transfer_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
         self.get_event_log(tx_hash, selector!("InitTransfer"), "InitTransfer")
             .await
     }
 
-    /// Returns the raw DeployToken log with full metadata for MPC proof construction.
+    /// Returns the raw `DeployToken` log with full metadata for MPC proof construction.
     pub async fn get_deploy_token_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
         self.get_event_log(tx_hash, selector!("DeployToken"), "DeployToken")
             .await
     }
 
-    /// Returns the raw FinTransfer log with full metadata for MPC proof construction.
+    /// Returns the raw `FinTransfer` log with full metadata for MPC proof construction.
     pub async fn get_fin_transfer_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
         self.get_event_log(tx_hash, selector!("FinTransfer"), "FinTransfer")
             .await
@@ -511,18 +557,26 @@ impl StarknetBridgeClient {
     }
 }
 
-fn felt_to_u64(f: Felt) -> Result<u64> {
+fn felt_to_u64(f: Felt) -> u64 {
     let bytes = f.to_bytes_be();
     let mut buf = [0u8; 8];
     buf.copy_from_slice(&bytes[24..]);
-    Ok(u64::from_be_bytes(buf))
+    u64::from_be_bytes(buf)
 }
 
-fn felt_to_u128(f: Felt) -> Result<u128> {
+fn felt_to_u128(f: Felt) -> u128 {
     let bytes = f.to_bytes_be();
     let mut buf = [0u8; 16];
     buf.copy_from_slice(&bytes[16..]);
-    Ok(u128::from_be_bytes(buf))
+    u128::from_be_bytes(buf)
+}
+
+fn felt_to_usize(f: Felt) -> Result<usize> {
+    usize::try_from(felt_to_u64(f)).map_err(|_| {
+        StarknetBridgeClientError::BlockchainDataError(
+            "ByteArray decode: length does not fit in usize".to_string(),
+        )
+    })
 }
 
 /// Decode a Cairo `ByteArray` from a slice of Felts starting at `offset`.
@@ -534,7 +588,7 @@ fn decode_byte_array(data: &[Felt], offset: usize) -> Result<(String, usize)> {
         ));
     }
 
-    let num_full_words = felt_to_u64(data[offset])? as usize;
+    let num_full_words = felt_to_usize(data[offset])?;
     let mut idx = offset + 1;
 
     let mut bytes = Vec::new();
@@ -557,7 +611,7 @@ fn decode_byte_array(data: &[Felt], offset: usize) -> Result<(String, usize)> {
     }
 
     let pending_word = data[idx];
-    let pending_len = felt_to_u64(data[idx + 1])? as usize;
+    let pending_len = felt_to_usize(data[idx + 1])?;
     idx += 2;
 
     if pending_len > 31 {
