@@ -591,24 +591,19 @@ impl OmniConnector {
         })?;
         let deposit_amount = u128::from(deposit_output.value.to_sat());
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
-
         // The contract dispatches to `get_extra_msg_confirmations` only when
         // calling `verify_deposit` with `extra_msg` set. `safe_verify_deposit`
         // (chosen when `safe_deposit.is_some()`) always uses `get_confirmations`,
         // even if `extra_msg` is also present.
         let uses_extra_msg_path =
             deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
-        let confirmation_ctx = self.confirmation_context(chain).await?;
-        let required_confirmations =
-            confirmation_ctx.required_confirmations(deposit_amount, uses_extra_msg_path)?;
-
-        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            deposit_amount,
+            uses_extra_msg_path,
+        )
+        .await?;
 
         let args = FinBtcTransferArgs {
             deposit_msg,
@@ -639,18 +634,13 @@ impl OmniConnector {
             .get_btc_pending_info(chain, tx_hash.clone())
             .await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
-
-        let confirmation_ctx = self.confirmation_context(chain).await?;
-        let required_confirmations =
-            confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
-
-        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            pending_info.actual_received_amount,
+            false,
+        )
+        .await?;
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
@@ -692,18 +682,13 @@ impl OmniConnector {
             .get_btc_pending_info(chain, tx_hash.clone())
             .await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
-
-        let confirmation_ctx = self.confirmation_context(chain).await?;
-        let required_confirmations =
-            confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
-
-        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            pending_info.actual_received_amount,
+            false,
+        )
+        .await?;
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
@@ -2591,6 +2576,31 @@ impl OmniConnector {
         let _ = cell.set(ctx.clone());
 
         Ok(ctx)
+    }
+
+    /// Verifies that the chain's light client has caught up far enough to
+    /// finalize the proof at `tx_block_height`, given the BTC connector's
+    /// confirmation policy for `amount` and the dispatch path. Returns
+    /// `LightClientNotSynced` when more blocks are needed.
+    async fn ensure_sufficient_btc_confirmations(
+        &self,
+        chain: ChainKind,
+        tx_block_height: u64,
+        amount: u128,
+        uses_extra_msg_path: bool,
+    ) -> Result<()> {
+        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
+        let required_confirmations = self
+            .confirmation_context(chain)
+            .await?
+            .required_confirmations(amount, uses_extra_msg_path)?;
+
+        if tx_block_height + required_confirmations > light_client_last_block + 1 {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+        Ok(())
     }
 
     pub fn evm_bridge_client(&self, chain_kind: ChainKind) -> Result<&EvmBridgeClient> {
