@@ -51,8 +51,7 @@ pub struct StarknetEventLog {
     pub log_index: u64,
 }
 
-type StarknetAccount =
-    SingleOwnerAccount<Arc<JsonRpcClient<PositionalHttpTransport>>, LocalWallet>;
+type StarknetAccount = SingleOwnerAccount<Arc<JsonRpcClient<PositionalHttpTransport>>, LocalWallet>;
 
 /// Starknet bridge client for the `OmniBridge` contract.
 pub struct StarknetBridgeClient {

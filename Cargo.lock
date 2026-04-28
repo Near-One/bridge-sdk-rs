@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.46"
+version = "0.3.47"
 dependencies = [
  "alloy",
  "clap",
@@ -4922,7 +4922,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.18"
+version = "0.2.19"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -5635,7 +5635,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.10"
+version = "0.3.11"
 dependencies = [
  "alloy",
  "bip0039",

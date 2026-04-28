@@ -175,6 +175,7 @@ struct PartialConfig {
     active_management_upper_limit: u32,
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
+    extra_msg_confirmations_delta: u8,
     expiry_height_gap: Option<u32>,
     chain_signatures_root_public_key: Option<near_sdk::PublicKey>,
 }
@@ -183,6 +184,50 @@ struct PartialConfig {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PartialMetadata {
     pub current_utxos_num: u32,
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct WhitelistMetadata {
+    relayer_white_list: Vec<AccountId>,
+    extra_msg_relayer_white_list: Vec<AccountId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BtcConfirmationContext {
+    pub confirmations_strategy: HashMap<String, u8>,
+    pub confirmations_delta: u8,
+    pub extra_msg_confirmations_delta: u8,
+    pub is_relayer_whitelisted: bool,
+    pub is_extra_msg_relayer_whitelisted: bool,
+}
+
+impl BtcConfirmationContext {
+    /// Compute required confirmations for a contract call.
+    ///
+    /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
+    /// to `get_extra_msg_confirmations` — that is, the SDK is calling
+    /// `verify_deposit` AND `deposit_msg.extra_msg.is_some()`. All other paths
+    /// (`safe_verify_deposit`, `verify_withdraw`, `verify_active_utxo_management`,
+    /// and `verify_deposit` without `extra_msg`) dispatch to `get_confirmations`
+    /// and must pass `false` here, even if the surrounding `DepositMsg` happens
+    /// to carry an `extra_msg` field.
+    pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
+        let base = base_confirmations(&self.confirmations_strategy, amount)?;
+
+        let delta = if uses_extra_msg_path {
+            if self.is_extra_msg_relayer_whitelisted {
+                0
+            } else {
+                self.extra_msg_confirmations_delta
+            }
+        } else if self.is_relayer_whitelisted {
+            0
+        } else {
+            self.confirmations_delta
+        };
+
+        Ok(u64::from(base) + u64::from(delta))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -231,6 +276,41 @@ impl TxBytes {
 pub fn format_max_gas_fee(gas_fee: u64) -> String {
     serde_json::to_string(&UTXOChainMsg::MaxGasFee(U64::from(gas_fee)))
         .expect("Failed to serialize UTXOChainMsg")
+}
+
+// Mirrors `Config::get_confirmations` from the satoshi-bridge contract: pick the
+// confirmations value at the smallest threshold strictly greater than `amount`,
+// falling back to the value at the largest threshold.
+fn base_confirmations(strategy: &HashMap<String, u8>, amount: u128) -> Result<u8> {
+    if strategy.is_empty() {
+        return Err(BridgeSdkError::ContractConfigurationError(
+            "confirmations_strategy is empty".to_string(),
+        ));
+    }
+
+    let mut keys = strategy
+        .keys()
+        .map(|k| k.parse::<u128>())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| {
+            BridgeSdkError::ContractConfigurationError(format!(
+                "Invalid confirmations_strategy key: {e}"
+            ))
+        })?;
+    keys.sort_unstable();
+
+    for key in &keys {
+        if *key > amount {
+            return Ok(*strategy
+                .get(&key.to_string())
+                .expect("key sourced from strategy"));
+        }
+    }
+
+    let max_key = keys.last().expect("non-empty");
+    Ok(*strategy
+        .get(&max_key.to_string())
+        .expect("key sourced from strategy"))
 }
 
 impl NearBridgeClient {
@@ -780,16 +860,40 @@ impl NearBridgeClient {
         Ok(config.min_deposit_amount)
     }
 
-    pub async fn get_confirmations(&self, chain: ChainKind) -> Result<u8> {
-        let config = self.get_config(chain).await?;
+    pub async fn get_btc_confirmation_context(
+        &self,
+        chain: ChainKind,
+    ) -> Result<BtcConfirmationContext> {
+        let signer_account_id = self.account_id()?;
+        let (config, whitelist) =
+            futures::try_join!(self.get_config(chain), self.get_whitelist_metadata(chain))?;
 
-        Ok(config
-            .confirmations_strategy
-            .values()
-            .max()
-            .copied()
-            .unwrap_or(0)
-            + config.confirmations_delta)
+        Ok(BtcConfirmationContext {
+            confirmations_strategy: config.confirmations_strategy,
+            confirmations_delta: config.confirmations_delta,
+            extra_msg_confirmations_delta: config.extra_msg_confirmations_delta,
+            is_relayer_whitelisted: whitelist.relayer_white_list.contains(&signer_account_id),
+            is_extra_msg_relayer_whitelisted: whitelist
+                .extra_msg_relayer_white_list
+                .contains(&signer_account_id),
+        })
+    }
+
+    async fn get_whitelist_metadata(&self, chain: ChainKind) -> Result<WhitelistMetadata> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_metadata".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<WhitelistMetadata>(&response)?)
     }
 
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
@@ -1041,5 +1145,76 @@ impl NearBridgeClient {
                 BridgeSdkError::ConfigError("Invalid Satoshi Relayer account id".to_string())
             })
             .cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::base_confirmations;
+    use bridge_connector_common::result::BridgeSdkError;
+    use std::collections::HashMap;
+
+    fn strategy(entries: &[(&str, u8)]) -> HashMap<String, u8> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), *v))
+            .collect()
+    }
+
+    #[test]
+    fn empty_strategy_errors() {
+        let result = base_confirmations(&HashMap::new(), 0);
+        assert!(matches!(
+            result,
+            Err(BridgeSdkError::ContractConfigurationError(_))
+        ));
+    }
+
+    #[test]
+    fn single_tier_amount_below_threshold() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 50_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn single_tier_amount_at_threshold_falls_back_to_max() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 100_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn single_tier_amount_above_threshold() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 200_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn multi_tier_picks_first_threshold_above_amount() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4), ("10000000000", 6)]);
+        assert_eq!(base_confirmations(&s, 50_000_000).unwrap(), 2);
+        assert_eq!(base_confirmations(&s, 500_000_000).unwrap(), 4);
+        assert_eq!(base_confirmations(&s, 5_000_000_000).unwrap(), 6);
+    }
+
+    #[test]
+    fn multi_tier_amount_equal_to_threshold_picks_next_tier() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4)]);
+        assert_eq!(base_confirmations(&s, 100_000_000).unwrap(), 4);
+    }
+
+    #[test]
+    fn multi_tier_amount_above_largest_falls_back_to_max_key() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4)]);
+        assert_eq!(base_confirmations(&s, 50_000_000_000).unwrap(), 4);
+    }
+
+    #[test]
+    fn invalid_key_returns_configuration_error() {
+        let mut s = strategy(&[("100000000", 2)]);
+        s.insert("not-a-number".to_string(), 3);
+        assert!(matches!(
+            base_confirmations(&s, 0),
+            Err(BridgeSdkError::ContractConfigurationError(_))
+        ));
     }
 }

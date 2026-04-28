@@ -30,8 +30,8 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    BtcConfirmationContext, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
+    FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -43,6 +43,7 @@ use solana_sdk::signature::{Keypair, Signature};
 use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
@@ -72,6 +73,10 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
+    #[builder(default)]
+    btc_confirmation_context: OnceLock<BtcConfirmationContext>,
+    #[builder(default)]
+    zcash_confirmation_context: OnceLock<BtcConfirmationContext>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -563,17 +568,6 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
-
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
-
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
-
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
@@ -586,6 +580,30 @@ impl OmniConnector {
                 fee,
             )?,
         };
+
+        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+        let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "vout {vout} out of range; tx has {} outputs",
+                btc_tx.output.len()
+            ))
+        })?;
+        let deposit_amount = u128::from(deposit_output.value.to_sat());
+
+        // The contract dispatches to `get_extra_msg_confirmations` only when
+        // calling `verify_deposit` with `extra_msg` set. `safe_verify_deposit`
+        // (chosen when `safe_deposit.is_some()`) always uses `get_confirmations`,
+        // even if `extra_msg` is also present.
+        let uses_extra_msg_path =
+            deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            deposit_amount,
+            uses_extra_msg_path,
+        )
+        .await?;
 
         let args = FinBtcTransferArgs {
             deposit_msg,
@@ -612,16 +630,17 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
+        let pending_info = near_bridge_client
+            .get_btc_pending_info(chain, tx_hash.clone())
+            .await?;
 
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
-
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            pending_info.actual_received_amount,
+            false,
+        )
+        .await?;
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
@@ -659,16 +678,17 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
+        let pending_info = near_bridge_client
+            .get_btc_pending_info(chain, tx_hash.clone())
+            .await?;
 
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
-
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            pending_info.actual_received_amount,
+            false,
+        )
+        .await?;
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
@@ -2528,6 +2548,59 @@ impl OmniConnector {
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!("Failed to denormalize amount: {e}",))
             })
+    }
+
+    /// Returns the BTC connector confirmation context for `chain`, fetching it
+    /// from the contract on the first call per chain and reusing the stored
+    /// snapshot for the lifetime of this `OmniConnector`.
+    async fn confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
+        let cell = match chain {
+            ChainKind::Btc => &self.btc_confirmation_context,
+            ChainKind::Zcash => &self.zcash_confirmation_context,
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "confirmation_context called with non-UTXO chain: {chain:?}"
+                )));
+            }
+        };
+
+        if let Some(ctx) = cell.get() {
+            return Ok(ctx.clone());
+        }
+
+        let ctx = self
+            .near_bridge_client()?
+            .get_btc_confirmation_context(chain)
+            .await?;
+
+        let _ = cell.set(ctx.clone());
+
+        Ok(ctx)
+    }
+
+    /// Verifies that the chain's light client has caught up far enough to
+    /// finalize the proof at `tx_block_height`, given the BTC connector's
+    /// confirmation policy for `amount` and the dispatch path. Returns
+    /// `LightClientNotSynced` when more blocks are needed.
+    async fn ensure_sufficient_btc_confirmations(
+        &self,
+        chain: ChainKind,
+        tx_block_height: u64,
+        amount: u128,
+        uses_extra_msg_path: bool,
+    ) -> Result<()> {
+        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
+        let required_confirmations = self
+            .confirmation_context(chain)
+            .await?
+            .required_confirmations(amount, uses_extra_msg_path)?;
+
+        if tx_block_height + required_confirmations > light_client_last_block + 1 {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
+        Ok(())
     }
 
     pub fn evm_bridge_client(&self, chain_kind: ChainKind) -> Result<&EvmBridgeClient> {
