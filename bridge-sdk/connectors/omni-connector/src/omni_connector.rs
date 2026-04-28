@@ -581,8 +581,15 @@ impl OmniConnector {
             )?,
         };
 
-        let btc_tx = utxo_utils::bytes_to_btc_transaction(&proof_data.tx_bytes);
-        let deposit_amount = u128::from(btc_tx.output[vout].value.to_sat());
+        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+        let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "vout {vout} out of range; tx has {} outputs",
+                btc_tx.output.len()
+            ))
+        })?;
+        let deposit_amount = u128::from(deposit_output.value.to_sat());
 
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
