@@ -1,7 +1,6 @@
 use clap::Subcommand;
 use core::panic;
 use near_mpc_contract_interface::types::{EvmFinality, StarknetFinality};
-use omni_types::mpc_types::MpcFinality;
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
@@ -295,6 +294,8 @@ pub enum OmniConnectorSubCommand {
             help = "Transfer recipient in format <chain_id>:<address>"
         )]
         recipient: OmniAddress,
+        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        refund_address: Option<String>,
         #[clap(short, long, help = "Transfer fee")]
         fee: u128,
         #[clap(long, help = "Storage deposit amount for tokens receiver")]
@@ -519,6 +520,8 @@ pub enum OmniConnectorSubCommand {
         vout: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
         recipient_id: OmniAddress,
+        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        refund_address: Option<String>,
         #[clap(
             short,
             long,
@@ -590,6 +593,8 @@ pub enum OmniConnectorSubCommand {
             help = "Transfer recipient in format <chain_id>:<address>"
         )]
         recipient_id: OmniAddress,
+        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        refund_address: Option<String>,
         #[clap(
             short,
             long,
@@ -930,6 +935,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             tx_hash,
             recipient,
+            refund_address,
             fee,
             storage_deposit_amount,
             config_cli,
@@ -939,6 +945,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain,
                     tx_hash,
                     recipient,
+                    refund_address,
                     fee,
                     storage_deposit_amount,
                     TransactionOptions::default(),
@@ -1258,6 +1265,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             btc_tx_hash,
             vout,
             recipient_id,
+            refund_address,
             fee,
             config_cli,
         } => {
@@ -1266,7 +1274,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain_kind: chain.into(),
                     btc_tx_hash,
                     vout,
-                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs { recipient_id, fee },
+                    btc_deposit_args: BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        refund_address,
+                        fee,
+                    },
                     transaction_options: TransactionOptions::default(),
                 })
                 .await
@@ -1343,12 +1355,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::GetBitcoinAddress {
             chain,
             recipient_id,
+            refund_address,
             fee,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, fee)
+                .get_btc_address(chain.into(), &recipient_id, refund_address, fee)
                 .await
                 .unwrap();
 
@@ -1500,6 +1513,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .private_key(combined_config.abs_private_key)
         .omni_bridge_address(combined_config.abs_bridge_token_factory_address)
         .wormhole_core_address(None)
+        .mpc_finality(Some(EvmFinality::Latest))
         .build()
         .unwrap();
 
@@ -1602,22 +1616,9 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .account_address(combined_config.starknet_account_address)
         .omni_bridge_address(combined_config.starknet_bridge_address)
         .chain_id(combined_config.starknet_chain_id)
+        .mpc_finality(Some(StarknetFinality::AcceptedOnL2))
         .build()
         .unwrap();
-
-    let mut mpc_finalities = HashMap::new();
-    match network {
-        Network::Mainnet => {
-            mpc_finalities.insert(ChainKind::Abs, MpcFinality::Evm(EvmFinality::Safe));
-        }
-        Network::Testnet | Network::Devnet => {
-            mpc_finalities.insert(ChainKind::Abs, MpcFinality::Evm(EvmFinality::Latest));
-        }
-    }
-    mpc_finalities.insert(
-        ChainKind::Strk,
-        MpcFinality::Starknet(StarknetFinality::AcceptedOnL2),
-    );
 
     OmniConnectorBuilder::default()
         .network(Some(network.into()))
@@ -1638,7 +1639,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .btc_light_client(Some(btc_light_client))
         .zcash_light_client(Some(zcash_light_client))
         .enable_orchard(combined_config.enable_orchard)
-        .mpc_finalities(Some(mpc_finalities))
         .build()
         .unwrap()
 }

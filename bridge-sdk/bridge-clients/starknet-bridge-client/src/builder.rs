@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
+use near_mpc_contract_interface::types::StarknetFinality;
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::{BlockId, BlockTag, Felt},
-    providers::{jsonrpc::HttpTransport, JsonRpcClient},
+    providers::JsonRpcClient,
     signers::{LocalWallet, SigningKey},
 };
 use url::Url;
 
 use crate::error::{Result, StarknetBridgeClientError};
+use crate::rpc_transport::PositionalHttpTransport;
 use crate::StarknetBridgeClient;
 
 #[derive(Default)]
@@ -19,10 +21,12 @@ pub struct StarknetBridgeClientBuilder {
     private_key: Option<String>,
     #[doc = r"Optional. Starknet account address (hex Felt) matching the private key."]
     account_address: Option<String>,
-    #[doc = r"Optional. OmniBridge contract address on Starknet (hex Felt)."]
+    #[doc = r"Optional. `OmniBridge` contract address on Starknet (hex Felt)."]
     omni_bridge_address: Option<String>,
     #[doc = r"Optional. Chain ID string (e.g. `SN_MAIN`, `SN_SEPOLIA`)."]
     chain_id: Option<String>,
+    #[doc = r"Optional. MPC finality level required before an MPC sign payload can be built."]
+    mpc_finality: Option<StarknetFinality>,
 }
 
 impl StarknetBridgeClientBuilder {
@@ -56,6 +60,12 @@ impl StarknetBridgeClientBuilder {
         self
     }
 
+    #[must_use]
+    pub fn mpc_finality(mut self, mpc_finality: Option<StarknetFinality>) -> Self {
+        self.mpc_finality = mpc_finality;
+        self
+    }
+
     pub fn build(self) -> Result<StarknetBridgeClient> {
         let endpoint = self.endpoint.ok_or_else(|| {
             StarknetBridgeClientError::ConfigError("endpoint is required".to_string())
@@ -65,7 +75,7 @@ impl StarknetBridgeClientBuilder {
             StarknetBridgeClientError::ConfigError("Invalid Starknet RPC endpoint URL".to_string())
         })?;
 
-        let provider = Arc::new(JsonRpcClient::new(HttpTransport::new(url)));
+        let provider = Arc::new(JsonRpcClient::new(PositionalHttpTransport::new(url)));
 
         let account = if let (Some(pk), Some(addr)) = (self.private_key, self.account_address) {
             let private_key = parse_felt(&pk).map_err(|_| {
@@ -111,6 +121,7 @@ impl StarknetBridgeClientBuilder {
             provider,
             account,
             omni_bridge_address,
+            mpc_finality: self.mpc_finality,
         })
     }
 }

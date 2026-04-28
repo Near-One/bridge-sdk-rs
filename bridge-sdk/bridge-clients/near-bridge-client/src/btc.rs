@@ -32,7 +32,7 @@ const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
-const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
+const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 1;
 const BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT: u128 = 1_200_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
@@ -94,6 +94,8 @@ pub struct DepositMsg {
     pub extra_msg: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_deposit: Option<SafeDepositMsg>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refund_address: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -637,9 +639,11 @@ impl NearBridgeClient {
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
+        refund_address: Option<String>,
         fee: u128,
     ) -> Result<String> {
-        let deposit_msg = self.get_deposit_msg_for_omni_bridge(recipient_id, fee)?;
+        let deposit_msg =
+            self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
         let api_url = self
             .bridge_indexer_api_url()?
             .join("api/v3/utxo/get_user_deposit_address")
@@ -847,6 +851,7 @@ impl NearBridgeClient {
     pub fn get_deposit_msg_for_omni_bridge(
         &self,
         recipient_id: &OmniAddress,
+        refund_address: Option<String>,
         fee: u128,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
@@ -870,6 +875,7 @@ impl NearBridgeClient {
                 })
                 .to_string(),
             }),
+            refund_address,
         })
     }
 

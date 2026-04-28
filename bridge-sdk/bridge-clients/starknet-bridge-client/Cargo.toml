@@ -1,6 +1,6 @@
 [package]
 name = "starknet-bridge-client"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.88.0"
 
@@ -8,10 +8,14 @@ rust-version = "1.88.0"
 starknet.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+near-mpc-contract-interface.workspace = true
 omni-types.workspace = true
 hex.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 tokio.workspace = true
+async-trait = "0.1"
 url = "2"
 
 [lib]
