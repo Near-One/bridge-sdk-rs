@@ -30,8 +30,8 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    BtcConfirmationContext, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
+    FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -43,6 +43,7 @@ use solana_sdk::signature::{Keypair, Signature};
 use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use utxo_bridge_client::{
     types::{Bitcoin, Zcash},
     UTXOBridgeClient,
@@ -72,6 +73,10 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
+    #[builder(default)]
+    btc_confirmation_cache: OnceLock<BtcConfirmationContext>,
+    #[builder(default)]
+    zcash_confirmation_cache: OnceLock<BtcConfirmationContext>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -563,17 +568,6 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
-        let light_client = self.light_client(chain)?;
-        let light_client_last_block = light_client.get_last_block_number().await?;
-
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
-
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
-        }
-
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
@@ -586,6 +580,22 @@ impl OmniConnector {
                 fee,
             )?,
         };
+
+        let btc_tx = utxo_utils::bytes_to_btc_transaction(&proof_data.tx_bytes);
+        let deposit_amount = u128::from(btc_tx.output[vout].value.to_sat());
+
+        let light_client = self.light_client(chain)?;
+        let light_client_last_block = light_client.get_last_block_number().await?;
+
+        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let required_confirmations = confirmation_ctx
+            .required_confirmations(deposit_amount, deposit_msg.extra_msg.is_some())?;
+
+        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
+            return Err(BridgeSdkError::LightClientNotSynced(
+                light_client_last_block,
+            ));
+        }
 
         let args = FinBtcTransferArgs {
             deposit_msg,
@@ -612,12 +622,18 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
+        let pending_info = near_bridge_client
+            .get_btc_pending_info(chain, tx_hash.clone())
+            .await?;
+
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
+        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let required_confirmations =
+            confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
 
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
+        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -659,12 +675,18 @@ impl OmniConnector {
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
 
+        let pending_info = near_bridge_client
+            .get_btc_pending_info(chain, tx_hash.clone())
+            .await?;
+
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let confirmations = near_bridge_client.get_confirmations(chain).await?;
+        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let required_confirmations =
+            confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
 
-        if proof_data.block_height + u64::from(confirmations) > light_client_last_block {
+        if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
             return Err(BridgeSdkError::LightClientNotSynced(
                 light_client_last_block,
             ));
@@ -2528,6 +2550,31 @@ impl OmniConnector {
             .map_err(|e| {
                 BridgeSdkError::InvalidArgument(format!("Failed to denormalize amount: {e}",))
             })
+    }
+
+    async fn btc_confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
+        let cell = match chain {
+            ChainKind::Btc => &self.btc_confirmation_cache,
+            ChainKind::Zcash => &self.zcash_confirmation_cache,
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "btc_confirmation_context called with non-UTXO chain: {chain:?}"
+                )));
+            }
+        };
+
+        if let Some(ctx) = cell.get() {
+            return Ok(ctx.clone());
+        }
+
+        let ctx = self
+            .near_bridge_client()?
+            .get_btc_confirmation_context(chain)
+            .await?;
+
+        let _ = cell.set(ctx.clone());
+
+        Ok(ctx)
     }
 
     pub fn evm_bridge_client(&self, chain_kind: ChainKind) -> Result<&EvmBridgeClient> {
