@@ -74,9 +74,9 @@ pub struct OmniConnector {
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
     #[builder(default)]
-    btc_confirmation_cache: OnceLock<BtcConfirmationContext>,
+    btc_confirmation_context: OnceLock<BtcConfirmationContext>,
     #[builder(default)]
-    zcash_confirmation_cache: OnceLock<BtcConfirmationContext>,
+    zcash_confirmation_context: OnceLock<BtcConfirmationContext>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -600,7 +600,7 @@ impl OmniConnector {
         // even if `extra_msg` is also present.
         let uses_extra_msg_path =
             deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
-        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let confirmation_ctx = self.confirmation_context(chain).await?;
         let required_confirmations =
             confirmation_ctx.required_confirmations(deposit_amount, uses_extra_msg_path)?;
 
@@ -642,7 +642,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let confirmation_ctx = self.confirmation_context(chain).await?;
         let required_confirmations =
             confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
 
@@ -695,7 +695,7 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
-        let confirmation_ctx = self.btc_confirmation_context(chain).await?;
+        let confirmation_ctx = self.confirmation_context(chain).await?;
         let required_confirmations =
             confirmation_ctx.required_confirmations(pending_info.actual_received_amount, false)?;
 
@@ -2565,13 +2565,16 @@ impl OmniConnector {
             })
     }
 
-    async fn btc_confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
+    /// Returns the BTC connector confirmation context for `chain`, fetching it
+    /// from the contract on the first call per chain and reusing the stored
+    /// snapshot for the lifetime of this `OmniConnector`.
+    async fn confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
         let cell = match chain {
-            ChainKind::Btc => &self.btc_confirmation_cache,
-            ChainKind::Zcash => &self.zcash_confirmation_cache,
+            ChainKind::Btc => &self.btc_confirmation_context,
+            ChainKind::Zcash => &self.zcash_confirmation_context,
             _ => {
                 return Err(BridgeSdkError::InvalidArgument(format!(
-                    "btc_confirmation_context called with non-UTXO chain: {chain:?}"
+                    "confirmation_context called with non-UTXO chain: {chain:?}"
                 )));
             }
         };
