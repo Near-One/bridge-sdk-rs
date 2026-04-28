@@ -217,7 +217,7 @@ impl BtcConfirmationContext {
             self.confirmations_delta
         };
 
-        Ok((base + delta).into())
+        Ok(u64::from(base) + u64::from(delta))
     }
 }
 
