@@ -594,9 +594,15 @@ impl OmniConnector {
         let light_client = self.light_client(chain)?;
         let light_client_last_block = light_client.get_last_block_number().await?;
 
+        // The contract dispatches to `get_extra_msg_confirmations` only when
+        // calling `verify_deposit` with `extra_msg` set. `safe_verify_deposit`
+        // (chosen when `safe_deposit.is_some()`) always uses `get_confirmations`,
+        // even if `extra_msg` is also present.
+        let uses_extra_msg_path =
+            deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
         let confirmation_ctx = self.btc_confirmation_context(chain).await?;
-        let required_confirmations = confirmation_ctx
-            .required_confirmations(deposit_amount, deposit_msg.extra_msg.is_some())?;
+        let required_confirmations =
+            confirmation_ctx.required_confirmations(deposit_amount, uses_extra_msg_path)?;
 
         if proof_data.block_height + required_confirmations > light_client_last_block + 1 {
             return Err(BridgeSdkError::LightClientNotSynced(

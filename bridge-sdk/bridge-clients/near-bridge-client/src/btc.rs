@@ -202,10 +202,19 @@ pub struct BtcConfirmationContext {
 }
 
 impl BtcConfirmationContext {
-    pub fn required_confirmations(&self, amount: u128, has_extra_msg: bool) -> Result<u64> {
+    /// Compute required confirmations for a contract call.
+    ///
+    /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
+    /// to `get_extra_msg_confirmations` — that is, the SDK is calling
+    /// `verify_deposit` AND `deposit_msg.extra_msg.is_some()`. All other paths
+    /// (`safe_verify_deposit`, `verify_withdraw`, `verify_active_utxo_management`,
+    /// and `verify_deposit` without `extra_msg`) dispatch to `get_confirmations`
+    /// and must pass `false` here, even if the surrounding `DepositMsg` happens
+    /// to carry an `extra_msg` field.
+    pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
         let base = base_confirmations(&self.confirmations_strategy, amount)?;
 
-        let delta = if has_extra_msg {
+        let delta = if uses_extra_msg_path {
             if self.is_extra_msg_relayer_whitelisted {
                 0
             } else {
