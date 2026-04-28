@@ -1083,3 +1083,176 @@ impl NearBridgeClient {
             .cloned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::NearBridgeClientBuilder;
+    use reqwest::Url;
+    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const DEPOSIT_ADDRESS_PATH: &str = "/api/v3/utxo/get_user_deposit_address";
+
+    fn test_client(api_url: Option<Url>) -> NearBridgeClient {
+        NearBridgeClientBuilder::default()
+            .endpoint(None)
+            .private_key(None)
+            .signer(None)
+            .omni_bridge_id(Some("omni.test.near".parse().unwrap()))
+            .mpc_omni_prover_id(None)
+            .utxo_bridges(HashMap::new())
+            .bridge_indexer_api_url(api_url)
+            .build()
+            .unwrap()
+    }
+
+    fn near_recipient() -> OmniAddress {
+        OmniAddress::Near("user.test.near".parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_returns_address_from_indexer() {
+        let server = MockServer::start().await;
+        let expected = "tb1qexampleaddress0000000000000000000000";
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(ResponseTemplate::new(200).set_body_json(expected))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let result = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_sends_btc_chain_in_request_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .and(body_partial_json(serde_json::json!({
+                "chain": "btc",
+                "recipient": "omni.test.near",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json("addr"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_sends_zcash_chain_in_request_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .and(body_partial_json(serde_json::json!({
+                "chain": "zcash",
+                "recipient": "omni.test.near",
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json("zaddr"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_includes_safe_deposit_with_relayer_fee() {
+        let server = MockServer::start().await;
+        let captured_body = std::sync::Arc::new(std::sync::Mutex::new(None::<serde_json::Value>));
+        let captured_clone = captured_body.clone();
+
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(move |req: &wiremock::Request| {
+                *captured_clone.lock().unwrap() =
+                    Some(serde_json::from_slice(&req.body).unwrap());
+                ResponseTemplate::new(200).set_body_json("addr")
+            })
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242)
+            .await
+            .expect("get_btc_address should succeed");
+
+        let body = captured_body.lock().unwrap().clone().expect("request captured");
+        let safe_deposit_msg = body
+            .pointer("/safe_deposit/msg")
+            .and_then(|v| v.as_str())
+            .expect("safe_deposit.msg present");
+        let inner: serde_json::Value =
+            serde_json::from_str(safe_deposit_msg).expect("inner json");
+        assert_eq!(inner["UtxoFinTransfer"]["relayer_fee"], "4242");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_unsupported_chain_returns_invalid_argument() {
+        let server = MockServer::start().await;
+        // No mock mounted: a successful HTTP call would fail. We expect early validation.
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let err = client
+            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0)
+            .await
+            .expect_err("Eth is not a UTXO chain");
+
+        assert!(
+            matches!(err, BridgeSdkError::InvalidArgument(_)),
+            "expected InvalidArgument, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_missing_api_url_returns_config_error() {
+        let client = test_client(None);
+        let err = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect_err("missing api url should fail");
+
+        assert!(
+            matches!(err, BridgeSdkError::ConfigError(_)),
+            "expected ConfigError, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_propagates_indexer_http_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let err = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect_err("500 status should fail");
+
+        assert!(
+            matches!(err, BridgeSdkError::UnknownError(_)),
+            "expected UnknownError, got {err:?}"
+        );
+    }
+}
