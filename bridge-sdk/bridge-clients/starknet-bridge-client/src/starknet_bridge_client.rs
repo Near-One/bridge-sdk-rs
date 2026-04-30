@@ -642,7 +642,7 @@ mod tests {
     fn test_encode_u128_roundtrip() {
         let value: u128 = 123_456_789_012_345;
         let felt = StarknetBridgeClient::encode_u128(value);
-        let back = felt_to_u128(felt).unwrap();
+        let back = felt_to_u128(felt);
         assert_eq!(value, back);
     }
 
@@ -650,7 +650,7 @@ mod tests {
     fn test_encode_u64_roundtrip() {
         let value: u64 = 9_876_543_210;
         let felt = StarknetBridgeClient::encode_u64(value);
-        let back = felt_to_u64(felt).unwrap();
+        let back = felt_to_u64(felt);
         assert_eq!(value, back);
     }
 
@@ -662,8 +662,8 @@ mod tests {
         input[31] = 2; // low = 2
 
         let [low, high] = StarknetBridgeClient::encode_u256(input);
-        assert_eq!(felt_to_u128(low).unwrap(), 2);
-        assert_eq!(felt_to_u128(high).unwrap(), 1);
+        assert_eq!(felt_to_u128(low), 2);
+        assert_eq!(felt_to_u128(high), 1);
     }
 
     #[test]
@@ -715,14 +715,14 @@ mod tests {
         assert_eq!(felts.len(), 5); // r_low, r_high, s_low, s_high, v
 
         // r_low should contain 0xFF
-        assert_eq!(felt_to_u128(felts[0]).unwrap(), 0xFF);
+        assert_eq!(felt_to_u128(felts[0]), 0xFF);
         // r_high should be 0
-        assert_eq!(felt_to_u128(felts[1]).unwrap(), 0);
+        assert_eq!(felt_to_u128(felts[1]), 0);
         // s_low should contain 0xAA
-        assert_eq!(felt_to_u128(felts[2]).unwrap(), 0xAA);
+        assert_eq!(felt_to_u128(felts[2]), 0xAA);
         // s_high should be 0
-        assert_eq!(felt_to_u128(felts[3]).unwrap(), 0);
+        assert_eq!(felt_to_u128(felts[3]), 0);
         // v should be 27
-        assert_eq!(felt_to_u64(felts[4]).unwrap(), 27);
+        assert_eq!(felt_to_u64(felts[4]), 27);
     }
 }
