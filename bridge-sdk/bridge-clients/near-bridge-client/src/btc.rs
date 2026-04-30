@@ -776,11 +776,16 @@ impl NearBridgeClient {
                 BridgeSdkError::UnknownError(format!("Bridge indexer API returned error: {e}"))
             })?;
 
-        let btc_address: String = response.json().await.map_err(|e| {
+        #[derive(serde::Deserialize)]
+        struct DepositAddressResponse {
+            address: String,
+        }
+
+        let parsed: DepositAddressResponse = response.json().await.map_err(|e| {
             BridgeSdkError::UnknownError(format!("Failed to parse deposit address response: {e}"))
         })?;
 
-        Ok(btc_address)
+        Ok(parsed.address)
     }
 
     pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
@@ -1224,7 +1229,9 @@ mod tests {
         let expected = "tb1qexampleaddress0000000000000000000000";
         Mock::given(method("POST"))
             .and(path(DEPOSIT_ADDRESS_PATH))
-            .respond_with(ResponseTemplate::new(200).set_body_json(expected))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": expected})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -1247,7 +1254,9 @@ mod tests {
                 "chain": "btc",
                 "recipient": "omni.test.near",
             })))
-            .respond_with(ResponseTemplate::new(200).set_body_json("addr"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "addr"})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -1268,7 +1277,9 @@ mod tests {
                 "chain": "zcash",
                 "recipient": "omni.test.near",
             })))
-            .respond_with(ResponseTemplate::new(200).set_body_json("zaddr"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "zaddr"})),
+            )
             .expect(1)
             .mount(&server)
             .await;
@@ -1290,7 +1301,7 @@ mod tests {
             .and(path(DEPOSIT_ADDRESS_PATH))
             .respond_with(move |req: &wiremock::Request| {
                 *captured_clone.lock().unwrap() = Some(serde_json::from_slice(&req.body).unwrap());
-                ResponseTemplate::new(200).set_body_json("addr")
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "addr"}))
             })
             .mount(&server)
             .await;
