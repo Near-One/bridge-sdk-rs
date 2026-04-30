@@ -294,7 +294,7 @@ pub enum OmniConnectorSubCommand {
             help = "Transfer recipient in format <chain_id>:<address>"
         )]
         recipient: OmniAddress,
-        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(short, long, help = "Transfer fee")]
         fee: u128,
@@ -520,7 +520,7 @@ pub enum OmniConnectorSubCommand {
         vout: usize,
         #[clap(short, long, help = "The BTC recipient on NEAR")]
         recipient_id: OmniAddress,
-        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(
             short,
@@ -593,7 +593,7 @@ pub enum OmniConnectorSubCommand {
             help = "Transfer recipient in format <chain_id>:<address>"
         )]
         recipient_id: OmniAddress,
-        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+        #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(
             short,
