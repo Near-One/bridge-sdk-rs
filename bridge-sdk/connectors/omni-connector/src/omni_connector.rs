@@ -2553,7 +2553,7 @@ impl OmniConnector {
     /// Returns the BTC connector confirmation context for `chain`, fetching it
     /// from the contract on the first call per chain and reusing the stored
     /// snapshot for the lifetime of this `OmniConnector`.
-    async fn confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
+    pub async fn confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
         let cell = match chain {
             ChainKind::Btc => &self.btc_confirmation_context,
             ChainKind::Zcash => &self.zcash_confirmation_context,
@@ -2582,7 +2582,7 @@ impl OmniConnector {
     /// finalize the proof at `tx_block_height`, given the BTC connector's
     /// confirmation policy for `amount` and the dispatch path. Returns
     /// `LightClientNotSynced` when more blocks are needed.
-    async fn ensure_sufficient_btc_confirmations(
+    pub async fn ensure_sufficient_btc_confirmations(
         &self,
         chain: ChainKind,
         tx_block_height: u64,
