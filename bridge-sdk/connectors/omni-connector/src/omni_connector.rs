@@ -24,8 +24,8 @@ use omni_types::prover_args::{
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{
-    EvmAddress, FastTransfer, FastTransferId, FastTransferStatus, Fee, OmniAddress,
-    TransferIdKind, TransferMessage, UnifiedTransferId, UtxoId, H160,
+    EvmAddress, FastTransfer, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferIdKind,
+    TransferMessage, UnifiedTransferId, UtxoId, H160,
 };
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
