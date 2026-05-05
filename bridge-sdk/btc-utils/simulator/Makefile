@@ -17,7 +17,7 @@
 
 FEE_RATE ?= 5000
 OFFSET   ?= 0
-LIMIT    ?= 10000
+LIMIT    ?= 150000
 
 CARGO_RUN := cargo run -p btc-utils --example choose-utxo-simulator --release -- \
   --deposits Deposits.csv \
