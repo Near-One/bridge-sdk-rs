@@ -12,7 +12,8 @@ members = [
     "bridge-sdk/bridge-clients/starknet-bridge-client",
     "bridge-sdk/crypto-utils",
     "bridge-sdk/utxo-utils",
-    "bridge-sdk/light-client"
+    "bridge-sdk/light-client",
+    "bridge-sdk/btc-utils"
 ]
 
 [workspace.dependencies]
