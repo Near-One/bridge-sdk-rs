@@ -6,7 +6,10 @@ use std::str::FromStr;
 pub mod coin_selection;
 pub mod coin_selection_random;
 pub use coin_selection::{choose_utxos, SelectionLimits};
-pub use coin_selection_random::{choose_utxos_random, UtxoSelection, WithdrawSelectionParams};
+pub use coin_selection_random::{
+    choose_utxos_random, choose_utxos_random_no_payment, UtxoSelection, WithdrawSelectionParams,
+    MAX_NO_PAYMENT_RETRIES,
+};
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
