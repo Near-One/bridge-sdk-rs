@@ -409,6 +409,52 @@ mod tests {
     }
 
     #[test]
+    fn dust_absorption_is_capped_by_max_gas_fee() {
+        // Scenario: amount = 5_000 sats, pool = [3_000, 2_500] (sum = 5_500).
+        // Choosing both UTXOs change-free leaves 500 sats of "would-be change",
+        // below min_change_amount = 537 → BnB absorbs it as fee. The contract
+        // (psbt.rs:234-243) enforces `actual_received ≤ user_request −
+        // withdraw_fee − gas_fee`, so a relayer that pre-computed `amount` for
+        // a small expected gas_fee will be rejected if the SDK silently
+        // absorbs an extra 359 sats into the fee.
+        //
+        // The SDK guards against this via `max_gas_fee` — callers must pass
+        // their actual fee budget (not the contract's hard 5_000-sat cap).
+        // With a tight budget, the SDK refuses the dust-absorbing path.
+        let pool = pool(&[3_000, 2_500]);
+
+        // (1) Loose limits: caller used the contract's outer max as
+        // max_gas_fee. SDK accepts the change-free selection and absorbs all
+        // 500 sats into gas_fee. If the caller had pre-computed amount with a
+        // smaller fee estimate, the contract will reject this.
+        let loose = SelectionLimits {
+            min_gas_fee: 0,
+            ..SelectionLimits::default()
+        };
+        let (inputs, balance, fee) = choose_utxos(5_000, &pool, 0, &loose).unwrap();
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(balance, 5_500);
+        assert_eq!(fee, 500); // 141 base + 359 absorbed dust
+
+        // (2) Tight limits: caller's true budget allows ~200 sats of fee. The
+        // 500-sat absorbed-fee selection now exceeds max_gas_fee. BnB rejects
+        // it; greedy can't produce a real change ≥ min_change_amount = 537
+        // either (would need balance ≥ amount + fee + 537 = 5_737, pool only
+        // has 5_500). choose_utxos returns Err — exactly the behaviour that
+        // prevents the contract-side rejection.
+        let tight = SelectionLimits {
+            min_gas_fee: 0,
+            max_gas_fee: 200,
+            ..SelectionLimits::default()
+        };
+        let res = choose_utxos(5_000, &pool, 0, &tight);
+        assert!(
+            res.is_err(),
+            "tight max_gas_fee must block the dust-absorbed selection",
+        );
+    }
+
+    #[test]
     fn single_input_change_can_exceed_max_change_amount() {
         // Contract enforces `change < max_change_amount` only when
         // `input_num > change_num` (psbt.rs:218–225). A 1-input + 1-change

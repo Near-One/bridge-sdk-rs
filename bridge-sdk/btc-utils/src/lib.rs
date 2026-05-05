@@ -4,7 +4,9 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::str::FromStr;
 
 pub mod coin_selection;
+pub mod coin_selection_random;
 pub use coin_selection::{choose_utxos, SelectionLimits};
+pub use coin_selection_random::{choose_utxos_random, UtxoSelection, WithdrawSelectionParams};
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]

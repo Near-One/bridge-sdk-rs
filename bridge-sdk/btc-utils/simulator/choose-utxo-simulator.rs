@@ -39,21 +39,32 @@
 //! recycle-snapshot behaviour: it resets the pool to --utxos every time the
 //! pool can no longer fund the next withdrawal.
 
-use btc_utils::{choose_utxos, SelectionLimits, UTXO};
+use btc_utils::{
+    choose_utxos, choose_utxos_random, get_gas_fee, SelectionLimits, UtxoSelection,
+    WithdrawSelectionParams, UTXO,
+};
+use rand::{rngs::StdRng, SeedableRng};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
 
 #[derive(Default)]
 struct Stats {
+    /// "Change-free" hits: BnB matches in `current`, absorption-cases in
+    /// `random` (selection sums to net_amount exactly with no change output).
     bnb_hits: u64,
+    /// "With-change" hits: greedy fallback in `current`, the standard /
+    /// padded / split paths in `random`.
     greedy_hits: u64,
     errors_pool_empty: u64,
     errors_algo: u64,
     pool_resets: u64,
     total_fee_sats: u128,
     total_amount_sats: u128,
-    inputs_histogram: [u64; 12], // index = input count, bucket [10] = 10, [11] = 11+
+    /// Sum of `user_payment` reported by the random algo (dust-padding
+    /// absorbed from the user's output). Always 0 for the current algo.
+    total_user_payment_sats: u128,
+    inputs_histogram: [u64; 12],
     max_inputs_seen: usize,
     change_outputs_created: u64,
     change_free_txs: u64,
@@ -86,12 +97,19 @@ struct Args {
     offset: usize,
     /// Process at most N events after the offset (0 = all).
     limit: usize,
+    /// Coin-selection algorithm: `current` (BnB+greedy from coin_selection.rs),
+    /// `random` (PR #272's randomized iterative), or `both` for side-by-side.
+    algo: String,
+    /// Seed for the randomized algorithm.
+    rng_seed: u64,
 }
 
 fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
     let mut a = Args {
         fee_rate: 5000,
         mode: "replay".to_string(),
+        algo: "current".to_string(),
+        rng_seed: 0xC0FF_EEC0_FFEE,
         ..Default::default()
     };
     let mut it = env::args().skip(1);
@@ -108,6 +126,8 @@ fn parse_args() -> Result<Args, Box<dyn std::error::Error>> {
             "--mode" => a.mode = need_val(&mut it)?,
             "--offset" => a.offset = need_val(&mut it)?.parse()?,
             "--limit" => a.limit = need_val(&mut it)?.parse()?,
+            "--algo" => a.algo = need_val(&mut it)?,
+            "--rng-seed" => a.rng_seed = need_val(&mut it)?.parse()?,
             "-h" | "--help" => {
                 print_usage();
                 std::process::exit(0);
@@ -200,16 +220,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             args.offset, args.limit
         );
     }
-    println!("Limits:      {limits:?}\n");
+    println!("Limits:      {limits:?}");
+    println!("Algo:        {}\n", args.algo);
 
+    // PR #272's randomized algorithm needs the full contract config subset.
+    // We synthesize it from the same SelectionLimits — anything missing
+    // (passive-management bounds, max_change_number) is defaulted to the
+    // production btc-bridge values.
+    let params = WithdrawSelectionParams {
+        min_change_amount: u128::from(limits.min_change_amount),
+        max_change_amount: u128::from(limits.max_change_amount),
+        max_withdrawal_input_number: limits.max_inputs,
+        max_change_number: 10,
+        passive_management_lower_limit: 0,
+        passive_management_upper_limit: 6_000,
+    };
+
+    let algos: &[AlgoChoice] = match args.algo.as_str() {
+        "current" => &[AlgoChoice::Current],
+        "random" => &[AlgoChoice::Random],
+        "both" => &[AlgoChoice::Current, AlgoChoice::Random],
+        other => return Err(format!("unknown --algo: {other} (current|random|both)").into()),
+    };
+    for &algo in algos {
+        run_simulation(
+            algo,
+            &events,
+            &starting_pool,
+            total_withdrawals,
+            &args,
+            &limits,
+            &params,
+        )?;
+    }
+
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AlgoChoice {
+    Current,
+    Random,
+}
+
+impl AlgoChoice {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Current => "current (BnB + greedy)",
+            Self::Random => "random (PR #272)",
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn run_simulation(
+    algo: AlgoChoice,
+    events: &[Event],
+    starting_pool: &HashMap<String, UTXO>,
+    total_withdrawals: usize,
+    args: &Args,
+    limits: &SelectionLimits,
+    params: &WithdrawSelectionParams,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("================================================================");
+    println!("=== Algo: {} ===", algo.label());
+    println!("================================================================");
+
+    let starting_pool_size = starting_pool.len();
+    let starting_pool_balance: u128 =
+        starting_pool.values().map(|u| u128::from(u.balance)).sum();
     let mut pool = starting_pool.clone();
     let mut stats = Stats::default();
     let mut next_synth_id: u64 = 0;
+    let mut rng = StdRng::seed_from_u64(args.rng_seed);
     let mut first_algo_failure_at: Option<usize> = None;
     let mut withdrawal_idx: usize = 0;
     let no_deposits = args.deposits.is_none();
 
-    for ev in &events {
+    for ev in events {
         match ev.kind {
             EventKind::Deposit => {
                 pool.insert(synth_txid("deposit", &mut next_synth_id), to_utxo(ev.value)?);
@@ -240,13 +328,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let pool_balance: u128 =
                     working_pool.values().map(|u| u128::from(u.balance)).sum();
 
-                match try_withdrawal(
-                    working_pool,
-                    ev.value,
-                    args.fee_rate,
-                    &limits,
-                    &mut next_synth_id,
-                ) {
+                let outcome = match algo {
+                    AlgoChoice::Current => try_withdrawal(
+                        working_pool,
+                        ev.value,
+                        args.fee_rate,
+                        limits,
+                        &mut next_synth_id,
+                    ),
+                    AlgoChoice::Random => try_withdrawal_random(
+                        working_pool,
+                        ev.value,
+                        args.fee_rate,
+                        params,
+                        &mut rng,
+                        &mut next_synth_id,
+                    ),
+                };
+
+                match outcome {
                     Ok(outcome) => {
                         if outcome.was_bnb {
                             stats.bnb_hits += 1;
@@ -255,6 +355,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         stats.total_fee_sats += outcome.fee;
                         stats.total_amount_sats += ev.value;
+                        stats.total_user_payment_sats += outcome.user_payment;
                         let bucket = outcome.input_count.min(11);
                         stats.inputs_histogram[bucket] += 1;
                         stats.max_inputs_seen =
@@ -273,7 +374,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             if first_algo_failure_at.is_none() {
                                 first_algo_failure_at = Some(i);
                             }
-                            diagnose_failure(i, ev.value, working_pool, &limits, &mut stats);
+                            diagnose_failure(i, ev.value, working_pool, limits, &mut stats);
                         }
                     }
                 }
@@ -283,21 +384,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let final_pool_balance: u128 = pool.values().map(|u| u128::from(u.balance)).sum();
     let served = stats.bnb_hits + stats.greedy_hits;
-    let bnb_share = if served > 0 {
+    let cf_share = if served > 0 {
         100.0 * stats.bnb_hits as f64 / served as f64
     } else {
         0.0
+    };
+    let (cf_label, wc_label) = match algo {
+        AlgoChoice::Current => ("BnB success (change-free)", "Greedy fallback           "),
+        AlgoChoice::Random => ("Random absorption (change-free)", "Random with-change         "),
     };
 
     println!("=== Per-call outcomes ===");
     println!("Total withdrawals processed: {total_withdrawals}");
     println!(
-        "  BnB success (change-free): {} ({:.2}%)",
+        "  {cf_label}: {} ({:.2}%)",
         stats.bnb_hits,
         100.0 * stats.bnb_hits as f64 / total_withdrawals as f64
     );
     println!(
-        "  Greedy fallback:           {} ({:.2}%)",
+        "  {wc_label}: {} ({:.2}%)",
         stats.greedy_hits,
         100.0 * stats.greedy_hits as f64 / total_withdrawals as f64
     );
@@ -311,7 +416,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         stats.errors_algo,
         100.0 * stats.errors_algo as f64 / total_withdrawals as f64
     );
-    println!("BnB share of served:         {bnb_share:.2}%");
+    println!("Change-free share of served: {cf_share:.2}%");
     if let Some(idx) = first_algo_failure_at {
         println!("First algo failure at withdrawal index: {idx}");
     } else {
@@ -353,6 +458,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     println!("  max inputs seen: {}", stats.max_inputs_seen);
+
+    if matches!(algo, AlgoChoice::Random) {
+        println!("\n=== Dust-padding (user_payment) ===");
+        println!(
+            "  Total absorbed from user output: {}",
+            btc(stats.total_user_payment_sats)
+        );
+        println!(
+            "  Mean per served tx:              {}",
+            if served > 0 {
+                btc((stats.total_user_payment_sats as f64 / served as f64).round() as u128)
+            } else {
+                btc(0)
+            }
+        );
+    }
 
     println!("\n=== Fees ===");
     println!("  Total fee paid:    {}", btc(stats.total_fee_sats));
@@ -525,10 +646,14 @@ fn diagnose_failure(
 }
 
 struct Outcome {
+    /// True when no change output was emitted (BnB or absorption).
     was_bnb: bool,
     fee: u128,
     input_count: usize,
+    /// Sum of all change outputs (1 for current, 0..N for random).
     change_amount: u128,
+    /// Random algo's `user_payment` (dust-padding) — 0 for current algo.
+    user_payment: u128,
 }
 
 fn try_withdrawal(
@@ -575,6 +700,83 @@ fn try_withdrawal(
         fee,
         input_count: out_points.len(),
         change_amount: change,
+        user_payment: 0,
+    })
+}
+
+/// Run PR #272's randomized algorithm against the live pool. The PR's
+/// `choose_utxos_random` does *not* compute a miner fee — it expects the
+/// caller to compute `gas_fee` post-selection and deduct it from the user
+/// output. Mirroring that here so the comparison report uses the same
+/// per-byte fee model as `current`.
+fn try_withdrawal_random(
+    pool: &mut HashMap<String, UTXO>,
+    amount: u128,
+    fee_rate: u64,
+    params: &WithdrawSelectionParams,
+    rng: &mut StdRng,
+    next_synth_id: &mut u64,
+) -> Result<Outcome, Box<dyn std::error::Error>> {
+    let pool_size_u32 = u32::try_from(pool.len()).unwrap_or(u32::MAX);
+    let pool_clone = pool.clone();
+
+    let UtxoSelection {
+        selected,
+        user_payment,
+        change_amounts,
+    } = choose_utxos_random(amount, pool_clone, pool_size_u32, params, rng)
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+
+    if selected.is_empty() {
+        return Err("random selection returned no inputs".into());
+    }
+
+    let balance: u128 = selected.iter().map(|(_, u)| u128::from(u.balance)).sum();
+    let total_change: u128 = change_amounts.iter().sum();
+    let n_inputs = selected.len() as u64;
+    let n_outputs = 1 + change_amounts.len() as u64;
+    // PR #272's wiring (omni_connector.rs): gas_fee is computed from the
+    // returned (input_count, output_count) using the per-byte rate, then
+    // user_amount = net_amount − gas_fee − user_payment. We mirror that.
+    let fee = u128::from(get_gas_fee(n_inputs, n_outputs, fee_rate));
+    let user_output = amount
+        .checked_sub(fee)
+        .and_then(|x| x.checked_sub(user_payment))
+        .ok_or("random selection: gas_fee + user_payment exceeds amount")?;
+    // Sanity: balance == user_output + total_change + fee.
+    if balance != user_output + total_change + fee {
+        return Err(format!(
+            "random selection invariant broken: balance={balance} user_output={user_output} \
+             total_change={total_change} fee={fee} user_payment={user_payment}"
+        )
+        .into());
+    }
+
+    // Mutate the pool: remove inputs, add a synthetic UTXO per change output.
+    for (key, _) in &selected {
+        if pool.remove(key).is_none() {
+            return Err(format!("could not match selected key {key} back to pool").into());
+        }
+    }
+    for &c in &change_amounts {
+        let change_u64: u64 = c.try_into()?;
+        pool.insert(
+            synth_txid("change", next_synth_id),
+            UTXO {
+                path: "change".into(),
+                tx_bytes: vec![],
+                vout: 0,
+                balance: change_u64,
+            },
+        );
+    }
+
+    Ok(Outcome {
+        was_bnb: change_amounts.is_empty(),
+        fee,
+        input_count: selected.len(),
+        change_amount: total_change,
+        user_payment,
     })
 }
 

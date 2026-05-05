@@ -1880,6 +1880,7 @@ version = "0.0.0"
 dependencies = [
  "bitcoin",
  "bridge-connector-common",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "serde_with",

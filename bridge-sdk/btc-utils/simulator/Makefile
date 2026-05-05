@@ -17,15 +17,17 @@
 
 FEE_RATE ?= 5000
 OFFSET   ?= 0
-LIMIT    ?= 150000
+LIMIT    ?= 100000
+ALGO     ?= current
 
 CARGO_RUN := cargo run -p btc-utils --example choose-utxo-simulator --release -- \
   --deposits Deposits.csv \
   --withdrawals Withdrawals.csv \
-  --fee-rate $(FEE_RATE)
+  --fee-rate $(FEE_RATE) \
+  --algo $(ALGO)
 
 .DEFAULT_GOAL := smoke
-.PHONY: smoke full per_call snapshot build clean help
+.PHONY: smoke full per_call compare snapshot build clean help
 
 smoke:
 	$(CARGO_RUN) --offset $(OFFSET) --limit $(LIMIT) --mode replay
@@ -35,6 +37,10 @@ full:
 
 per_call:
 	$(CARGO_RUN) --mode per_call
+
+# Side-by-side comparison: current (BnB+greedy) vs. PR #272 (random).
+compare:
+	$(MAKE) smoke ALGO=both
 
 snapshot:
 	near contract call-function as-read-only btc-connector.bridge.near \
@@ -50,12 +56,13 @@ clean:
 
 help:
 	@echo "Targets:"
-	@echo "  smoke    (default) 10k-event smoke test"
+	@echo "  smoke    (default) smoke test on a window of events"
 	@echo "  full     full replay across entire history"
 	@echo "  per_call algorithm-only signal (no consumption between calls)"
+	@echo "  compare  side-by-side run of current (BnB+greedy) and random (PR #272)"
 	@echo "  snapshot fetch fresh UTXO snapshot to utxos.json via near CLI"
 	@echo "  build    cargo build --release"
 	@echo "  clean    remove utxos.json"
 	@echo ""
 	@echo "Knobs (override at command line):"
-	@echo "  FEE_RATE=$(FEE_RATE)   OFFSET=$(OFFSET)   LIMIT=$(LIMIT)"
+	@echo "  FEE_RATE=$(FEE_RATE)   OFFSET=$(OFFSET)   LIMIT=$(LIMIT)   ALGO=$(ALGO) (current|random|both)"

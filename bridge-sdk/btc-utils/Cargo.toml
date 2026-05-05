@@ -8,6 +8,7 @@ bitcoin.workspace = true
 serde.workspace = true
 serde_with.workspace = true
 bridge-connector-common = { path = "../connectors/bridge-connector-common" }
+rand = "0.8"
 
 [dev-dependencies]
 serde_json.workspace = true
