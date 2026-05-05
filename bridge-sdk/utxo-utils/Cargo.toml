@@ -14,3 +14,4 @@ zcash_address.workspace = true
 zcash_protocol.workspace = true
 k256 = "0.13.1"
 orchard.workspace = true
+rand = "0.8"

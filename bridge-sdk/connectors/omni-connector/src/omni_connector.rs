@@ -772,6 +772,10 @@ impl OmniConnector {
 
         let near_bridge_client = self.near_bridge_client()?;
         let utxos = near_bridge_client.get_utxos(chain).await?;
+        let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
+        let params = near_bridge_client
+            .get_withdraw_selection_params(chain)
+            .await?;
 
         let withdraw_fee = near_bridge_client.get_withdraw_fee(chain).await?;
 
@@ -779,42 +783,64 @@ impl OmniConnector {
             BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
         })?;
 
-        let (selected_utxo, utxos_balance) = utxo_utils::choose_utxos(net_amount, utxos)
-            .map_err(BridgeSdkError::UtxoManagementError)?;
-        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
-            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
-        })?;
-        let gas_fee = get_gas_fee(
+        let mut rng = rand::thread_rng();
+        let selection = utxo_utils::choose_utxos_random(
+            net_amount,
+            utxos,
+            pool_size,
+            &params,
+            &mut rng,
+        )
+        .map_err(BridgeSdkError::UtxoManagementError)?;
+
+        let out_points =
+            utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {
+                BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
+            })?;
+
+        let num_outputs: u64 = if enable_orchard {
+            1
+        } else {
+            1 + selection.change_amounts.len() as u64
+        };
+        let gas_fee: u128 = get_gas_fee(
             chain,
-            selected_utxo.clone().len().try_into().unwrap(),
-            2 - <bool as std::convert::Into<u64>>::into(enable_orchard),
+            selection.selected.len().try_into().unwrap(),
+            num_outputs,
             fee_rate,
             enable_orchard,
         )
         .into();
 
-        let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs(
-            &target_btc_address,
-            net_amount
-                .checked_sub(gas_fee)
-                .ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Amount is smaller than `gas_fee`".to_string())
-                })?
-                .try_into()
-                .map_err(|err| {
-                    BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
-                })?,
-            &change_address,
-            utxos_balance
-                .checked_sub(net_amount)
-                .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
-                .try_into()
-                .map_err(|err| {
+        let user_amount = net_amount
+            .checked_sub(gas_fee)
+            .and_then(|v| v.checked_sub(selection.user_payment))
+            .ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(
+                    "Amount is smaller than gas_fee + user_payment".to_string(),
+                )
+            })?;
+
+        let change_amounts_u64: Vec<u64> = selection
+            .change_amounts
+            .iter()
+            .map(|&a| {
+                a.try_into().map_err(|err| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Error on change amount conversion: {err}"
                     ))
-                })?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+        let tx_outs = utxo_utils::get_tx_outs_multi(
+            &target_btc_address,
+            user_amount.try_into().map_err(|err| {
+                BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
+            })?,
+            &change_address,
+            &change_amounts_u64,
             chain,
             self.network()?,
         )
@@ -827,7 +853,7 @@ impl OmniConnector {
                 enable_orchard,
                 target_btc_address.clone(),
                 tx_outs,
-                selected_utxo,
+                selection.selected,
             )
             .await?;
 
@@ -3143,49 +3169,76 @@ impl OmniConnector {
         };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
-        let (selected_utxo, utxos_balance) =
-            utxo_utils::choose_utxos(amount, utxos).map_err(BridgeSdkError::UtxoManagementError)?;
-        let out_points = utxo_utils::utxo_to_out_points(selected_utxo.clone()).map_err(|e| {
-            BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
-        })?;
+        let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
+        let params = near_bridge_client
+            .get_withdraw_selection_params(chain)
+            .await?;
 
-        let gas_fee = get_gas_fee(
+        let mut rng = rand::thread_rng();
+        let selection =
+            utxo_utils::choose_utxos_random(amount, utxos, pool_size, &params, &mut rng)
+                .map_err(BridgeSdkError::UtxoManagementError)?;
+
+        let out_points =
+            utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {
+                BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
+            })?;
+
+        let num_outputs: u64 = if enable_orchard {
+            1
+        } else {
+            1 + selection.change_amounts.len() as u64
+        };
+        let gas_fee: u128 = get_gas_fee(
             chain,
-            selected_utxo.len().try_into().unwrap(),
-            2 - <bool as std::convert::Into<u64>>::into(enable_orchard),
+            selection.selected.len().try_into().unwrap(),
+            num_outputs,
             fee_rate,
             enable_orchard,
         )
         .into();
-        let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs(
-            &target_btc_address,
-            amount
-                .checked_sub(gas_fee)
-                .ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Amount is smaller than `gas_fee`".to_string())
-                })?
-                .try_into()
-                .map_err(|err| {
-                    BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
-                })?,
-            &change_address,
-            utxos_balance
-                .checked_sub(amount)
-                .ok_or_else(|| BridgeSdkError::InsufficientUTXOBalance)?
-                .try_into()
-                .map_err(|err| {
+
+        let user_amount = amount
+            .checked_sub(gas_fee)
+            .and_then(|v| v.checked_sub(selection.user_payment))
+            .ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(
+                    "Amount is smaller than gas_fee + user_payment".to_string(),
+                )
+            })?;
+
+        let change_amounts_u64: Vec<u64> = selection
+            .change_amounts
+            .iter()
+            .map(|&a| {
+                a.try_into().map_err(|err| {
                     BridgeSdkError::InvalidArgument(format!(
                         "Error on change amount conversion: {err}"
                     ))
-                })?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let change_address = near_bridge_client.get_change_address(chain).await?;
+        let tx_outs = utxo_utils::get_tx_outs_multi(
+            &target_btc_address,
+            user_amount.try_into().map_err(|err| {
+                BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
+            })?,
+            &change_address,
+            &change_amounts_u64,
             chain,
             self.network()?,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
         let (chain_specific_data, output) = self
-            .get_chain_specific_data(enable_orchard, target_btc_address, tx_outs, selected_utxo)
+            .get_chain_specific_data(
+                enable_orchard,
+                target_btc_address,
+                tx_outs,
+                selection.selected,
+            )
             .await?;
 
         Ok((
