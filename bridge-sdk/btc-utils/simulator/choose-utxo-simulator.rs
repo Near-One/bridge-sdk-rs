@@ -64,6 +64,16 @@ struct Stats {
     /// Sum of `user_payment` reported by the random algo (dust-padding
     /// absorbed from the user's output). Always 0 for the current algo.
     total_user_payment_sats: u128,
+    /// Count of withdrawals where the algorithm landed in the dust zone
+    /// and had to absorb min_change_amount − raw_change from the user
+    /// output. Always 0 for current (its widened-range BnB absorbs into
+    /// fee instead, and greedy refuses to land there).
+    padding_events: u64,
+    /// Count of successful selections whose emitted change outputs
+    /// included a value in (0, min_change_amount). This is a *contract-
+    /// rejection* condition (psbt.rs:191) and should be 0 for both algos.
+    /// If non-zero, the SDK has a bug.
+    dust_change_violations: u64,
     inputs_histogram: [u64; 12],
     max_inputs_seen: usize,
     change_outputs_created: u64,
@@ -356,6 +366,12 @@ fn run_simulation(
                         stats.total_fee_sats += outcome.fee;
                         stats.total_amount_sats += ev.value;
                         stats.total_user_payment_sats += outcome.user_payment;
+                        if outcome.user_payment > 0 {
+                            stats.padding_events += 1;
+                        }
+                        if outcome.dust_change {
+                            stats.dust_change_violations += 1;
+                        }
                         let bucket = outcome.input_count.min(11);
                         stats.inputs_histogram[bucket] += 1;
                         stats.max_inputs_seen =
@@ -459,8 +475,21 @@ fn run_simulation(
     }
     println!("  max inputs seen: {}", stats.max_inputs_seen);
 
+    println!("\n=== Dust-zone audit ===");
+    println!(
+        "  Sub-min_change change outputs:   {} (must be 0 — psbt.rs:191 would reject)",
+        stats.dust_change_violations,
+    );
     if matches!(algo, AlgoChoice::Random) {
-        println!("\n=== Dust-padding (user_payment) ===");
+        println!(
+            "  Padding events (user_payment>0): {} ({:.4}% of served)",
+            stats.padding_events,
+            if served > 0 {
+                100.0 * stats.padding_events as f64 / served as f64
+            } else {
+                0.0
+            },
+        );
         println!(
             "  Total absorbed from user output: {}",
             btc(stats.total_user_payment_sats)
@@ -472,6 +501,10 @@ fn run_simulation(
             } else {
                 btc(0)
             }
+        );
+    } else {
+        println!(
+            "  Padding events (user_payment>0): n/a (current absorbs sub-dust into fee)",
         );
     }
 
@@ -654,6 +687,9 @@ struct Outcome {
     change_amount: u128,
     /// Random algo's `user_payment` (dust-padding) — 0 for current algo.
     user_payment: u128,
+    /// True iff at least one emitted change output is in (0, min_change_amount).
+    /// Should be impossible if both algorithms uphold psbt.rs:191.
+    dust_change: bool,
 }
 
 fn try_withdrawal(
@@ -695,12 +731,14 @@ fn try_withdrawal(
         );
     }
 
+    let dust_change = change > 0 && change < u128::from(limits.min_change_amount);
     Ok(Outcome {
         was_bnb,
         fee,
         input_count: out_points.len(),
         change_amount: change,
         user_payment: 0,
+        dust_change,
     })
 }
 
@@ -771,12 +809,16 @@ fn try_withdrawal_random(
         );
     }
 
+    let dust_change = change_amounts
+        .iter()
+        .any(|&c| c > 0 && c < params.min_change_amount);
     Ok(Outcome {
         was_bnb: change_amounts.is_empty(),
         fee,
         input_count: selected.len(),
         change_amount: total_change,
         user_payment,
+        dust_change,
     })
 }
 
