@@ -169,6 +169,14 @@ struct PartialConfig {
     deposit_bridge_fee: BridgeFee,
     #[serde_as(as = "DisplayFromStr")]
     min_deposit_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    min_change_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    max_change_amount: u128,
+    max_withdrawal_input_number: u8,
+    max_change_number: u8,
+    passive_management_lower_limit: u32,
+    passive_management_upper_limit: u32,
     max_active_utxo_management_input_number: u8,
     max_active_utxo_management_output_number: u8,
     active_management_lower_limit: u32,
@@ -890,6 +898,21 @@ impl NearBridgeClient {
             config.max_active_utxo_management_input_number,
             config.max_active_utxo_management_output_number,
         ))
+    }
+
+    pub async fn get_withdraw_selection_params(
+        &self,
+        chain: ChainKind,
+    ) -> Result<utxo_utils::WithdrawSelectionParams> {
+        let config = self.get_config(chain).await?;
+        Ok(utxo_utils::WithdrawSelectionParams {
+            min_change_amount: config.min_change_amount,
+            max_change_amount: config.max_change_amount,
+            max_withdrawal_input_number: config.max_withdrawal_input_number.into(),
+            max_change_number: config.max_change_number.into(),
+            passive_management_lower_limit: config.passive_management_lower_limit,
+            passive_management_upper_limit: config.passive_management_upper_limit,
+        })
     }
 
     pub async fn get_amount_to_transfer(&self, chain: ChainKind, amount: u128) -> Result<u128> {
