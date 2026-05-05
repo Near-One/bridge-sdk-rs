@@ -783,13 +783,12 @@ impl OmniConnector {
             BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
         })?;
 
-        let mut rng = rand::thread_rng();
         let selection = utxo_utils::choose_utxos_random(
             net_amount,
             utxos,
             pool_size,
             &params,
-            &mut rng,
+            &mut rand::thread_rng(),
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
@@ -3174,10 +3173,14 @@ impl OmniConnector {
             .get_withdraw_selection_params(chain)
             .await?;
 
-        let mut rng = rand::thread_rng();
-        let selection =
-            utxo_utils::choose_utxos_random(amount, utxos, pool_size, &params, &mut rng)
-                .map_err(BridgeSdkError::UtxoManagementError)?;
+        let selection = utxo_utils::choose_utxos_random(
+            amount,
+            utxos,
+            pool_size,
+            &params,
+            &mut rand::thread_rng(),
+        )
+        .map_err(BridgeSdkError::UtxoManagementError)?;
 
         let out_points =
             utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {
