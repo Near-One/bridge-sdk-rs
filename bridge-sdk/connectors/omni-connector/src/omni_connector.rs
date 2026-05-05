@@ -790,7 +790,10 @@ impl OmniConnector {
             &params,
             &mut rand::thread_rng(),
         )
-        .map_err(BridgeSdkError::UtxoManagementError)?;
+        .map_err(|e| {
+            tracing::warn!("UTXO selection failed: {e}");
+            BridgeSdkError::InsufficientUTXOBalance
+        })?;
 
         let out_points =
             utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {
@@ -3180,7 +3183,10 @@ impl OmniConnector {
             &params,
             &mut rand::thread_rng(),
         )
-        .map_err(BridgeSdkError::UtxoManagementError)?;
+        .map_err(|e| {
+            tracing::warn!("UTXO selection failed: {e}");
+            BridgeSdkError::InsufficientUTXOBalance
+        })?;
 
         let out_points =
             utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {

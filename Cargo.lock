@@ -4957,7 +4957,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.13"
+version = "0.3.14"
 dependencies = [
  "alloy",
  "bip0039",
@@ -11108,7 +11108,7 @@ dependencies = [
 
 [[package]]
 name = "utxo-utils"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "bitcoin",
  "k256",
