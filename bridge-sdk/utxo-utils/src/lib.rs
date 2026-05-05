@@ -510,6 +510,38 @@ pub fn choose_utxos_random<R: rand::Rng>(
     enforce_passive_management(selection, pool_size, params)
 }
 
+/// Maximum number of `choose_utxos_random` attempts inside
+/// [`choose_utxos_random_no_payment`] before giving up.
+pub const MAX_NO_PAYMENT_RETRIES: usize = 10;
+
+/// Wrapper around [`choose_utxos_random`] that rejects selections where the user has to
+/// pay anything beyond the gas fee (i.e. `user_payment > 0`, dust-zone padding). Retries
+/// up to [`MAX_NO_PAYMENT_RETRIES`] times with fresh random rolls; returns the first
+/// selection with `user_payment == 0`. If every attempt landed in the dust zone, returns
+/// `Err`.
+#[allow(clippy::implicit_hasher)]
+pub fn choose_utxos_random_no_payment<R: rand::Rng>(
+    net_amount: u128,
+    utxos: HashMap<String, UTXO>,
+    pool_size: u32,
+    params: &WithdrawSelectionParams,
+    rng: &mut R,
+) -> Result<UtxoSelection, String> {
+    let mut last_user_payment: u128 = 0;
+    for _ in 0..MAX_NO_PAYMENT_RETRIES {
+        let selection =
+            choose_utxos_random(net_amount, utxos.clone(), pool_size, params, rng)?;
+        if selection.user_payment == 0 {
+            return Ok(selection);
+        }
+        last_user_payment = selection.user_payment;
+    }
+    Err(format!(
+        "Failed to find UTXO selection without user_payment after {MAX_NO_PAYMENT_RETRIES} \
+         attempts (last attempt required user_payment={last_user_payment})"
+    ))
+}
+
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_for_active_management(

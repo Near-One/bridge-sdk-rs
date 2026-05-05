@@ -783,7 +783,7 @@ impl OmniConnector {
             BridgeSdkError::InvalidArgument("Amount is smaller than `withdraw_fee`".to_string())
         })?;
 
-        let selection = utxo_utils::choose_utxos_random(
+        let selection = utxo_utils::choose_utxos_random_no_payment(
             net_amount,
             utxos,
             pool_size,
@@ -3173,7 +3173,7 @@ impl OmniConnector {
             .get_withdraw_selection_params(chain)
             .await?;
 
-        let selection = utxo_utils::choose_utxos_random(
+        let selection = utxo_utils::choose_utxos_random_no_payment(
             amount,
             utxos,
             pool_size,
