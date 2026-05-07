@@ -16,6 +16,9 @@ pub mod types;
 
 const SATS_PER_BTC: f64 = 100_000_000.0;
 
+const AUGUR_TARGET_BLOCKS: &str = "3";
+const AUGUR_PROBABILITY: &str = "0.95";
+
 pub enum AuthOptions {
     None,
     XApiKey(String),
@@ -33,6 +36,7 @@ struct JsonRpcResponse<T> {
 pub struct UTXOBridgeClient<T: UTXOChain> {
     endpoint_url: String,
     http_client: Client,
+    augur_url: Option<String>,
     _phantom: PhantomData<T>,
 }
 
@@ -58,8 +62,15 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 .default_headers(headers)
                 .build()
                 .unwrap(),
+            augur_url: None,
             _phantom: PhantomData,
         }
+    }
+
+    #[must_use]
+    pub fn with_augur_url(mut self, augur_url: Option<String>) -> Self {
+        self.augur_url = augur_url;
+        self
     }
 
     pub async fn get_block_hash_by_tx_hash(
@@ -245,6 +256,68 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             return Ok(1000);
         }
 
+        if let Some(augur_url) = &self.augur_url {
+            match self.get_fee_rate_from_augur(augur_url).await {
+                Ok(rate) => return Ok(rate),
+                Err(e) => {
+                    tracing::warn!(
+                        "Augur fee estimate failed, falling back to estimatesmartfee: {e}"
+                    );
+                }
+            }
+        }
+
+        self.get_fee_rate_from_rpc().await
+    }
+
+    async fn get_fee_rate_from_augur(&self, augur_url: &str) -> Result<u64, UtxoClientError> {
+        let url = format!("{}/fees", augur_url.trim_end_matches('/'));
+        let response_text = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| UtxoClientError::RpcError(format!("Failed to send augur request: {e}")))?
+            .text()
+            .await
+            .map_err(|e| {
+                UtxoClientError::RpcError(format!("Failed to read augur response: {e}"))
+            })?;
+
+        let response = serde_json::from_str::<Value>(&response_text).map_err(|e| {
+            UtxoClientError::RpcError(format!(
+                "Failed to parse augur response: {e}. Response: {response_text}"
+            ))
+        })?;
+
+        let fee_rate = response["estimates"][AUGUR_TARGET_BLOCKS]["probabilities"]
+            [AUGUR_PROBABILITY]["fee_rate"]
+            .as_f64()
+            .ok_or_else(|| {
+                UtxoClientError::RpcError(format!(
+                    "augur fee_rate not found at estimates.{AUGUR_TARGET_BLOCKS}.probabilities.{AUGUR_PROBABILITY}.fee_rate. Response: {response_text}"
+                ))
+            })?;
+
+        if !fee_rate.is_finite() || fee_rate < 0.0 {
+            return Err(UtxoClientError::RpcError(format!(
+                "augur returned invalid fee_rate: {fee_rate}"
+            )));
+        }
+
+        // augur reports sat/vB; multiply by 1024 so the gas-fee formula
+        // `fee_rate * tx_size / 1024` reproduces the per-vbyte fee at full precision.
+        // Without this, fractional rates (e.g. 1.66 sat/vB) floor to 1 and underestimate.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::as_conversions
+        )]
+        let scaled = (fee_rate * 1024.0).ceil() as u64;
+        Ok(scaled)
+    }
+
+    async fn get_fee_rate_from_rpc(&self) -> Result<u64, UtxoClientError> {
         let response_text = self
             .http_client
             .post(&self.endpoint_url)

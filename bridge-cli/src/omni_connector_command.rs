@@ -1572,7 +1572,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     };
 
     let btc_bridge_client =
-        UTXOBridgeClient::<Bitcoin>::new(combined_config.btc_endpoint.unwrap(), btc_client_auth);
+        UTXOBridgeClient::<Bitcoin>::new(combined_config.btc_endpoint.unwrap(), btc_client_auth)
+            .with_augur_url(combined_config.btc_augur_url);
 
     let zcash_bridge_client =
         UTXOBridgeClient::<Zcash>::new(combined_config.zcash_endpoint.unwrap(), zcash_client_auth);
