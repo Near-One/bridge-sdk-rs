@@ -22,6 +22,8 @@ pub enum EvmBridgeClientError {
     EthProofError(#[from] eth_proof::EthProofError),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
+    #[error("Transaction has not reached the required MPC finality")]
+    MpcFinalityNotReached,
 }
 
 impl From<ContractError> for EvmBridgeClientError {

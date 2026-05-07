@@ -14,6 +14,7 @@ use omni_types::{
     ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
     UnifiedTransferId,
 };
+use reqwest::Url;
 use serde_json::json;
 
 pub mod btc;
@@ -105,6 +106,8 @@ pub struct NearBridgeClient {
     mpc_omni_prover_id: Option<AccountId>,
     #[doc = r"Accounts Id for UTXO chains Bridges"]
     utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
+    #[doc = r"Bridge Indexer API base URL"]
+    bridge_indexer_api_url: Option<Url>,
 }
 
 impl NearBridgeClient {
@@ -964,6 +967,14 @@ impl NearBridgeClient {
         Ok(self.endpoint.as_ref().ok_or(BridgeSdkError::ConfigError(
             "Near rpc endpoint is not set".to_string(),
         ))?)
+    }
+
+    pub fn bridge_indexer_api_url(&self) -> Result<&Url> {
+        self.bridge_indexer_api_url
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Bridge indexer API URL is not set".to_string(),
+            ))
     }
 
     pub fn account_id(&self) -> Result<AccountId> {

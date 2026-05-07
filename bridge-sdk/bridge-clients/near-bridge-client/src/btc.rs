@@ -34,7 +34,7 @@ const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
 const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
-const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 250_000_000_000_000_000_000_000;
+const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 1;
 const BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT: u128 = 1_200_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
@@ -196,12 +196,21 @@ struct PartialConfig {
     deposit_bridge_fee: BridgeFee,
     #[serde_as(as = "DisplayFromStr")]
     min_deposit_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    min_change_amount: u128,
+    #[serde_as(as = "DisplayFromStr")]
+    max_change_amount: u128,
+    max_withdrawal_input_number: u8,
+    max_change_number: u8,
+    passive_management_lower_limit: u32,
+    passive_management_upper_limit: u32,
     max_active_utxo_management_input_number: u8,
     max_active_utxo_management_output_number: u8,
     active_management_lower_limit: u32,
     active_management_upper_limit: u32,
     confirmations_strategy: HashMap<String, u8>,
     confirmations_delta: u8,
+    extra_msg_confirmations_delta: u8,
     expiry_height_gap: Option<u32>,
     chain_signatures_root_public_key: Option<near_sdk::PublicKey>,
 }
@@ -210,6 +219,50 @@ struct PartialConfig {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PartialMetadata {
     pub current_utxos_num: u32,
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct WhitelistMetadata {
+    relayer_white_list: Vec<AccountId>,
+    extra_msg_relayer_white_list: Vec<AccountId>,
+}
+
+#[derive(Clone, Debug)]
+pub struct BtcConfirmationContext {
+    pub confirmations_strategy: HashMap<String, u8>,
+    pub confirmations_delta: u8,
+    pub extra_msg_confirmations_delta: u8,
+    pub is_relayer_whitelisted: bool,
+    pub is_extra_msg_relayer_whitelisted: bool,
+}
+
+impl BtcConfirmationContext {
+    /// Compute required confirmations for a contract call.
+    ///
+    /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
+    /// to `get_extra_msg_confirmations` — that is, the SDK is calling
+    /// `verify_deposit` AND `deposit_msg.extra_msg.is_some()`. All other paths
+    /// (`safe_verify_deposit`, `verify_withdraw`, `verify_active_utxo_management`,
+    /// and `verify_deposit` without `extra_msg`) dispatch to `get_confirmations`
+    /// and must pass `false` here, even if the surrounding `DepositMsg` happens
+    /// to carry an `extra_msg` field.
+    pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
+        let base = base_confirmations(&self.confirmations_strategy, amount)?;
+
+        let delta = if uses_extra_msg_path {
+            if self.is_extra_msg_relayer_whitelisted {
+                0
+            } else {
+                self.extra_msg_confirmations_delta
+            }
+        } else if self.is_relayer_whitelisted {
+            0
+        } else {
+            self.confirmations_delta
+        };
+
+        Ok(u64::from(base) + u64::from(delta))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -258,6 +311,41 @@ impl TxBytes {
 pub fn format_max_gas_fee(gas_fee: u64) -> String {
     serde_json::to_string(&UTXOChainMsg::MaxGasFee(U64::from(gas_fee)))
         .expect("Failed to serialize UTXOChainMsg")
+}
+
+// Mirrors `Config::get_confirmations` from the satoshi-bridge contract: pick the
+// confirmations value at the smallest threshold strictly greater than `amount`,
+// falling back to the value at the largest threshold.
+fn base_confirmations(strategy: &HashMap<String, u8>, amount: u128) -> Result<u8> {
+    if strategy.is_empty() {
+        return Err(BridgeSdkError::ContractConfigurationError(
+            "confirmations_strategy is empty".to_string(),
+        ));
+    }
+
+    let mut keys = strategy
+        .keys()
+        .map(|k| k.parse::<u128>())
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| {
+            BridgeSdkError::ContractConfigurationError(format!(
+                "Invalid confirmations_strategy key: {e}"
+            ))
+        })?;
+    keys.sort_unstable();
+
+    for key in &keys {
+        if *key > amount {
+            return Ok(*strategy
+                .get(&key.to_string())
+                .expect("key sourced from strategy"));
+        }
+    }
+
+    let max_key = keys.last().expect("non-empty");
+    Ok(*strategy
+        .get(&max_key.to_string())
+        .expect("key sourced from strategy"))
 }
 
 impl NearBridgeClient {
@@ -755,23 +843,68 @@ impl NearBridgeClient {
         chain: ChainKind,
         deposit_msg: &DepositMsg,
     ) -> Result<String> {
-        let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(chain)?;
+        let api_url = self
+            .bridge_indexer_api_url()?
+            .join("api/v3/utxo/get_user_deposit_address")
+            .map_err(|e| {
+                BridgeSdkError::ConfigError(format!("Failed to construct api endpoint url: {e}"))
+            })?;
 
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: btc_connector,
-                method_name: "get_user_deposit_address".to_string(),
-                args: serde_json::json!({
-                    "deposit_msg": deposit_msg
-                }),
-            },
-        )
-        .await?;
+        let chain_name = match chain {
+            ChainKind::Btc => "btc",
+            ChainKind::Zcash => "zcash",
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Unsupported UTXO chain: {chain:?}"
+                )))
+            }
+        };
 
-        let btc_address = serde_json::from_slice::<String>(&response)?;
-        Ok(btc_address)
+        #[derive(serde::Serialize)]
+        struct DepositAddressRequest {
+            chain: String,
+            recipient: String,
+            safe_deposit: Option<SafeDepositMsg>,
+        }
+
+        let request_body = DepositAddressRequest {
+            chain: chain_name.to_string(),
+            recipient: deposit_msg.recipient_id.to_string(),
+            safe_deposit: deposit_msg.safe_deposit.clone(),
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!("Failed to build HTTP client: {e}"))
+            })?;
+
+        let response = client
+            .post(api_url)
+            .json(&request_body)
+            .send()
+            .await
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!(
+                    "Failed to fetch deposit address from bridge indexer: {e}"
+                ))
+            })?
+            .error_for_status()
+            .map_err(|e| {
+                BridgeSdkError::UnknownError(format!("Bridge indexer API returned error: {e}"))
+            })?;
+
+        #[derive(serde::Deserialize)]
+        struct DepositAddressResponse {
+            address: String,
+        }
+
+        let parsed: DepositAddressResponse = response.json().await.map_err(|e| {
+            BridgeSdkError::UnknownError(format!("Failed to parse deposit address response: {e}"))
+        })?;
+
+        Ok(parsed.address)
     }
 
     pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
@@ -878,6 +1011,21 @@ impl NearBridgeClient {
         ))
     }
 
+    pub async fn get_withdraw_selection_params(
+        &self,
+        chain: ChainKind,
+    ) -> Result<utxo_utils::WithdrawSelectionParams> {
+        let config = self.get_config(chain).await?;
+        Ok(utxo_utils::WithdrawSelectionParams {
+            min_change_amount: config.min_change_amount,
+            max_change_amount: config.max_change_amount,
+            max_withdrawal_input_number: config.max_withdrawal_input_number.into(),
+            max_change_number: config.max_change_number.into(),
+            passive_management_lower_limit: config.passive_management_lower_limit,
+            passive_management_upper_limit: config.passive_management_upper_limit,
+        })
+    }
+
     pub async fn get_amount_to_transfer(&self, chain: ChainKind, amount: u128) -> Result<u128> {
         let config = self.get_config(chain).await?;
         Ok(max(
@@ -891,16 +1039,40 @@ impl NearBridgeClient {
         Ok(config.min_deposit_amount)
     }
 
-    pub async fn get_confirmations(&self, chain: ChainKind) -> Result<u8> {
-        let config = self.get_config(chain).await?;
+    pub async fn get_btc_confirmation_context(
+        &self,
+        chain: ChainKind,
+    ) -> Result<BtcConfirmationContext> {
+        let signer_account_id = self.account_id()?;
+        let (config, whitelist) =
+            futures::try_join!(self.get_config(chain), self.get_whitelist_metadata(chain))?;
 
-        Ok(config
-            .confirmations_strategy
-            .values()
-            .max()
-            .copied()
-            .unwrap_or(0)
-            + config.confirmations_delta)
+        Ok(BtcConfirmationContext {
+            confirmations_strategy: config.confirmations_strategy,
+            confirmations_delta: config.confirmations_delta,
+            extra_msg_confirmations_delta: config.extra_msg_confirmations_delta,
+            is_relayer_whitelisted: whitelist.relayer_white_list.contains(&signer_account_id),
+            is_extra_msg_relayer_whitelisted: whitelist
+                .extra_msg_relayer_white_list
+                .contains(&signer_account_id),
+        })
+    }
+
+    async fn get_whitelist_metadata(&self, chain: ChainKind) -> Result<WhitelistMetadata> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_metadata".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<WhitelistMetadata>(&response)?)
     }
 
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
@@ -1168,5 +1340,253 @@ impl NearBridgeClient {
                 BridgeSdkError::ConfigError("Invalid Satoshi Relayer account id".to_string())
             })
             .cloned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bridge_connector_common::result::BridgeSdkError;
+    use reqwest::Url;
+    use std::collections::HashMap;
+    use wiremock::matchers::{body_partial_json, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::NearBridgeClientBuilder;
+
+    const DEPOSIT_ADDRESS_PATH: &str = "/api/v3/utxo/get_user_deposit_address";
+
+    fn test_client(api_url: Option<Url>) -> NearBridgeClient {
+        NearBridgeClientBuilder::default()
+            .endpoint(None)
+            .private_key(None)
+            .signer(None)
+            .omni_bridge_id(Some("omni.test.near".parse().unwrap()))
+            .mpc_omni_prover_id(None)
+            .utxo_bridges(HashMap::new())
+            .bridge_indexer_api_url(api_url)
+            .build()
+            .unwrap()
+    }
+
+    fn near_recipient() -> OmniAddress {
+        OmniAddress::Near("user.test.near".parse().unwrap())
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_returns_address_from_indexer() {
+        let server = MockServer::start().await;
+        let expected = "tb1qexampleaddress0000000000000000000000";
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": expected})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let result = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_sends_btc_chain_in_request_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .and(body_partial_json(serde_json::json!({
+                "chain": "btc",
+                "recipient": "omni.test.near",
+            })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "addr"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_sends_zcash_chain_in_request_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .and(body_partial_json(serde_json::json!({
+                "chain": "zcash",
+                "recipient": "omni.test.near",
+            })))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "zaddr"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0)
+            .await
+            .expect("get_btc_address should succeed");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_includes_safe_deposit_with_relayer_fee() {
+        let server = MockServer::start().await;
+        let captured_body = std::sync::Arc::new(std::sync::Mutex::new(None::<serde_json::Value>));
+        let captured_clone = captured_body.clone();
+
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(move |req: &wiremock::Request| {
+                *captured_clone.lock().unwrap() = Some(serde_json::from_slice(&req.body).unwrap());
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"address": "addr"}))
+            })
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242)
+            .await
+            .expect("get_btc_address should succeed");
+
+        let body = captured_body
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("request captured");
+        let safe_deposit_msg = body
+            .pointer("/safe_deposit/msg")
+            .and_then(|v| v.as_str())
+            .expect("safe_deposit.msg present");
+        let inner: serde_json::Value = serde_json::from_str(safe_deposit_msg).expect("inner json");
+        assert_eq!(inner["UtxoFinTransfer"]["relayer_fee"], "4242");
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_unsupported_chain_returns_invalid_argument() {
+        let server = MockServer::start().await;
+        // No mock mounted: a successful HTTP call would fail. We expect early validation.
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let err = client
+            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0)
+            .await
+            .expect_err("Eth is not a UTXO chain");
+
+        assert!(
+            matches!(err, BridgeSdkError::InvalidArgument(_)),
+            "expected InvalidArgument, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_missing_api_url_returns_config_error() {
+        let client = test_client(None);
+        let err = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect_err("missing api url should fail");
+
+        assert!(
+            matches!(err, BridgeSdkError::ConfigError(_)),
+            "expected ConfigError, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_btc_address_propagates_indexer_http_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(DEPOSIT_ADDRESS_PATH))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = test_client(Some(server.uri().parse().unwrap()));
+        let err = client
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .await
+            .expect_err("500 status should fail");
+
+        assert!(
+            matches!(err, BridgeSdkError::UnknownError(_)),
+            "expected UnknownError, got {err:?}"
+        );
+    }
+
+    fn strategy(entries: &[(&str, u8)]) -> HashMap<String, u8> {
+        entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), *v))
+            .collect()
+    }
+
+    #[test]
+    fn empty_strategy_errors() {
+        let result = base_confirmations(&HashMap::new(), 0);
+        assert!(matches!(
+            result,
+            Err(BridgeSdkError::ContractConfigurationError(_))
+        ));
+    }
+
+    #[test]
+    fn single_tier_amount_below_threshold() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 50_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn single_tier_amount_at_threshold_falls_back_to_max() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 100_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn single_tier_amount_above_threshold() {
+        let s = strategy(&[("100000000", 2)]);
+        assert_eq!(base_confirmations(&s, 200_000_000).unwrap(), 2);
+    }
+
+    #[test]
+    fn multi_tier_picks_first_threshold_above_amount() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4), ("10000000000", 6)]);
+        assert_eq!(base_confirmations(&s, 50_000_000).unwrap(), 2);
+        assert_eq!(base_confirmations(&s, 500_000_000).unwrap(), 4);
+        assert_eq!(base_confirmations(&s, 5_000_000_000).unwrap(), 6);
+    }
+
+    #[test]
+    fn multi_tier_amount_equal_to_threshold_picks_next_tier() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4)]);
+        assert_eq!(base_confirmations(&s, 100_000_000).unwrap(), 4);
+    }
+
+    #[test]
+    fn multi_tier_amount_above_largest_falls_back_to_max_key() {
+        let s = strategy(&[("100000000", 2), ("1000000000", 4)]);
+        assert_eq!(base_confirmations(&s, 50_000_000_000).unwrap(), 4);
+    }
+
+    #[test]
+    fn invalid_key_returns_configuration_error() {
+        let mut s = strategy(&[("100000000", 2)]);
+        s.insert("not-a-number".to_string(), 3);
+        assert!(matches!(
+            base_confirmations(&s, 0),
+            Err(BridgeSdkError::ContractConfigurationError(_))
+        ));
     }
 }
