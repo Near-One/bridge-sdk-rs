@@ -1780,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.51"
+version = "0.3.52"
 dependencies = [
  "alloy",
  "clap",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.14"
+version = "0.3.15"
 dependencies = [
  "alloy",
  "bip0039",

@@ -43,20 +43,6 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
-<<<<<<< HEAD
-/// CLI recipient for a BTC deposit.
-///
-/// * `<chain>:<address>` (e.g. `eth:0xabc...`, `near:alice.near`) → routed through
-///   the Omni Bridge.
-/// * Plain NEAR account (e.g. `alice.near`, no colon) → direct nBTC mint on NEAR.
-#[derive(Clone, Debug)]
-pub enum DepositRecipient {
-    OmniBridge(OmniAddress),
-    NearDirect(AccountId),
-}
-
-impl FromStr for DepositRecipient {
-=======
 #[derive(Clone, Debug)]
 pub enum BtcRecipient {
     Direct(AccountId),
@@ -64,24 +50,14 @@ pub enum BtcRecipient {
 }
 
 impl FromStr for BtcRecipient {
->>>>>>> main
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.contains(':') {
-<<<<<<< HEAD
-            OmniAddress::from_str(s)
-                .map(DepositRecipient::OmniBridge)
-                .map_err(|e| e.to_string())
-        } else {
-            AccountId::from_str(s)
-                .map(DepositRecipient::NearDirect)
-=======
             OmniAddress::from_str(s).map(Self::Omni)
         } else {
             AccountId::from_str(s)
                 .map(Self::Direct)
->>>>>>> main
                 .map_err(|e| e.to_string())
         }
     }
@@ -566,26 +542,15 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-<<<<<<< HEAD
-            help = "The BTC recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
-        )]
-        recipient_id: DepositRecipient,
-        #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
-=======
             help = "The BTC recipient. With chain prefix (e.g. 'near:foo.near') routes via the Omni Bridge; without prefix (e.g. 'foo.near') makes a direct deposit to that NEAR account"
         )]
         recipient_id: BtcRecipient,
         #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
->>>>>>> main
         refund_address: Option<String>,
         #[clap(
             short,
             long,
-<<<<<<< HEAD
-            help = "The Omni Bridge Fee in satoshi (ignored for direct NEAR deposits)",
-=======
             help = "The Omni Bridge Fee in satoshi (used only with chain-prefixed recipient)",
->>>>>>> main
             default_value = "0"
         )]
         fee: u128,
@@ -656,7 +621,7 @@ pub enum OmniConnectorSubCommand {
             long,
             help = "Original deposit recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
         )]
-        recipient_id: DepositRecipient,
+        recipient_id: BtcRecipient,
         #[clap(
             short,
             long,
@@ -1379,31 +1344,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             dry_run,
             config_cli,
         } => {
-<<<<<<< HEAD
-            let btc_deposit_args = match recipient_id {
-                DepositRecipient::OmniBridge(recipient_id) => BtcDepositArgs::OmniDepositArgs {
-                    recipient_id,
-                    refund_address,
-                    fee,
-                },
-                DepositRecipient::NearDirect(recipient_id) => {
-                    BtcDepositArgs::NearDirectDepositArgs {
-                        recipient_id,
-                        refund_address,
-                    }
-                }
-            };
-            omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
-                    chain_kind: chain.into(),
-                    btc_tx_hash,
-                    vout,
-                    btc_deposit_args,
-                    transaction_options: TransactionOptions::default(),
-                })
-                .await
-                .unwrap();
-=======
             let connector = omni_connector(network, config_cli);
             let deposit_args = match recipient_id {
                 BtcRecipient::Omni(recipient_id) => {
@@ -1451,7 +1391,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
->>>>>>> main
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             chain,
@@ -1513,17 +1452,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let btc_deposit_args = match recipient_id {
-                DepositRecipient::OmniBridge(recipient_id) => BtcDepositArgs::OmniDepositArgs {
+                BtcRecipient::Omni(recipient_id) => BtcDepositArgs::OmniDepositArgs {
                     recipient_id,
                     fee,
                     refund_address: Some(refund_address.clone()),
                 },
-                DepositRecipient::NearDirect(recipient_id) => {
-                    BtcDepositArgs::NearDirectDepositArgs {
-                        recipient_id,
-                        refund_address: Some(refund_address.clone()),
-                    }
-                }
+                BtcRecipient::Direct(recipient_id) => BtcDepositArgs::NearDirectDepositArgs {
+                    recipient_id,
+                    refund_address: Some(refund_address.clone()),
+                },
             };
             omni_connector(network, config_cli)
                 .btc_request_refund(
