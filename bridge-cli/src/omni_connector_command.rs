@@ -631,6 +631,11 @@ pub enum OmniConnectorSubCommand {
         fee: u128,
         #[clap(long, help = "BTC address to send the refund to")]
         refund_address: String,
+        #[clap(
+            long,
+            help = "Optional msg set as SafeDepositMsg.msg used at deposit time (only valid with direct recipient, i.e. without chain prefix)"
+        )]
+        msg: Option<String>,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
         #[command(flatten)]
@@ -1448,18 +1453,29 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             fee,
             refund_address,
+            msg,
             gas_fee,
             config_cli,
         } => {
             let btc_deposit_args = match recipient_id {
-                BtcRecipient::Omni(recipient_id) => BtcDepositArgs::OmniDepositArgs {
-                    recipient_id,
-                    fee,
-                    refund_address: Some(refund_address.clone()),
-                },
-                BtcRecipient::Direct(recipient_id) => BtcDepositArgs::NearDirectDepositArgs {
-                    recipient_id,
-                    refund_address: Some(refund_address.clone()),
+                BtcRecipient::Omni(recipient_id) => {
+                    if msg.is_some() {
+                        panic!("--msg is not supported with chain-prefixed recipient; use a direct NEAR account (e.g. 'foo.near') instead");
+                    }
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        refund_address: Some(refund_address.clone()),
+                        fee,
+                    }
+                }
+                BtcRecipient::Direct(account_id) => BtcDepositArgs::DepositMsg {
+                    msg: DepositMsg {
+                        recipient_id: account_id,
+                        post_actions: None,
+                        extra_msg: None,
+                        safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
+                        refund_address: Some(refund_address.clone()),
+                    },
                 },
             };
             omni_connector(network, config_cli)
