@@ -9,7 +9,8 @@ use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{
-    btc::format_max_gas_fee, NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts,
+    btc::{format_max_gas_fee, DepositMsg, SafeDepositMsg},
+    NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts,
 };
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
@@ -42,6 +43,7 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
+<<<<<<< HEAD
 /// CLI recipient for a BTC deposit.
 ///
 /// * `<chain>:<address>` (e.g. `eth:0xabc...`, `near:alice.near`) → routed through
@@ -54,16 +56,32 @@ pub enum DepositRecipient {
 }
 
 impl FromStr for DepositRecipient {
+=======
+#[derive(Clone, Debug)]
+pub enum BtcRecipient {
+    Direct(AccountId),
+    Omni(OmniAddress),
+}
+
+impl FromStr for BtcRecipient {
+>>>>>>> main
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.contains(':') {
+<<<<<<< HEAD
             OmniAddress::from_str(s)
                 .map(DepositRecipient::OmniBridge)
                 .map_err(|e| e.to_string())
         } else {
             AccountId::from_str(s)
                 .map(DepositRecipient::NearDirect)
+=======
+            OmniAddress::from_str(s).map(Self::Omni)
+        } else {
+            AccountId::from_str(s)
+                .map(Self::Direct)
+>>>>>>> main
                 .map_err(|e| e.to_string())
         }
     }
@@ -548,18 +566,39 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
+<<<<<<< HEAD
             help = "The BTC recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
         )]
         recipient_id: DepositRecipient,
         #[clap(short, long, help = "Refund recipient address (Bitcoin/Zcash)")]
+=======
+            help = "The BTC recipient. With chain prefix (e.g. 'near:foo.near') routes via the Omni Bridge; without prefix (e.g. 'foo.near') makes a direct deposit to that NEAR account"
+        )]
+        recipient_id: BtcRecipient,
+        #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
+>>>>>>> main
         refund_address: Option<String>,
         #[clap(
             short,
             long,
+<<<<<<< HEAD
             help = "The Omni Bridge Fee in satoshi (ignored for direct NEAR deposits)",
+=======
+            help = "The Omni Bridge Fee in satoshi (used only with chain-prefixed recipient)",
+>>>>>>> main
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Optional msg set as SafeDepositMsg.msg (only valid with direct recipient, i.e. without chain prefix)"
+        )]
+        msg: Option<String>,
+        #[clap(
+            long,
+            help = "Print the call args as JSON without submitting the transaction"
+        )]
+        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1336,8 +1375,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             refund_address,
             fee,
+            msg,
+            dry_run,
             config_cli,
         } => {
+<<<<<<< HEAD
             let btc_deposit_args = match recipient_id {
                 DepositRecipient::OmniBridge(recipient_id) => BtcDepositArgs::OmniDepositArgs {
                     recipient_id,
@@ -1361,6 +1403,55 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 })
                 .await
                 .unwrap();
+=======
+            let connector = omni_connector(network, config_cli);
+            let deposit_args = match recipient_id {
+                BtcRecipient::Omni(recipient_id) => {
+                    if msg.is_some() {
+                        panic!("--msg is not supported with chain-prefixed recipient; use a direct NEAR account (e.g. 'foo.near') instead");
+                    }
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        refund_address,
+                        fee,
+                    }
+                }
+                BtcRecipient::Direct(account_id) => BtcDepositArgs::DepositMsg {
+                    msg: DepositMsg {
+                        recipient_id: account_id,
+                        post_actions: None,
+                        extra_msg: None,
+                        safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
+                        refund_address,
+                    },
+                },
+            };
+
+            if dry_run {
+                let args = connector
+                    .build_fin_btc_transfer_args(chain.into(), btc_tx_hash, vout, deposit_args)
+                    .await
+                    .unwrap();
+                let method_name = if args.deposit_msg.safe_deposit.is_some() {
+                    "safe_verify_deposit"
+                } else {
+                    "verify_deposit"
+                };
+                println!("method: {method_name}");
+                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
+            } else {
+                connector
+                    .fin_transfer(FinTransferArgs::NearFinTransferBTC {
+                        chain_kind: chain.into(),
+                        btc_tx_hash,
+                        vout,
+                        btc_deposit_args: deposit_args,
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            }
+>>>>>>> main
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             chain,

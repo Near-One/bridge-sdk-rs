@@ -564,14 +564,13 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn near_fin_transfer_btc(
+    pub async fn build_fin_btc_transfer_args(
         &self,
         chain: ChainKind,
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
+    ) -> Result<FinBtcTransferArgs> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -619,16 +618,29 @@ impl OmniConnector {
         )
         .await?;
 
-        let args = FinBtcTransferArgs {
+        Ok(FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: proof_data.tx_bytes,
             vout,
             tx_block_blockhash: proof_data.tx_block_blockhash,
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
-        };
+        })
+    }
 
-        near_bridge_client
+    pub async fn near_fin_transfer_btc(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let args = self
+            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args)
+            .await?;
+
+        self.near_bridge_client()?
             .fin_btc_transfer(chain, args, transaction_options)
             .await
     }
