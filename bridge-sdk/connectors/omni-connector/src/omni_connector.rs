@@ -771,7 +771,7 @@ impl OmniConnector {
             } => near_bridge_client.get_deposit_msg_for_omni_bridge(
                 &recipient_id,
                 refund_address,
-                fee,            
+                fee,
             )?,
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
