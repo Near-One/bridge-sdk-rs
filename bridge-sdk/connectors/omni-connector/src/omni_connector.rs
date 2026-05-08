@@ -766,18 +766,18 @@ impl OmniConnector {
             BtcDepositArgs::DepositMsg { msg } => msg,
             BtcDepositArgs::OmniDepositArgs {
                 recipient_id,
-                refund_address,
+                refund_address: deposit_refund_address,
                 fee,
             } => near_bridge_client.get_deposit_msg_for_omni_bridge(
                 &recipient_id,
-                refund_address,
+                deposit_refund_address,
                 fee,
             )?,
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
-                refund_address,
+                refund_address: deposit_refund_address,
             } => near_bridge_client
-                .get_deposit_msg_for_near_account(recipient_id, refund_address),
+                .get_deposit_msg_for_near_account(recipient_id, deposit_refund_address),
         };
 
         let args = BtcRequestRefundArgs {
