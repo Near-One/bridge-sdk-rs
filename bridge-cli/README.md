@@ -194,6 +194,69 @@ bridge-cli testnet btc-verify-withdraw \
     --btc-tx-hash 5d...a6
 ```
 
+### Example 6: Refund a never-finalized BTC deposit
+
+If you sent BTC to the bridge's deposit address but the transaction was never finalized on NEAR, you can pull the BTC back to a Bitcoin address you control.
+
+The pipeline has three on-chain steps. Steps 1 and 3 go through `bridge-cli`. Step 2 is a direct call to the BTC connector contract via `near-cli`, because it only becomes callable after a timelock and may be invoked by anyone (not just the depositor).
+
+```bash
+# 1. Submit the refund request.
+#
+# The CLI fetches the BTC tx, derives the expected deposit address from the
+# original deposit args (recipient_id + fee + msg), and matches it against the
+# tx outputs to resolve `vout` automatically. Pass --vout explicitly only if
+# auto-resolution reports "ambiguous".
+#
+# IMPORTANT: --recipient-id, --fee and --msg must be exactly the values used
+# at deposit time. The contract recomputes the deposit address from them and
+# rejects the request if it does not match the on-chain UTXO.
+#
+# Example: refund of a direct deposit to near.intents (safe_deposit.msg path).
+# `receiver_id` inside --msg is the intents account that the deposit was
+# routed to.
+bridge-cli mainnet btc-request-refund \
+    --btc-tx-hash cb9.....36b \
+    --recipient-id intents.near \
+    --refund-address bc1q.... \
+    --msg '{"receiver_id":"your_account.near"}'
+
+# 2. Wait for the refund timelock, then call execute_refund directly on the
+#    BTC connector contract via near-cli. Anyone can call it (the BTC tx
+#    is already pinned to your refund_address by step 1).
+#
+# Timelock rules:
+#   * 2 days — `refund_address` was provided in the original deposit
+#   * 14 days — `refund_address` was NOT provided in the original deposit
+#   * instant — caller has the DAO or RefundOperator role on the connector
+#
+# `utxo_storage_key` is "<btc_tx_hash>@<vout>" of the original deposit.
+# Attach a small deposit to cover storage for the BTCPendingInfo entry.
+
+near contract call-function as-transaction btc-connector.bridge.near \
+    execute_refund \
+    json-args '{"utxo_storage_key":"cb9.....36b@0"}' \
+    prepaid-gas '100.0 Tgas' \
+    attached-deposit '0.05 NEAR' \
+    sign-as your-account.near \
+    network-config mainnet sign-with-keychain send
+
+# 3. Trigger MPC signing of the refund BTC transaction.
+#
+# `execute_refund` creates a `BTCPendingInfo` and emits a
+# `GenerateBtcPendingInfo` event. Find `btc_pending_id` in the event logs of
+# the `execute_refund` tx (NEAR explorer or `near tx-status`) and pass it
+# below. Once signed, the relayer broadcasts the BTC tx to Bitcoin.
+bridge-cli mainnet near-sign-btc-transaction \
+    --chain btc \
+    --btc-pending-id <btc_pending_id from execute_refund logs>
+```
+
+> [!NOTE]
+> - The contract that owns this flow is [Near-One/btc-bridge](https://github.com/Near-One/btc-bridge) (`satoshi-bridge`). On mainnet it is `btc-connector.bridge.near`; on testnet `btc-connector.n-bridge.testnet`.
+> - `request_refund` will be rejected by the contract if the deposit was already finalized via `verify_deposit` / `safe_verify_deposit`.
+> - If the deposit's `DepositMsg.refund_address` was set, it must equal `--refund-address`. The contract enforces this match.
+
 > [!NOTE]
 > - You have to wait for around 20 minutes for transaction confirmation after calling any method on EVM chain. Otherwise, you'll get `ERR_INVALID_BLOCK_HASH` meaning that light client or wormhole is not yet synced with the block that transaction was included in
 > - Replace placeholder values (addresses, amounts, hashes) with actual values
