@@ -72,78 +72,6 @@ impl From<Network> for utxo_utils::address::Network {
     }
 }
 
-/// Resolve the deposit `vout` by matching tx outputs against the deposit
-/// address derived from `deposit_args` via the bridge indexer.
-///
-/// Returns an error if no output matches or if multiple outputs match
-/// (in which case the candidate vouts are listed).
-async fn resolve_deposit_vout(
-    connector: &OmniConnector,
-    chain: ChainKind,
-    network: Network,
-    tx_hash: &str,
-    deposit_args: &BtcDepositArgs,
-) -> Result<usize, String> {
-    let expected_address = match deposit_args {
-        BtcDepositArgs::OmniDepositArgs {
-            recipient_id,
-            refund_address,
-            fee,
-        } => connector
-            .get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
-            .await
-            .map_err(|e| format!("Failed to fetch deposit address: {e}"))?,
-        BtcDepositArgs::NearDirectDepositArgs {
-            recipient_id,
-            refund_address,
-        } => connector
-            .get_btc_address_for_near_account(
-                chain,
-                recipient_id.clone(),
-                refund_address.clone(),
-            )
-            .await
-            .map_err(|e| format!("Failed to fetch deposit address: {e}"))?,
-        BtcDepositArgs::DepositMsg { msg } => connector
-            .get_btc_address_from_deposit_msg(chain, msg)
-            .await
-            .map_err(|e| format!("Failed to fetch deposit address: {e}"))?,
-    };
-
-    let expected_script =
-        utxo_utils::address::UTXOAddress::parse(&expected_address, chain, network.into())
-            .map_err(|e| format!("Failed to parse deposit address `{expected_address}`: {e}"))?
-            .script_pubkey()
-            .map_err(|e| format!("Failed to derive script_pubkey for `{expected_address}`: {e}"))?;
-
-    let proof_data = connector
-        .utxo_bridge_client(chain)
-        .map_err(|e| format!("Failed to obtain UTXO bridge client: {e}"))?
-        .extract_btc_proof(tx_hash)
-        .await
-        .map_err(|e| format!("Failed to fetch tx {tx_hash}: {e}"))?;
-
-    let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
-        .map_err(|e| format!("Failed to parse tx {tx_hash}: {e}"))?;
-
-    let matches: Vec<usize> = btc_tx
-        .output
-        .iter()
-        .enumerate()
-        .filter_map(|(i, out)| (out.script_pubkey == expected_script).then_some(i))
-        .collect();
-
-    match matches.as_slice() {
-        [] => Err(format!(
-            "No output in tx {tx_hash} matches deposit address `{expected_address}`. Verify the recipient/fee/msg match the original deposit."
-        )),
-        [v] => Ok(*v),
-        many => Err(format!(
-            "Ambiguous: multiple outputs in tx {tx_hash} match deposit address `{expected_address}`. Re-run with --vout set to one of: {many:?}"
-        )),
-    }
-}
-
 fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, String> {
     let pk = match chain {
         ChainKind::Eth => &config.eth_private_key,
@@ -1444,15 +1372,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let resolved_vout = match vout {
                 Some(v) => v,
-                None => resolve_deposit_vout(
-                    &connector,
-                    chain.into(),
-                    network,
-                    &btc_tx_hash,
-                    &deposit_args,
-                )
-                .await
-                .unwrap(),
+                None => connector
+                    .resolve_deposit_vout(chain.into(), network.into(), &btc_tx_hash, &deposit_args)
+                    .await
+                    .unwrap(),
             };
 
             if dry_run {
@@ -1570,15 +1493,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let resolved_vout = match vout {
                 Some(v) => v,
-                None => resolve_deposit_vout(
-                    &connector,
-                    ChainKind::Btc,
-                    network,
-                    &btc_tx_hash,
-                    &btc_deposit_args,
-                )
-                .await
-                .unwrap(),
+                None => connector
+                    .resolve_deposit_vout(
+                        ChainKind::Btc,
+                        network.into(),
+                        &btc_tx_hash,
+                        &btc_deposit_args,
+                    )
+                    .await
+                    .unwrap(),
             };
 
             connector

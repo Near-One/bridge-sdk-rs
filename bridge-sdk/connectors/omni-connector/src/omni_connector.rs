@@ -872,6 +872,83 @@ impl OmniConnector {
             .await
     }
 
+    /// Resolve the deposit `vout` by matching outputs of the BTC/Zcash tx
+    /// `tx_hash` against the deposit address derived from `deposit_args` via
+    /// the bridge indexer.
+    ///
+    /// Returns `InvalidArgument` if no output matches or if multiple outputs
+    /// match (in which case the candidate vouts are listed in the message).
+    pub async fn resolve_deposit_vout(
+        &self,
+        chain: ChainKind,
+        network: Network,
+        tx_hash: &str,
+        deposit_args: &BtcDepositArgs,
+    ) -> Result<usize> {
+        let expected_address = match deposit_args {
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                refund_address,
+                fee,
+            } => {
+                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
+                    .await?
+            }
+            BtcDepositArgs::NearDirectDepositArgs {
+                recipient_id,
+                refund_address,
+            } => {
+                self.get_btc_address_for_near_account(
+                    chain,
+                    recipient_id.clone(),
+                    refund_address.clone(),
+                )
+                .await?
+            }
+            BtcDepositArgs::DepositMsg { msg } => {
+                self.get_btc_address_from_deposit_msg(chain, msg).await?
+            }
+        };
+
+        let expected_script = UTXOAddress::parse(&expected_address, chain, network)
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to parse deposit address `{expected_address}`: {e}"
+                ))
+            })?
+            .script_pubkey()
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to derive script_pubkey for `{expected_address}`: {e}"
+                ))
+            })?;
+
+        let proof_data = self
+            .utxo_bridge_client(chain)?
+            .extract_btc_proof(tx_hash)
+            .await?;
+
+        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+
+        let matches: Vec<usize> = btc_tx
+            .output
+            .iter()
+            .enumerate()
+            .filter_map(|(i, out)| (out.script_pubkey == expected_script).then_some(i))
+            .collect();
+
+        match matches.as_slice() {
+            [] => Err(BridgeSdkError::InvalidArgument(format!(
+                "No output in tx {tx_hash} matches deposit address `{expected_address}`. Verify the recipient/fee/msg match the original deposit."
+            ))),
+            [v] => Ok(*v),
+            many => Err(BridgeSdkError::InvalidArgument(format!(
+                "Ambiguous: multiple outputs in tx {tx_hash} match deposit address `{expected_address}`. Re-run with vout set to one of: {many:?}"
+            ))),
+        }
+    }
+
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
