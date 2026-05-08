@@ -838,7 +838,7 @@ impl NearBridgeClient {
         self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
     }
 
-    async fn get_btc_address_from_deposit_msg(
+    pub async fn get_btc_address_from_deposit_msg(
         &self,
         chain: ChainKind,
         deposit_msg: &DepositMsg,

@@ -858,6 +858,20 @@ impl OmniConnector {
             .await
     }
 
+    /// Fetch the BTC deposit address for an arbitrary `DepositMsg` (including
+    /// custom `safe_deposit.msg`). Use this when neither `get_btc_address` nor
+    /// `get_btc_address_for_near_account` covers the exact `DepositMsg` shape.
+    pub async fn get_btc_address_from_deposit_msg(
+        &self,
+        chain: ChainKind,
+        deposit_msg: &DepositMsg,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_btc_address_from_deposit_msg(chain, deposit_msg)
+            .await
+    }
+
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
