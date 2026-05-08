@@ -634,6 +634,12 @@ pub enum OmniConnectorSubCommand {
             help = "Optional msg set as SafeDepositMsg.msg used at deposit time (only valid with direct recipient, i.e. without chain prefix)"
         )]
         msg: Option<String>,
+        #[clap(
+            long,
+            help = "Set this if the original deposit's DepositMsg.refund_address was None. When set, --refund-address is used only as the refund destination and is NOT included in the deposit message used to recompute the on-chain UTXO.",
+            default_value_t = false
+        )]
+        no_deposit_refund_address: bool,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
         #[command(flatten)]
@@ -1465,10 +1471,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             refund_address,
             msg,
+            no_deposit_refund_address,
             gas_fee,
             config_cli,
         } => {
             let connector = omni_connector(network, config_cli);
+            let deposit_refund_address = if no_deposit_refund_address {
+                None
+            } else {
+                Some(refund_address.clone())
+            };
             let btc_deposit_args = match recipient_id {
                 BtcRecipient::Omni(recipient_id) => {
                     if msg.is_some() {
@@ -1476,7 +1488,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     }
                     BtcDepositArgs::OmniDepositArgs {
                         recipient_id,
-                        refund_address: Some(refund_address.clone()),
+                        refund_address: deposit_refund_address,
                         fee,
                     }
                 }
@@ -1486,7 +1498,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         post_actions: None,
                         extra_msg: None,
                         safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
-                        refund_address: Some(refund_address.clone()),
+                        refund_address: deposit_refund_address,
                     },
                 },
             };
