@@ -564,6 +564,55 @@ impl OmniConnector {
             .await
     }
 
+    pub async fn near_sign_btc_transaction_batch(
+        &self,
+        chain: ChainKind,
+        btc_pending_id: String,
+        start_index: u64,
+        sign_count: u64,
+        batch_size: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<Vec<CryptoHash>> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .sign_btc_transaction_batch(
+                chain,
+                btc_pending_id,
+                start_index,
+                sign_count,
+                batch_size,
+                transaction_options,
+            )
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn near_sign_btc_transaction_batch_with_tx_hash(
+        &self,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        user_account_id: Option<AccountId>,
+        start_index: u64,
+        sign_count: u64,
+        batch_size: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<Vec<CryptoHash>> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        near_bridge_client
+            .sign_btc_transaction_batch_with_tx_hash(
+                chain,
+                near_tx_hash,
+                user_account_id,
+                start_index,
+                sign_count,
+                batch_size,
+                transaction_options,
+            )
+            .await
+    }
+
     pub async fn build_fin_btc_transfer_args(
         &self,
         chain: ChainKind,
@@ -972,8 +1021,24 @@ impl OmniConnector {
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
+        let mut all_balances: Vec<u64> = utxos.values().map(|u| u.balance).collect();
+        all_balances.sort_unstable_by(|a, b| b.cmp(a));
+        tracing::info!(
+            pool_size = utxos.len(),
+            active_lower = active_management_lower_limit,
+            active_upper = active_management_upper_limit,
+            max_input_num = max_active_utxo_management_input_number,
+            max_output_num = max_active_utxo_management_output_number,
+            min_deposit_amount,
+            fee_rate,
+            change_address = %change_address,
+            pool_total_balance_sat = all_balances.iter().map(|b| u128::from(*b)).sum::<u128>(),
+            pool_balances_desc = ?all_balances,
+            "Active UTXO management: inputs to selection"
+        );
+
         let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
-            utxos,
+            utxos.clone(),
             fee_rate,
             &change_address,
             (
@@ -986,7 +1051,50 @@ impl OmniConnector {
             chain,
             self.network()?,
         )
-        .map_err(BridgeSdkError::UtxoManagementError)?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "Active UTXO management: selection failed");
+            BridgeSdkError::UtxoManagementError(e)
+        })?;
+
+        let inputs_log: Vec<String> = out_points
+            .iter()
+            .map(|op| {
+                let key = format!("{}@{}", op.txid, op.vout);
+                let balance = utxos.get(&key).map(|u| u.balance);
+                match balance {
+                    Some(b) => format!("{key} ({b} sat)"),
+                    None => format!("{key} (?)"),
+                }
+            })
+            .collect();
+        let input_total: u64 = out_points
+            .iter()
+            .filter_map(|op| utxos.get(&format!("{}@{}", op.txid, op.vout)).map(|u| u.balance))
+            .sum();
+
+        let outputs_log: Vec<String> = tx_outs
+            .iter()
+            .map(|o| format!("{} sat", o.value.to_sat()))
+            .collect();
+        let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+
+        let gas_fee = input_total.saturating_sub(output_total);
+
+        tracing::info!(
+            pool_size = utxos.len(),
+            active_lower = active_management_lower_limit,
+            active_upper = active_management_upper_limit,
+            fee_rate,
+            num_inputs = out_points.len(),
+            num_outputs = tx_outs.len(),
+            input_total_sat = input_total,
+            output_total_sat = output_total,
+            gas_fee_sat = gas_fee,
+            inputs = ?inputs_log,
+            outputs = ?outputs_log,
+            change_address = %change_address,
+            "Active UTXO management transaction plan"
+        );
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
@@ -3412,15 +3520,60 @@ impl OmniConnector {
 
         let selection = utxo_utils::choose_utxos_random_no_payment(
             amount,
-            utxos,
+            utxos.clone(),
             pool_size,
             &params,
             &mut rand::thread_rng(),
         )
         .map_err(|e| {
-            tracing::warn!("UTXO selection failed: {e}");
+            let target = amount.saturating_add(params.min_change_amount);
+            let high_zone = pool_size > params.passive_management_upper_limit;
+
+            let mut balances_all: Vec<u64> = utxos.values().map(|u| u.balance).collect();
+            balances_all.sort_unstable_by(|a, b| b.cmp(a));
+            let total_all: u128 = balances_all.iter().map(|b| u128::from(*b)).sum();
+
+            let mut balances_eff: Vec<u64> = if high_zone {
+                utxos
+                    .values()
+                    .filter(|u| u128::from(u.balance) <= amount)
+                    .map(|u| u.balance)
+                    .collect()
+            } else {
+                balances_all.clone()
+            };
+            balances_eff.sort_unstable_by(|a, b| b.cmp(a));
+            let total_eff: u128 = balances_eff.iter().map(|b| u128::from(*b)).sum();
+
+            let mut cumulative: u128 = 0;
+            let optimal_n = balances_eff.iter().position(|b| {
+                cumulative = cumulative.saturating_add(u128::from(*b));
+                cumulative >= target
+            });
+
+            tracing::warn!(
+                error = %e,
+                amount,
+                min_change_amount = params.min_change_amount,
+                target,
+                pool_size,
+                pool_total_balance = total_all,
+                high_zone_filter_active = high_zone,
+                passive_management_upper_limit = params.passive_management_upper_limit,
+                eligible_count = balances_eff.len(),
+                eligible_total_balance = total_eff,
+                max_withdrawal_input_number = params.max_withdrawal_input_number,
+                optimal_n = optimal_n.map_or("eligible pool cannot cover target".to_string(), |n| (n + 1).to_string()),
+                eligible_balances_desc = ?balances_eff,
+                "UTXO selection failed"
+            );
             BridgeSdkError::InsufficientUTXOBalance
         })?;
+
+        tracing::info!(
+            selected = serde_json::to_string(&selection.selected).unwrap_or_default(),
+            "Selected UTXOs for BTC transfer"
+        );
 
         let out_points =
             utxo_utils::utxo_to_out_points(selection.selected.clone()).map_err(|e| {

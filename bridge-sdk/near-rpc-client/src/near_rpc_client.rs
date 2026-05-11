@@ -42,6 +42,22 @@ pub struct ChangeRequest {
     pub deposit: u128,
 }
 
+#[derive(Clone)]
+pub struct FunctionCallSpec {
+    pub method_name: String,
+    pub args: Vec<u8>,
+    pub gas: u64,
+    pub deposit: u128,
+}
+
+#[derive(Clone)]
+pub struct BatchChangeRequest {
+    pub signer: near_crypto::InMemorySigner,
+    pub nonce: Option<u64>,
+    pub receiver_id: AccountId,
+    pub calls: Vec<FunctionCallSpec>,
+}
+
 fn new_near_rpc_client(timeout: Option<std::time::Duration>) -> reqwest::Client {
     let mut headers = HeaderMap::with_capacity(2);
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -187,6 +203,89 @@ pub async fn change(
     };
 
     Ok(client.call(request).await?)
+}
+
+/// Submits a single NEAR transaction containing multiple FunctionCall actions
+/// to the same receiver. All actions share one nonce and one tx hash.
+///
+/// # Errors
+/// Returns an error if the broadcast fails or no calls were provided.
+pub async fn change_batch(
+    server_addr: &str,
+    req: BatchChangeRequest,
+) -> Result<CryptoHash, NearRpcError> {
+    if req.calls.is_empty() {
+        return Err(NearRpcError::NonceError);
+    }
+    let client = DEFAULT_CONNECTOR.connect(server_addr);
+
+    let rpc_request = methods::query::RpcQueryRequest {
+        block_reference: BlockReference::latest(),
+        request: near_primitives::views::QueryRequest::ViewAccessKey {
+            account_id: req.signer.account_id.clone(),
+            public_key: req.signer.public_key.clone(),
+        },
+    };
+    let access_key_query_response = client.call(rpc_request).await?;
+
+    let nonce = if let Some(nonce) = req.nonce {
+        nonce
+    } else {
+        let current_nonce = match access_key_query_response.kind {
+            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
+            _ => Err(NearRpcError::NonceError)?,
+        };
+        current_nonce + 1
+    };
+
+    let actions: Vec<Action> = req
+        .calls
+        .into_iter()
+        .map(|c| {
+            Action::FunctionCall(Box::new(FunctionCallAction {
+                method_name: c.method_name,
+                args: c.args,
+                gas: near_primitives::gas::Gas::from_gas(c.gas),
+                deposit: NearToken::from_yoctonear(c.deposit),
+            }))
+        })
+        .collect();
+
+    let transaction = Transaction::V0(TransactionV0 {
+        signer_id: req.signer.account_id.clone(),
+        public_key: req.signer.public_key.clone(),
+        nonce,
+        receiver_id: req.receiver_id,
+        block_hash: access_key_query_response.block_hash,
+        actions,
+    });
+    let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+        signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(req.signer)),
+    };
+
+    Ok(client.call(request).await?)
+}
+
+/// Submits a multi-action batch tx and waits until it reaches `wait_until`.
+///
+/// # Errors
+/// Returns an error if the broadcast or wait fails.
+pub async fn change_batch_and_wait(
+    server_addr: &str,
+    req: BatchChangeRequest,
+    wait_until: near_primitives::views::TxExecutionStatus,
+    wait_final_outcome_timeout_sec: Option<u64>,
+) -> Result<CryptoHash, NearRpcError> {
+    let signer_account = req.signer.account_id.clone();
+    let tx_hash = change_batch(server_addr, req).await?;
+    wait_for_tx(
+        server_addr,
+        tx_hash,
+        signer_account,
+        wait_until,
+        wait_final_outcome_timeout_sec.unwrap_or(DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC),
+    )
+    .await
 }
 
 /// Returns the result of the view call and waits for the desired outcome

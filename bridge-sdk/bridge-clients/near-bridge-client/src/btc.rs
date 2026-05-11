@@ -7,7 +7,7 @@ use futures::future::join_all;
 use k256::elliptic_curve::sec1::ToEncodedPoint;
 use near_primitives::types::Gas;
 use near_primitives::{hash::CryptoHash, types::AccountId};
-use near_rpc_client::{ChangeRequest, ViewRequest};
+use near_rpc_client::{BatchChangeRequest, ChangeRequest, FunctionCallSpec, ViewRequest};
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::json_types::U128;
 use near_sdk::json_types::U64;
@@ -420,6 +420,134 @@ impl NearBridgeClient {
 
         self.sign_btc_transaction(chain, btc_pending_id, sign_index, transaction_options)
             .await
+    }
+
+    /// Signs `sign_count` consecutive sign indexes starting at `start_index`.
+    /// Groups them into batches of `batch_size`; each batch is submitted as a
+    /// single NEAR transaction with multiple `sign_btc_transaction` FunctionCall
+    /// actions (one per sign index, sharing the same nonce). Returns one NEAR
+    /// tx hash per batch, in order.
+    ///
+    /// Gas attached per action is `SIGN_BTC_TRANSACTION_GAS / batch_size` so
+    /// the per-tx total stays within NEAR's 300 TGas cap.
+    #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION BATCH")]
+    pub async fn sign_btc_transaction_batch(
+        &self,
+        chain: ChainKind,
+        btc_pending_id: String,
+        start_index: u64,
+        sign_count: u64,
+        batch_size: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<Vec<CryptoHash>> {
+        if sign_count == 0 {
+            return Ok(Vec::new());
+        }
+        let batch_size = batch_size.max(1);
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let mut tx_hashes: Vec<CryptoHash> = Vec::new();
+        let mut signed: u64 = 0;
+        while signed < sign_count {
+            let this_batch = std::cmp::min(batch_size, sign_count - signed);
+            let gas_per_action = SIGN_BTC_TRANSACTION_GAS / this_batch;
+
+            let calls: Vec<FunctionCallSpec> = (0..this_batch)
+                .map(|k| {
+                    let sign_index = start_index + signed + k;
+                    FunctionCallSpec {
+                        method_name: "sign_btc_transaction".to_string(),
+                        args: serde_json::json!({
+                            "btc_pending_sign_id": btc_pending_id,
+                            "sign_index": sign_index,
+                            "key_version": 0,
+                        })
+                        .to_string()
+                        .into_bytes(),
+                        gas: gas_per_action,
+                        deposit: SIGN_BTC_TRANSACTION_DEPOSIT,
+                    }
+                })
+                .collect();
+
+            let req = BatchChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector.clone(),
+                calls,
+            };
+            let tx_hash = near_rpc_client::change_batch_and_wait(
+                endpoint,
+                req,
+                transaction_options.wait_until.clone(),
+                transaction_options.wait_final_outcome_timeout_sec,
+            )
+            .await?;
+
+            tracing::info!(
+                sign_indexes = format!(
+                    "{}..{}",
+                    start_index + signed,
+                    start_index + signed + this_batch - 1
+                ),
+                actions = this_batch,
+                gas_per_action_tgas = gas_per_action / 1_000_000_000_000,
+                near_tx = %tx_hash,
+                "Sign BTC batch: tx confirmed"
+            );
+
+            tx_hashes.push(tx_hash);
+            signed += this_batch;
+        }
+        Ok(tx_hashes)
+    }
+
+    /// Batch variant of `sign_btc_transaction_with_tx_hash`: extracts
+    /// `btc_pending_id` from the active management tx once, then signs
+    /// `sign_count` indexes in batches of `batch_size`.
+    #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, name = "NEAR SIGN BTC TRANSACTION BATCH")]
+    pub async fn sign_btc_transaction_batch_with_tx_hash(
+        &self,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        user_account_id: Option<AccountId>,
+        start_index: u64,
+        sign_count: u64,
+        batch_size: u64,
+        transaction_options: TransactionOptions,
+    ) -> Result<Vec<CryptoHash>> {
+        let relayer_id = match user_account_id {
+            Some(user_account_id) => user_account_id,
+            None => self.satoshi_relayer(chain)?,
+        };
+
+        let log = self
+            .extract_transfer_log(near_tx_hash, Some(relayer_id), "generate_btc_pending_info")
+            .await?;
+        let json_str = log
+            .strip_prefix("EVENT_JSON:")
+            .ok_or(BridgeSdkError::InvalidLog(
+                "Missing EVENT_JSON prefix".to_string(),
+            ))?;
+        let v: Value = serde_json::from_str(json_str)?;
+        let btc_pending_id = v["data"][0]["btc_pending_id"]
+            .as_str()
+            .ok_or(BridgeSdkError::InvalidLog(
+                "btc_pending id not found".to_string(),
+            ))?
+            .to_string();
+
+        self.sign_btc_transaction_batch(
+            chain,
+            btc_pending_id,
+            start_index,
+            sign_count,
+            batch_size,
+            transaction_options,
+        )
+        .await
     }
 
     /// Sign BTC transfer on Omni Bridge

@@ -506,10 +506,22 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "Index of the signature in the BTC transaction",
+            help = "Starting index of the signature in the BTC transaction",
             default_value = "0"
         )]
         sign_index: u64,
+        #[clap(
+            long,
+            help = "How many consecutive sign indexes to sign starting from --sign-index",
+            default_value = "1"
+        )]
+        sign_count: u64,
+        #[clap(
+            long,
+            help = "How many sign transactions to dispatch in parallel per batch (consecutive NEAR nonces)",
+            default_value = "1"
+        )]
+        batch_size: u64,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1316,30 +1328,48 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             user_account,
             sign_index,
+            sign_count,
+            batch_size,
             config_cli,
         } => {
-            if let Some(btc_pending_id) = btc_pending_id {
-                omni_connector(network, config_cli)
-                    .near_sign_btc_transaction(
+            let connector = omni_connector(network, config_cli);
+            let hashes: Vec<CryptoHash> = if let Some(btc_pending_id) = btc_pending_id {
+                connector
+                    .near_sign_btc_transaction_batch(
                         chain.into(),
                         btc_pending_id,
                         sign_index,
+                        sign_count,
+                        batch_size,
                         TransactionOptions::default(),
                     )
                     .await
-                    .unwrap();
+                    .unwrap()
             } else {
-                omni_connector(network, config_cli)
-                    .near_sign_btc_transaction_with_tx_hash(
+                connector
+                    .near_sign_btc_transaction_batch_with_tx_hash(
                         chain.into(),
                         CryptoHash::from_str(&near_tx_hash.expect("near_tx_hash is required"))
                             .expect("Invalid near_tx_hash"),
                         user_account,
                         sign_index,
+                        sign_count,
+                        batch_size,
                         TransactionOptions::default(),
                     )
                     .await
-                    .unwrap();
+                    .unwrap()
+            };
+            let mut idx = sign_index;
+            for h in &hashes {
+                let count_in_this_batch = std::cmp::min(batch_size, sign_index + sign_count - idx);
+                let last = idx + count_in_this_batch - 1;
+                tracing::info!(
+                    sign_indexes = format!("{idx}..{last}"),
+                    near_tx = %h,
+                    "Sign BTC batch: tx confirmed"
+                );
+                idx += count_in_this_batch;
             }
         }
         OmniConnectorSubCommand::NearFinTransferBTC {
