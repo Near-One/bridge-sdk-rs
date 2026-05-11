@@ -864,13 +864,17 @@ impl NearBridgeClient {
         struct DepositAddressRequest {
             chain: String,
             recipient: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
             safe_deposit: Option<SafeDepositMsg>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            refund_address: Option<String>,
         }
 
         let request_body = DepositAddressRequest {
             chain: chain_name.to_string(),
             recipient: deposit_msg.recipient_id.to_string(),
             safe_deposit: deposit_msg.safe_deposit.clone(),
+            refund_address: deposit_msg.refund_address.clone(),
         };
 
         let client = reqwest::Client::builder()
