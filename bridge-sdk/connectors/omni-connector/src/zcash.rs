@@ -20,7 +20,7 @@ use zcash_primitives::transaction::sighash::SignableInput;
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{sighash_v5, Authorized, TransactionData};
 use zcash_protocol::consensus::BlockHeight;
-use zcash_protocol::memo::MemoBytes;
+use zcash_protocol::memo::{Memo, MemoBytes};
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::Bundle;
 
@@ -202,16 +202,38 @@ impl OmniConnector {
         Ok(())
     }
 
-    /// Creates an Orchard bundle for a shielded Zcash withdrawal.
+    /// Creates an Orchard bundle for a shielded Zcash withdrawal (no memo).
     ///
     /// Returns a tuple of (`bundle_bytes`, `expiry_height`).
     /// The `bundle_bytes` can be passed to the contract as `chain_specific_data`.
+    ///
+    /// To attach a memo, use [`get_orchard_raw_with_memo`].
     pub async fn get_orchard_raw(
         &self,
         recipient: String,
         amount: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
+    ) -> Result<(Vec<u8>, u32)> {
+        self.get_orchard_raw_with_memo(recipient, amount, input_points, tx_out_change, None)
+            .await
+    }
+
+    /// Creates an Orchard bundle for a shielded Zcash withdrawal with an optional memo.
+    ///
+    /// Returns a tuple of (`bundle_bytes`, `expiry_height`).
+    /// The `bundle_bytes` can be passed to the contract as `chain_specific_data`.
+    ///
+    /// If `memo` is provided, it is included in the shielded output as a
+    /// Zcash memo (up to 512 bytes). The recipient can decrypt it with their
+    /// incoming viewing key; the sender cannot recover it (OVK is zeroed).
+    pub async fn get_orchard_raw_with_memo(
+        &self,
+        recipient: String,
+        amount: u64,
+        input_points: Vec<InputPoint>,
+        tx_out_change: Option<&TxOut>,
+        memo: Option<String>,
     ) -> Result<(Vec<u8>, u32)> {
         let recipient = utxo_utils::extract_orchard_address(&recipient).map_err(|err| {
             BridgeSdkError::ZCashOrchardBundleError(format!(
@@ -233,12 +255,21 @@ impl OmniConnector {
             BridgeSdkError::ZCashOrchardBundleError("Recipient Orchard address is None".to_string())
         })?;
 
+        let memo_bytes = match memo {
+            Some(m) => Memo::from_str(&m).map(MemoBytes::from).map_err(|err| {
+                BridgeSdkError::ZCashOrchardBundleError(format!(
+                    "Invalid memo (max 512 bytes): {err:?}"
+                ))
+            })?,
+            None => MemoBytes::empty(),
+        };
+
         builder
             .add_orchard_output::<zip317::FeeRule>(
                 Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient,
                 amount,
-                MemoBytes::empty(),
+                memo_bytes,
             )
             .map_err(|err| {
                 BridgeSdkError::ZCashOrchardBundleError(format!(
@@ -422,7 +453,9 @@ impl OmniConnector {
             None
         };
 
-        // Generate new bundle with the same parameters
+        // Generate new bundle with the same parameters. The original memo is
+        // encrypted inside the on-chain bundle and not recoverable here, so
+        // RBF necessarily drops it.
         let (bundle_bytes, expiry_height) = self
             .get_orchard_raw(
                 recipient,
@@ -590,5 +623,66 @@ mod tests {
         let gas_fee = 100_000_000u64;
         let change = calculate_change_amount(utxo_balance, orchard_amount, gas_fee);
         assert_eq!(change, 499_900_000_000u64);
+    }
+
+    /// `Memo::from_str` accepts a short text payload, pads with zeros when it is
+    /// encoded, and `Memo::try_from` round-trips it back to the original UTF-8
+    /// string. This is the path `get_orchard_raw_with_memo` uses to embed a memo
+    /// in the shielded output, so the round-trip proves the bytes survive encoding.
+    #[test]
+    fn test_memo_bytes_short_text_round_trip() {
+        let memo_text = "swap-id-test-001";
+        let memo_bytes = Memo::from_str(memo_text).unwrap().encode();
+
+        // Raw layout: input bytes, then zero padding to 512.
+        let arr = memo_bytes.as_array();
+        assert_eq!(&arr[..memo_text.len()], memo_text.as_bytes());
+        assert!(arr[memo_text.len()..].iter().all(|&b| b == 0));
+
+        // ZIP-302 round-trip: the recipient parses this back as a text memo.
+        let memo = zcash_protocol::memo::Memo::try_from(&memo_bytes).unwrap();
+        let zcash_protocol::memo::Memo::Text(text) = memo else {
+            panic!("expected Memo::Text, got {memo:?}");
+        };
+        let s: String = text.into();
+        assert_eq!(s, memo_text);
+    }
+
+    /// Boundary: a 512-byte memo is exactly the Zcash limit and must be accepted.
+    #[test]
+    fn test_memo_bytes_max_length_accepted() {
+        let memo = "x".repeat(512);
+        let memo_bytes = Memo::from_str(&memo).unwrap().encode();
+        assert_eq!(&memo_bytes.as_array()[..], memo.as_bytes());
+    }
+
+    /// Boundary: 513 bytes must fail with `Error::TooLong`. This is the validation
+    /// `get_orchard_raw_with_memo` relies on to reject oversized memos at the SDK
+    /// boundary.
+    #[test]
+    fn test_memo_bytes_oversize_rejected() {
+        let memo = "x".repeat(513);
+        assert!(Memo::from_str(&memo).is_err());
+    }
+
+    /// `Memo::from_str("")` uses the same empty-memo sentinel as `MemoBytes::empty`.
+    /// This keeps `Some("")` and `None` aligned with the crate's canonical text
+    /// memo API instead of emitting an all-zero empty text memo.
+    #[test]
+    fn test_empty_string_encodes_as_no_memo() {
+        let none_memo = MemoBytes::empty();
+        let empty_string = Memo::from_str("").unwrap().encode();
+
+        assert_eq!(none_memo.as_array()[0], 0xF6);
+        assert_eq!(empty_string.as_array()[0], 0xF6);
+        assert_eq!(none_memo, empty_string);
+
+        let parsed_none = zcash_protocol::memo::Memo::try_from(&none_memo).unwrap();
+        let parsed_empty_string = zcash_protocol::memo::Memo::try_from(&empty_string).unwrap();
+        assert!(matches!(parsed_none, zcash_protocol::memo::Memo::Empty));
+        assert!(matches!(
+            parsed_empty_string,
+            zcash_protocol::memo::Memo::Empty
+        ));
     }
 }

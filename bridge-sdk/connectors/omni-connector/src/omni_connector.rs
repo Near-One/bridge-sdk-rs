@@ -1185,6 +1185,27 @@ impl OmniConnector {
         amount: u128,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        self.init_near_to_bitcoin_transfer_with_memo(
+            chain,
+            target_btc_address,
+            amount,
+            transaction_options,
+            None,
+        )
+        .await
+    }
+
+    /// Same as [`init_near_to_bitcoin_transfer`], but attaches an optional Zcash
+    /// memo (max 512 bytes) to the destination shielded output. Ignored on
+    /// transparent BTC/ZEC paths.
+    pub async fn init_near_to_bitcoin_transfer_with_memo(
+        &self,
+        chain: ChainKind,
+        target_btc_address: String,
+        amount: u128,
+        transaction_options: TransactionOptions,
+        memo: Option<String>,
+    ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
@@ -1286,6 +1307,7 @@ impl OmniConnector {
                 target_btc_address.clone(),
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -1316,6 +1338,34 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
     ) -> Result<CryptoHash> {
+        self.near_submit_btc_transfer_with_memo(
+            chain,
+            recipient,
+            amount,
+            fee_rate,
+            transfer_id,
+            transaction_options,
+            max_gas_fee,
+            None,
+        )
+        .await
+    }
+
+    /// Same as [`near_submit_btc_transfer`], but attaches an optional Zcash memo
+    /// (max 512 bytes) to the destination shielded output. Ignored on
+    /// transparent BTC/ZEC paths.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn near_submit_btc_transfer_with_memo(
+        &self,
+        chain: ChainKind,
+        recipient: String,
+        amount: u128,
+        fee_rate: Option<u64>,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
+        memo: Option<String>,
+    ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
@@ -1328,6 +1378,7 @@ impl OmniConnector {
                 })?,
                 enable_orchard,
                 fee_rate,
+                memo,
             )
             .await?;
 
@@ -1508,6 +1559,29 @@ impl OmniConnector {
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        self.near_submit_btc_transfer_with_tx_hash_and_memo(
+            chain,
+            near_tx_hash,
+            sender_id,
+            fee_rate,
+            transaction_options,
+            None,
+        )
+        .await
+    }
+
+    /// Same as [`near_submit_btc_transfer_with_tx_hash`], but attaches an optional
+    /// Zcash memo (max 512 bytes) to the destination shielded output. Ignored
+    /// on transparent BTC/ZEC paths.
+    pub async fn near_submit_btc_transfer_with_tx_hash_and_memo(
+        &self,
+        chain: ChainKind,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+        fee_rate: Option<u64>,
+        transaction_options: TransactionOptions,
+        memo: Option<String>,
+    ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
             recipient,
@@ -1518,7 +1592,7 @@ impl OmniConnector {
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
 
-        self.near_submit_btc_transfer(
+        self.near_submit_btc_transfer_with_memo(
             chain,
             recipient,
             amount,
@@ -1526,6 +1600,7 @@ impl OmniConnector {
             transfer_id,
             transaction_options,
             max_gas_fee,
+            memo,
         )
         .await
     }
@@ -3669,6 +3744,7 @@ impl OmniConnector {
         amount: u128,
         enable_orchard: bool,
         fee_rate: Option<u64>,
+        memo: Option<String>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3766,6 +3842,7 @@ impl OmniConnector {
                 target_btc_address,
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -3785,10 +3862,11 @@ impl OmniConnector {
         target_btc_address: String,
         tx_outs: Vec<TxOut>,
         selected_utxo: Vec<(String, UTXO)>,
+        memo: Option<String>,
     ) -> Result<(Option<ChainSpecificData>, Vec<TxOut>)> {
         if enable_orchard {
             let (orchard, expiry_height) = self
-                .get_orchard_raw(
+                .get_orchard_raw_with_memo(
                     target_btc_address.clone(),
                     tx_outs[0].clone().value.to_sat(),
                     utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
@@ -3797,6 +3875,7 @@ impl OmniConnector {
                         ))
                     })?,
                     tx_outs.get(1),
+                    memo,
                 )
                 .await?;
             let output = tx_outs[1..].to_vec();
