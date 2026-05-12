@@ -684,18 +684,23 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "Transfer recipient in format <chain_id>:<address>"
+            help = "The BTC recipient. With chain prefix (e.g. 'near:foo.near') routes via the Omni Bridge; without prefix (e.g. 'foo.near') derives a direct-deposit address to that NEAR account"
         )]
-        recipient_id: OmniAddress,
+        recipient_id: BtcRecipient,
         #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(
             short,
             long,
-            help = "The Omni Bridge Fee in satoshi",
+            help = "The Omni Bridge Fee in satoshi (used only with chain-prefixed recipient)",
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Optional message. With chain-prefixed recipient: fills the inner `msg` field inside the UtxoFinTransfer payload of safe_deposit.msg. With direct recipient: becomes SafeDepositMsg.msg directly."
+        )]
+        msg: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1590,13 +1595,29 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             refund_address,
             fee,
+            msg,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
-            let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, refund_address, fee)
-                .await
-                .unwrap();
+            let btc_address = match recipient_id {
+                BtcRecipient::Omni(addr) => omni_connector
+                    .get_btc_address(chain.into(), &addr, refund_address, fee, msg)
+                    .await
+                    .unwrap(),
+                BtcRecipient::Direct(account_id) => {
+                    let deposit_msg = DepositMsg {
+                        recipient_id: account_id,
+                        post_actions: None,
+                        extra_msg: None,
+                        safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
+                        refund_address,
+                    };
+                    omni_connector
+                        .get_btc_address_from_deposit_msg(chain.into(), &deposit_msg)
+                        .await
+                        .unwrap()
+                }
+            };
 
             tracing::info!("BTC Address: {btc_address}");
         }

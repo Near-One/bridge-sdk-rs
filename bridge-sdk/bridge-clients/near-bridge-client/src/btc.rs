@@ -948,9 +948,10 @@ impl NearBridgeClient {
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        msg: Option<String>,
     ) -> Result<String> {
         let deposit_msg =
-            self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
+            self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee, msg)?;
         self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
     }
 
@@ -1228,6 +1229,7 @@ impl NearBridgeClient {
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        msg: Option<String>,
     ) -> Result<DepositMsg> {
         if recipient_id.is_utxo_chain() {
             return Err(BridgeSdkError::InvalidArgument(
@@ -1246,7 +1248,7 @@ impl NearBridgeClient {
                         "utxo_id": "will_be_replaced_by_the_bridge",
                         "recipient": recipient_id.to_string(),
                         "relayer_fee": fee.to_string(),
-                        "msg": "",
+                        "msg": msg.unwrap_or_default(),
                     }
                 })
                 .to_string(),
@@ -1520,7 +1522,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         let result = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, None)
             .await
             .expect("get_btc_address should succeed");
 
@@ -1545,7 +1547,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, None)
             .await
             .expect("get_btc_address should succeed");
     }
@@ -1568,7 +1570,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0, None)
             .await
             .expect("get_btc_address should succeed");
     }
@@ -1590,7 +1592,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242, None)
             .await
             .expect("get_btc_address should succeed");
 
@@ -1613,7 +1615,7 @@ mod tests {
         // No mock mounted: a successful HTTP call would fail. We expect early validation.
         let client = test_client(Some(server.uri().parse().unwrap()));
         let err = client
-            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0, None)
             .await
             .expect_err("Eth is not a UTXO chain");
 
@@ -1627,7 +1629,7 @@ mod tests {
     async fn get_btc_address_missing_api_url_returns_config_error() {
         let client = test_client(None);
         let err = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, None)
             .await
             .expect_err("missing api url should fail");
 
@@ -1648,7 +1650,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         let err = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, None)
             .await
             .expect_err("500 status should fail");
 

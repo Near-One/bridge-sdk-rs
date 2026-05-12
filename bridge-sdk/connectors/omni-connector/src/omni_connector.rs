@@ -635,6 +635,7 @@ impl OmniConnector {
                 &recipient_id,
                 refund_address,
                 fee,
+                None,
             )?,
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
@@ -821,6 +822,7 @@ impl OmniConnector {
                 &recipient_id,
                 deposit_refund_address,
                 fee,
+                None,
             )?,
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
@@ -886,10 +888,11 @@ impl OmniConnector {
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        msg: Option<String>,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain, recipient_id, refund_address, fee)
+            .get_btc_address(chain, recipient_id, refund_address, fee, msg)
             .await
     }
 
@@ -940,7 +943,7 @@ impl OmniConnector {
                 refund_address,
                 fee,
             } => {
-                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
+                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee, None)
                     .await?
             }
             BtcDepositArgs::NearDirectDepositArgs {
@@ -1884,7 +1887,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
 
         let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, &recipient, refund_address, fee)
+            .get_btc_address(chain_kind, &recipient, refund_address, fee, None)
             .await?;
         let tx_data = utxo_bridge_client
             .get_bridge_transaction_data(&tx_hash, &deposit_address)
