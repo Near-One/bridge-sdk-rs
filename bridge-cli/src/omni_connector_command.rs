@@ -22,7 +22,10 @@ use solana_bridge_client::SolanaBridgeClientBuilder;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
 use starknet_bridge_client::StarknetBridgeClientBuilder;
-use utxo_bridge_client::{types::Bitcoin, types::Zcash, AuthOptions, UTXOBridgeClient};
+use utxo_bridge_client::{
+    types::{Bitcoin, PrefetchedTxData, Zcash},
+    AuthOptions, UTXOBridgeClient,
+};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
 use crate::{combined_config, fee, CliConfig, Network};
@@ -154,6 +157,86 @@ async fn resolve_evm_fees(
     let token = evm_address_to_omni(chain, token)?;
 
     fetch_indexer_fees(api_url, sender, token, amount, recipient).await
+}
+
+/// User-supplied bundle that lets us reconstruct the original `DepositMsg`
+/// locally instead of asking the bridge indexer. Pass `None` to
+/// `resolve_btc_deposit` when the caller wants full auto-discovery.
+struct ManualDepositInput {
+    recipient: BtcRecipient,
+    deposit_refund_address: Option<String>,
+    fee: u128,
+    safe_msg: Option<String>,
+}
+
+/// Resolve the `(BtcDepositArgs, vout, prefetched proof)` triple consumed by
+/// the BTC fin-transfer and refund flows.
+///
+/// - When `manual` is `Some`, builds `BtcDepositArgs` from the supplied
+///   recipient/fee/msg/refund and resolves `vout` either from the explicit
+///   value or by matching it against the derived deposit address.
+/// - When `manual` is `None`, asks the bridge indexer (via
+///   `resolve_deposit_from_tx`) which output is a tracked deposit address;
+///   the recovered `DepositMsg` is wrapped as `BtcDepositArgs::DepositMsg`.
+///
+/// In both paths the returned `PrefetchedTxData` lets downstream calls skip a
+/// redundant `extract_btc_proof` round-trip.
+async fn resolve_btc_deposit(
+    connector: &OmniConnector,
+    chain: ChainKind,
+    network: utxo_utils::address::Network,
+    btc_tx_hash: &str,
+    vout: Option<usize>,
+    manual: Option<ManualDepositInput>,
+) -> (BtcDepositArgs, usize, Option<PrefetchedTxData>) {
+    match manual {
+        Some(ManualDepositInput {
+            recipient,
+            deposit_refund_address,
+            fee,
+            safe_msg,
+        }) => {
+            let deposit_args = match recipient {
+                BtcRecipient::Omni(recipient_id) => {
+                    if safe_msg.is_some() {
+                        panic!("--msg is not supported with chain-prefixed recipient; use a direct NEAR account (e.g. 'foo.near') instead");
+                    }
+                    BtcDepositArgs::OmniDepositArgs {
+                        recipient_id,
+                        refund_address: deposit_refund_address,
+                        fee,
+                    }
+                }
+                BtcRecipient::Direct(account_id) => BtcDepositArgs::DepositMsg {
+                    msg: DepositMsg {
+                        recipient_id: account_id,
+                        post_actions: None,
+                        extra_msg: None,
+                        safe_deposit: safe_msg.map(|msg| SafeDepositMsg { msg }),
+                        refund_address: deposit_refund_address,
+                    },
+                },
+            };
+            let (v, p) = match vout {
+                Some(v) => (v, None),
+                None => {
+                    let (v, p) = connector
+                        .resolve_deposit_vout(chain, network, btc_tx_hash, &deposit_args)
+                        .await
+                        .unwrap();
+                    (v, Some(p))
+                }
+            };
+            (deposit_args, v, p)
+        }
+        None => {
+            let (v, found_msg, p) = connector
+                .resolve_deposit_from_tx(chain, network, btc_tx_hash, vout)
+                .await
+                .unwrap();
+            (BtcDepositArgs::DepositMsg { msg: found_msg }, v, Some(p))
+        }
+    }
 }
 
 async fn resolve_solana_fees(
@@ -535,15 +618,15 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "The index of the output in the Bitcoin transaction. If omitted, it is auto-resolved by matching outputs against the deposit address derived from the recipient/fee/msg."
+            help = "The index of the output in the Bitcoin transaction. If omitted, it is auto-resolved (matched against the deposit address derived from the recipient/fee/msg, or — if no recipient is given — by asking the bridge indexer which output is a tracked deposit address). When --recipient-id is omitted and the tx has multiple tracked outputs, pass --vout to pick one."
         )]
         vout: Option<usize>,
         #[clap(
             short,
             long,
-            help = "The BTC recipient. With chain prefix (e.g. 'near:foo.near') routes via the Omni Bridge; without prefix (e.g. 'foo.near') makes a direct deposit to that NEAR account"
+            help = "The BTC recipient. With chain prefix (e.g. 'near:foo.near') routes via the Omni Bridge; without prefix (e.g. 'foo.near') makes a direct deposit to that NEAR account. If omitted, the deposit message is looked up from the bridge indexer by the tx's output address."
         )]
-        recipient_id: BtcRecipient,
+        recipient_id: Option<BtcRecipient>,
         #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
         refund_address: Option<String>,
         #[clap(
@@ -611,15 +694,15 @@ pub enum OmniConnectorSubCommand {
         #[clap(
             short,
             long,
-            help = "The index of the deposit output in the Bitcoin transaction. If omitted, it is auto-resolved by matching outputs against the deposit address derived from the recipient/fee/msg."
+            help = "The index of the deposit output in the Bitcoin transaction. If omitted, it is auto-resolved (matched against the deposit address derived from the recipient/fee/msg, or — if no recipient is given — by asking the bridge indexer which output is a tracked deposit address). When --recipient-id is omitted and the tx has multiple tracked outputs, pass --vout to pick one."
         )]
         vout: Option<usize>,
         #[clap(
             short,
             long,
-            help = "Original deposit recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit."
+            help = "Original deposit recipient. `<chain>:<address>` for an Omni-Bridge-routed deposit; a bare NEAR account (no colon) for a direct NEAR deposit. If omitted, the original deposit message is looked up from the bridge indexer by the tx's output address."
         )]
-        recipient_id: BtcRecipient,
+        recipient_id: Option<BtcRecipient>,
         #[clap(
             short,
             long,
@@ -1354,43 +1437,31 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let connector = omni_connector(network, config_cli);
-            let deposit_args = match recipient_id {
-                BtcRecipient::Omni(recipient_id) => {
-                    if msg.is_some() {
-                        panic!("--msg is not supported with chain-prefixed recipient; use a direct NEAR account (e.g. 'foo.near') instead");
+
+            let manual = match recipient_id {
+                Some(recipient) => Some(ManualDepositInput {
+                    recipient,
+                    deposit_refund_address: refund_address,
+                    fee,
+                    safe_msg: msg,
+                }),
+                None => {
+                    if refund_address.is_some() || fee != 0 || msg.is_some() {
+                        panic!("--recipient-id is required when --refund-address, --fee, or --msg is supplied");
                     }
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        refund_address,
-                        fee,
-                    }
+                    None
                 }
-                BtcRecipient::Direct(account_id) => BtcDepositArgs::DepositMsg {
-                    msg: DepositMsg {
-                        recipient_id: account_id,
-                        post_actions: None,
-                        extra_msg: None,
-                        safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
-                        refund_address,
-                    },
-                },
             };
 
-            let (resolved_vout, prefetched) = match vout {
-                Some(v) => (v, None),
-                None => {
-                    let (v, p) = connector
-                        .resolve_deposit_vout(
-                            chain.into(),
-                            network.into(),
-                            &btc_tx_hash,
-                            &deposit_args,
-                        )
-                        .await
-                        .unwrap();
-                    (v, Some(p))
-                }
-            };
+            let (deposit_args, resolved_vout, prefetched) = resolve_btc_deposit(
+                &connector,
+                chain.into(),
+                network.into(),
+                &btc_tx_hash,
+                vout,
+                manual,
+            )
+            .await;
 
             if dry_run {
                 let args = connector
@@ -1486,48 +1557,38 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let connector = omni_connector(network, config_cli);
-            let deposit_refund_address = if no_deposit_refund_address {
-                None
-            } else {
-                Some(refund_address.clone())
-            };
-            let btc_deposit_args = match recipient_id {
-                BtcRecipient::Omni(recipient_id) => {
-                    if msg.is_some() {
-                        panic!("--msg is not supported with chain-prefixed recipient; use a direct NEAR account (e.g. 'foo.near') instead");
-                    }
-                    BtcDepositArgs::OmniDepositArgs {
-                        recipient_id,
-                        refund_address: deposit_refund_address,
+
+            let manual = match recipient_id {
+                Some(recipient) => {
+                    let deposit_refund_address = if no_deposit_refund_address {
+                        None
+                    } else {
+                        Some(refund_address.clone())
+                    };
+                    Some(ManualDepositInput {
+                        recipient,
+                        deposit_refund_address,
                         fee,
-                    }
+                        safe_msg: msg,
+                    })
                 }
-                BtcRecipient::Direct(account_id) => BtcDepositArgs::DepositMsg {
-                    msg: DepositMsg {
-                        recipient_id: account_id,
-                        post_actions: None,
-                        extra_msg: None,
-                        safe_deposit: msg.map(|msg| SafeDepositMsg { msg }),
-                        refund_address: deposit_refund_address,
-                    },
-                },
+                None => {
+                    if fee != 0 || msg.is_some() || no_deposit_refund_address {
+                        panic!("--recipient-id is required when --fee, --msg, or --no-deposit-refund-address is supplied");
+                    }
+                    None
+                }
             };
 
-            let (resolved_vout, prefetched) = match vout {
-                Some(v) => (v, None),
-                None => {
-                    let (v, p) = connector
-                        .resolve_deposit_vout(
-                            ChainKind::Btc,
-                            network.into(),
-                            &btc_tx_hash,
-                            &btc_deposit_args,
-                        )
-                        .await
-                        .unwrap();
-                    (v, Some(p))
-                }
-            };
+            let (btc_deposit_args, resolved_vout, prefetched) = resolve_btc_deposit(
+                &connector,
+                ChainKind::Btc,
+                network.into(),
+                &btc_tx_hash,
+                vout,
+                manual,
+            )
+            .await;
 
             connector
                 .btc_request_refund(

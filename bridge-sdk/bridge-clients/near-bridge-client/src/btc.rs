@@ -877,38 +877,64 @@ impl NearBridgeClient {
             refund_address: deposit_msg.refund_address.clone(),
         };
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!("Failed to build HTTP client: {e}"))
-            })?;
-
-        let response = client
-            .post(api_url)
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!(
-                    "Failed to fetch deposit address from bridge indexer: {e}"
-                ))
-            })?
-            .error_for_status()
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!("Bridge indexer API returned error: {e}"))
-            })?;
-
         #[derive(serde::Deserialize)]
         struct DepositAddressResponse {
             address: String,
         }
 
-        let parsed: DepositAddressResponse = response.json().await.map_err(|e| {
-            BridgeSdkError::UnknownError(format!("Failed to parse deposit address response: {e}"))
-        })?;
+        let body = send_indexer_request(
+            reqwest::Client::new()
+                .post(api_url)
+                .timeout(std::time::Duration::from_secs(10))
+                .json(&request_body),
+        )
+        .await?;
+        let parsed: DepositAddressResponse = serde_json::from_str(&body)?;
 
         Ok(parsed.address)
+    }
+
+    /// Look up the `DepositMsg` that was stored by the bridge indexer when a
+    /// deposit address was issued.
+    ///
+    /// Returns `Ok(None)` if the indexer does not know the address (HTTP 404)
+    /// — caller treats this as "not a tracked deposit address". Any other
+    /// non-success status is reported as an error.
+    pub async fn get_deposit_msg_by_address(
+        &self,
+        chain: ChainKind,
+        address: &str,
+    ) -> Result<Option<DepositMsg>> {
+        let api_url = self
+            .bridge_indexer_api_url()?
+            .join("api/v3/utxo/get_deposit_message")
+            .map_err(|e| {
+                BridgeSdkError::ConfigError(format!("Failed to construct api endpoint url: {e}"))
+            })?;
+
+        let chain_name = match chain {
+            ChainKind::Btc => "btc",
+            ChainKind::Zcash => "zcash",
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Unsupported UTXO chain: {chain:?}"
+                )))
+            }
+        };
+
+        let Some(body) = send_indexer_request_opt(
+            reqwest::Client::new()
+                .get(api_url)
+                .timeout(std::time::Duration::from_secs(10))
+                .query(&[("chain", chain_name), ("address", address)]),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let parsed: DepositMsg = serde_json::from_str(&body)?;
+
+        Ok(Some(parsed))
     }
 
     pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
@@ -1347,6 +1373,43 @@ impl NearBridgeClient {
     }
 }
 
+fn indexer_request_err(e: reqwest::Error) -> BridgeSdkError {
+    BridgeSdkError::BridgeIndexerError(e.to_string())
+}
+
+/// Send an HTTP request to the bridge indexer and return the response body
+/// as text. Any non-success status (including 404) is reported as an error.
+async fn send_indexer_request(request: reqwest::RequestBuilder) -> Result<String> {
+    request
+        .send()
+        .await
+        .map_err(indexer_request_err)?
+        .error_for_status()
+        .map_err(indexer_request_err)?
+        .text()
+        .await
+        .map_err(indexer_request_err)
+}
+
+/// Like `send_indexer_request`, but maps HTTP 404 to `Ok(None)` so the caller
+/// can distinguish "the indexer doesn't track this resource" from a real
+/// transport / 5xx failure.
+async fn send_indexer_request_opt(
+    request: reqwest::RequestBuilder,
+) -> Result<Option<String>> {
+    let response = request.send().await.map_err(indexer_request_err)?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    response
+        .error_for_status()
+        .map_err(indexer_request_err)?
+        .text()
+        .await
+        .map(Some)
+        .map_err(indexer_request_err)
+}
+
 #[cfg(test)]
 mod tests {
     use bridge_connector_common::result::BridgeSdkError;
@@ -1525,8 +1588,8 @@ mod tests {
             .expect_err("500 status should fail");
 
         assert!(
-            matches!(err, BridgeSdkError::UnknownError(_)),
-            "expected UnknownError, got {err:?}"
+            matches!(err, BridgeSdkError::BridgeIndexerError(_)),
+            "expected BridgeIndexerError, got {err:?}"
         );
     }
 

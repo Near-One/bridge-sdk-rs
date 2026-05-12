@@ -983,6 +983,85 @@ impl OmniConnector {
         }
     }
 
+    /// Auto-resolve the deposit `vout` and the original `DepositMsg` from
+    /// `tx_hash` alone, by asking the bridge indexer
+    /// (`GET /api/v3/utxo/get_deposit_message`) about each output's address.
+    ///
+    /// When `prefer_vout` is `None`, the unique tracked output is returned —
+    /// or `InvalidArgument` if zero or multiple outputs match.
+    ///
+    /// When `prefer_vout` is `Some(v)`, the result is filtered to vout `v`
+    /// (use this to disambiguate a tx with multiple tracked outputs without
+    /// having to supply the full deposit args). Errors if vout `v` is not a
+    /// tracked deposit address.
+    pub async fn resolve_deposit_from_tx(
+        &self,
+        chain: ChainKind,
+        network: Network,
+        tx_hash: &str,
+        prefer_vout: Option<usize>,
+    ) -> Result<(usize, DepositMsg, PrefetchedTxData)> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof = self
+            .utxo_bridge_client(chain)?
+            .extract_btc_proof(tx_hash)
+            .await?;
+
+        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+
+        if let Some(v) = prefer_vout {
+            let out = parsed_tx.output.get(v).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "vout {v} out of range; tx {tx_hash} has {} outputs",
+                    parsed_tx.output.len()
+                ))
+            })?;
+            let addr = UTXOAddress::from_script(&out.script_pubkey, chain, network)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
+                    ))
+                })?;
+            let msg = near_bridge_client
+                .get_deposit_msg_by_address(chain, &addr.to_string())
+                .await?
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "vout {v} in tx {tx_hash} is not a deposit address tracked by the bridge indexer"
+                    ))
+                })?;
+            return Ok((v, msg, PrefetchedTxData { proof, parsed_tx }));
+        }
+
+        let mut found: Option<(usize, DepositMsg)> = None;
+        for (i, out) in parsed_tx.output.iter().enumerate() {
+            let Some(addr) = UTXOAddress::from_script(&out.script_pubkey, chain, network) else {
+                continue;
+            };
+            let Some(msg) = near_bridge_client
+                .get_deposit_msg_by_address(chain, &addr.to_string())
+                .await?
+            else {
+                continue;
+            };
+            if let Some((prev_v, _)) = &found {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Ambiguous: outputs at vouts {prev_v} and {i} in tx {tx_hash} are both tracked deposit addresses. Re-run with --vout to pick one."
+                )));
+            }
+            found = Some((i, msg));
+        }
+
+        let (vout, msg) = found.ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "No output in tx {tx_hash} matches a deposit address tracked by the bridge indexer. Pass deposit args explicitly to disambiguate."
+            ))
+        })?;
+        Ok((vout, msg, PrefetchedTxData { proof, parsed_tx }))
+    }
+
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
