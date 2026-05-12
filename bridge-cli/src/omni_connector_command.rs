@@ -689,6 +689,12 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(about = "Request a refund for a never-finalized BTC deposit (Bitcoin only)")]
     BtcRequestRefund {
+        #[clap(
+            short,
+            long,
+            help = "Chain the deposit was made on. Only Bitcoin is currently supported; the flag exists for forward compatibility."
+        )]
+        chain: UTXOChainArg,
         #[clap(short, long, help = "Bitcoin deposit tx hash")]
         btc_tx_hash: String,
         #[clap(
@@ -710,8 +716,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
-        #[clap(long, help = "BTC address to send the refund to")]
-        refund_address: String,
+        #[clap(
+            long,
+            help = "BTC address to send the refund to. Used only when the original DepositMsg does not carry a refund_address; if the deposit message has one, that value is used regardless. Required only when no refund_address was provided at deposit time."
+        )]
+        refund_address: Option<String>,
         #[clap(
             long,
             help = "Optional msg set as SafeDepositMsg.msg used at deposit time (only valid with direct recipient, i.e. without chain prefix)"
@@ -725,6 +734,11 @@ pub enum OmniConnectorSubCommand {
         no_deposit_refund_address: bool,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
+        #[clap(
+            long,
+            help = "Print the call args as JSON without submitting the transaction"
+        )]
+        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1546,6 +1560,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::BtcRequestRefund {
+            chain,
             btc_tx_hash,
             vout,
             recipient_id,
@@ -1554,8 +1569,14 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             msg,
             no_deposit_refund_address,
             gas_fee,
+            dry_run,
             config_cli,
         } => {
+            let chain_kind: ChainKind = chain.into();
+            if chain_kind != ChainKind::Btc {
+                panic!("btc-request-refund currently supports only --chain btc; got {chain:?}");
+            }
+
             let connector = omni_connector(network, config_cli);
 
             let manual = match recipient_id {
@@ -1563,7 +1584,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     let deposit_refund_address = if no_deposit_refund_address {
                         None
                     } else {
-                        Some(refund_address.clone())
+                        refund_address.clone()
                     };
                     Some(ManualDepositInput {
                         recipient,
@@ -1582,7 +1603,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let (btc_deposit_args, resolved_vout, prefetched) = resolve_btc_deposit(
                 &connector,
-                ChainKind::Btc,
+                chain_kind,
                 network.into(),
                 &btc_tx_hash,
                 vout,
@@ -1590,18 +1611,49 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             )
             .await;
 
-            connector
-                .btc_request_refund(
-                    btc_tx_hash,
-                    resolved_vout,
-                    btc_deposit_args,
-                    refund_address,
-                    gas_fee,
-                    prefetched,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
+            let deposit_msg_refund_address = match &btc_deposit_args {
+                BtcDepositArgs::DepositMsg { msg } => msg.refund_address.clone(),
+                BtcDepositArgs::OmniDepositArgs { refund_address, .. }
+                | BtcDepositArgs::NearDirectDepositArgs { refund_address, .. } => {
+                    refund_address.clone()
+                }
+            };
+            let final_refund_address = deposit_msg_refund_address
+                .or(refund_address)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "No refund destination: pass --refund-address (the deposit message has no refund_address)"
+                    )
+                });
+
+            if dry_run {
+                let args = connector
+                    .build_btc_request_refund_args(
+                        &btc_tx_hash,
+                        resolved_vout,
+                        btc_deposit_args,
+                        final_refund_address,
+                        gas_fee,
+                        prefetched,
+                    )
+                    .await
+                    .unwrap();
+                println!("method: request_refund");
+                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
+            } else {
+                connector
+                    .btc_request_refund(
+                        btc_tx_hash,
+                        resolved_vout,
+                        btc_deposit_args,
+                        final_refund_address,
+                        gas_fee,
+                        prefetched,
+                        TransactionOptions::default(),
+                    )
+                    .await
+                    .unwrap();
+            }
         }
         OmniConnectorSubCommand::BtcVerifyRefundFinalize {
             btc_tx_hash,

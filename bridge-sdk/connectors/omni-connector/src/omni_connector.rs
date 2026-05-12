@@ -745,18 +745,19 @@ impl OmniConnector {
             .await
     }
 
-    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn btc_request_refund(
+    /// Build the args for a BTC refund request without submitting the
+    /// transaction. Bitcoin only. The `prefetched` proof can be supplied by a
+    /// prior `resolve_deposit_vout` / `resolve_deposit_from_tx` call to skip
+    /// the redundant `extract_btc_proof`.
+    pub async fn build_btc_request_refund_args(
         &self,
-        btc_tx_hash: String,
+        btc_tx_hash: &str,
         vout: usize,
         deposit_args: BtcDepositArgs,
         refund_address: String,
         gas_fee: Option<u128>,
         prefetched: Option<PrefetchedTxData>,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
+    ) -> Result<BtcRequestRefundArgs> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let PrefetchedTxData {
@@ -767,7 +768,7 @@ impl OmniConnector {
             None => {
                 let proof = self
                     .utxo_bridge_client(ChainKind::Btc)?
-                    .extract_btc_proof(&btc_tx_hash)
+                    .extract_btc_proof(btc_tx_hash)
                     .await?;
                 let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
                     .map_err(BridgeSdkError::InvalidArgument)?;
@@ -809,7 +810,7 @@ impl OmniConnector {
                 .get_deposit_msg_for_near_account(recipient_id, deposit_refund_address),
         };
 
-        let args = BtcRequestRefundArgs {
+        Ok(BtcRequestRefundArgs {
             deposit_msg,
             refund_address,
             tx_bytes: proof_data.tx_bytes,
@@ -818,9 +819,33 @@ impl OmniConnector {
             tx_index: proof_data.tx_index,
             merkle_proof: proof_data.merkle_proof,
             gas_fee,
-        };
+        })
+    }
 
-        near_bridge_client
+    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn btc_request_refund(
+        &self,
+        btc_tx_hash: String,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        refund_address: String,
+        gas_fee: Option<u128>,
+        prefetched: Option<PrefetchedTxData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let args = self
+            .build_btc_request_refund_args(
+                &btc_tx_hash,
+                vout,
+                deposit_args,
+                refund_address,
+                gas_fee,
+                prefetched,
+            )
+            .await?;
+
+        self.near_bridge_client()?
             .btc_request_refund(args, transaction_options)
             .await
     }
