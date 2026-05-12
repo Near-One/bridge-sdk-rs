@@ -30,6 +30,7 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
+    BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcConfirmationContext, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
     FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
@@ -45,7 +46,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use utxo_bridge_client::{
-    types::{Bitcoin, Zcash},
+    types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
 };
 use utxo_utils::{get_gas_fee, UTXO};
@@ -260,6 +261,10 @@ pub enum FinTransferArgs {
         btc_tx_hash: String,
         vout: usize,
         btc_deposit_args: BtcDepositArgs,
+        /// Data already fetched/parsed by a prior `resolve_deposit_vout` call.
+        /// When `Some`, skips a redundant `extract_btc_proof` round-trip and
+        /// a second `tx_bytes` parse.
+        prefetched: Option<PrefetchedTxData>,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -296,10 +301,18 @@ pub enum FinTransferArgs {
 }
 
 pub enum BtcDepositArgs {
+    /// Deposit routed through the Omni Bridge (nBTC is minted to the bridge account,
+    /// which then forwards it to `recipient_id` on the destination chain).
     OmniDepositArgs {
         recipient_id: OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+    },
+    /// Direct NEAR deposit: nBTC is minted straight to `recipient_id`, bypassing
+    /// the Omni Bridge wrapper.
+    NearDirectDepositArgs {
+        recipient_id: AccountId,
+        refund_address: Option<String>,
     },
     DepositMsg {
         msg: DepositMsg,
@@ -561,11 +574,25 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
+        prefetched: Option<PrefetchedTxData>,
     ) -> Result<FinBtcTransferArgs> {
-        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
-        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+        let PrefetchedTxData {
+            proof: proof_data,
+            parsed_tx: btc_tx,
+        } = match prefetched {
+            Some(p) => p,
+            None => {
+                let proof = self
+                    .utxo_bridge_client(chain)?
+                    .extract_btc_proof(&tx_hash)
+                    .await?;
+                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+                    .map_err(BridgeSdkError::InvalidArgument)?;
+                PrefetchedTxData { proof, parsed_tx }
+            }
+        };
 
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
@@ -578,10 +605,13 @@ impl OmniConnector {
                 refund_address,
                 fee,
             )?,
+            BtcDepositArgs::NearDirectDepositArgs {
+                recipient_id,
+                refund_address,
+            } => near_bridge_client
+                .get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
-        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
-            .map_err(BridgeSdkError::InvalidArgument)?;
         let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
@@ -620,10 +650,11 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
+        prefetched: Option<PrefetchedTxData>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let args = self
-            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args)
+            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args, prefetched)
             .await?;
 
         self.near_bridge_client()?
@@ -714,6 +745,146 @@ impl OmniConnector {
             .await
     }
 
+    /// Build the args for a BTC refund request without submitting the
+    /// transaction. Bitcoin only. The `prefetched` proof can be supplied by a
+    /// prior `resolve_deposit_vout` / `resolve_deposit_from_tx` call to skip
+    /// the redundant `extract_btc_proof`.
+    pub async fn build_btc_request_refund_args(
+        &self,
+        btc_tx_hash: &str,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        refund_address: String,
+        gas_fee: Option<u128>,
+        prefetched: Option<PrefetchedTxData>,
+    ) -> Result<BtcRequestRefundArgs> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let PrefetchedTxData {
+            proof: proof_data,
+            parsed_tx: btc_tx,
+        } = match prefetched {
+            Some(p) => p,
+            None => {
+                let proof = self
+                    .utxo_bridge_client(ChainKind::Btc)?
+                    .extract_btc_proof(btc_tx_hash)
+                    .await?;
+                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+                    .map_err(BridgeSdkError::InvalidArgument)?;
+                PrefetchedTxData { proof, parsed_tx }
+            }
+        };
+
+        let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "vout {vout} out of range; tx has {} outputs",
+                btc_tx.output.len()
+            ))
+        })?;
+        let deposit_amount = u128::from(deposit_output.value.to_sat());
+
+        self.ensure_sufficient_btc_confirmations(
+            ChainKind::Btc,
+            proof_data.block_height,
+            deposit_amount,
+            false,
+        )
+        .await?;
+
+        let deposit_msg = match deposit_args {
+            BtcDepositArgs::DepositMsg { msg } => msg,
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                refund_address: deposit_refund_address,
+                fee,
+            } => near_bridge_client.get_deposit_msg_for_omni_bridge(
+                &recipient_id,
+                deposit_refund_address,
+                fee,
+            )?,
+            BtcDepositArgs::NearDirectDepositArgs {
+                recipient_id,
+                refund_address: deposit_refund_address,
+            } => near_bridge_client
+                .get_deposit_msg_for_near_account(recipient_id, deposit_refund_address),
+        };
+
+        Ok(BtcRequestRefundArgs {
+            deposit_msg,
+            refund_address,
+            tx_bytes: proof_data.tx_bytes,
+            vout,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+            gas_fee,
+        })
+    }
+
+    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn btc_request_refund(
+        &self,
+        btc_tx_hash: String,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        refund_address: String,
+        gas_fee: Option<u128>,
+        prefetched: Option<PrefetchedTxData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let args = self
+            .build_btc_request_refund_args(
+                &btc_tx_hash,
+                vout,
+                deposit_args,
+                refund_address,
+                gas_fee,
+                prefetched,
+            )
+            .await?;
+
+        self.near_bridge_client()?
+            .btc_request_refund(args, transaction_options)
+            .await
+    }
+
+    /// Verify that the refund BTC transaction has been confirmed on Bitcoin. Bitcoin only.
+    pub async fn btc_verify_refund_finalize(
+        &self,
+        btc_tx_hash: String,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
+
+        let pending_info = near_bridge_client
+            .get_btc_pending_info(ChainKind::Btc, btc_tx_hash.clone())
+            .await?;
+
+        self.ensure_sufficient_btc_confirmations(
+            ChainKind::Btc,
+            proof_data.block_height,
+            pending_info.actual_received_amount,
+            false,
+        )
+        .await?;
+
+        let args = BtcVerifyRefundFinalizeArgs {
+            tx_id: btc_tx_hash,
+            tx_block_blockhash: proof_data.tx_block_blockhash,
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof,
+        };
+
+        near_bridge_client
+            .btc_verify_refund_finalize(args, transaction_options)
+            .await
+    }
+
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
@@ -725,6 +896,195 @@ impl OmniConnector {
         near_bridge_client
             .get_btc_address(chain, recipient_id, refund_address, fee)
             .await
+    }
+
+    /// Fetch a BTC deposit address that mints nBTC directly to a NEAR account,
+    /// bypassing the Omni Bridge wrapper.
+    pub async fn get_btc_address_for_near_account(
+        &self,
+        chain: ChainKind,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_btc_address_for_near_account(chain, recipient_id, refund_address)
+            .await
+    }
+
+    /// Fetch the BTC deposit address for an arbitrary `DepositMsg` (including
+    /// custom `safe_deposit.msg`). Use this when neither `get_btc_address` nor
+    /// `get_btc_address_for_near_account` covers the exact `DepositMsg` shape.
+    pub async fn get_btc_address_from_deposit_msg(
+        &self,
+        chain: ChainKind,
+        deposit_msg: &DepositMsg,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        near_bridge_client
+            .get_btc_address_from_deposit_msg(chain, deposit_msg)
+            .await
+    }
+
+    /// Resolve the deposit `vout` by matching outputs of the BTC/Zcash tx
+    /// `tx_hash` against the deposit address derived from `deposit_args` via
+    /// the bridge indexer.
+    ///
+    /// Returns `InvalidArgument` if no output matches or if multiple outputs
+    /// match (in which case the candidate vouts are listed in the message).
+    ///
+    /// Also returns the fetched `TxProof` and the parsed transaction so
+    /// callers can hand them to a follow-up `build_fin_btc_transfer_args` /
+    /// `btc_request_refund` and avoid re-fetching the proof / re-parsing the
+    /// tx bytes.
+    pub async fn resolve_deposit_vout(
+        &self,
+        chain: ChainKind,
+        network: Network,
+        tx_hash: &str,
+        deposit_args: &BtcDepositArgs,
+    ) -> Result<(usize, PrefetchedTxData)> {
+        let expected_address = match deposit_args {
+            BtcDepositArgs::OmniDepositArgs {
+                recipient_id,
+                refund_address,
+                fee,
+            } => {
+                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
+                    .await?
+            }
+            BtcDepositArgs::NearDirectDepositArgs {
+                recipient_id,
+                refund_address,
+            } => {
+                self.get_btc_address_for_near_account(
+                    chain,
+                    recipient_id.clone(),
+                    refund_address.clone(),
+                )
+                .await?
+            }
+            BtcDepositArgs::DepositMsg { msg } => {
+                self.get_btc_address_from_deposit_msg(chain, msg).await?
+            }
+        };
+
+        let expected_script = UTXOAddress::parse(&expected_address, chain, network)
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to parse deposit address `{expected_address}`: {e}"
+                ))
+            })?
+            .script_pubkey()
+            .map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Failed to derive script_pubkey for `{expected_address}`: {e}"
+                ))
+            })?;
+
+        let proof = self
+            .utxo_bridge_client(chain)?
+            .extract_btc_proof(tx_hash)
+            .await?;
+
+        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+
+        let matches: Vec<usize> = parsed_tx
+            .output
+            .iter()
+            .enumerate()
+            .filter_map(|(i, out)| (out.script_pubkey == expected_script).then_some(i))
+            .collect();
+
+        match matches.as_slice() {
+            [] => Err(BridgeSdkError::InvalidArgument(format!(
+                "No output in tx {tx_hash} matches deposit address `{expected_address}`. Verify the recipient/fee/msg match the original deposit."
+            ))),
+            [v] => Ok((*v, PrefetchedTxData { proof, parsed_tx })),
+            many => Err(BridgeSdkError::InvalidArgument(format!(
+                "Ambiguous: multiple outputs in tx {tx_hash} match deposit address `{expected_address}`. Re-run with vout set to one of: {many:?}"
+            ))),
+        }
+    }
+
+    /// Auto-resolve the deposit `vout` and the original `DepositMsg` from
+    /// `tx_hash` alone, by asking the bridge indexer
+    /// (`GET /api/v3/utxo/get_deposit_message`) about each output's address.
+    ///
+    /// When `prefer_vout` is `None`, the unique tracked output is returned —
+    /// or `InvalidArgument` if zero or multiple outputs match.
+    ///
+    /// When `prefer_vout` is `Some(v)`, the result is filtered to vout `v`
+    /// (use this to disambiguate a tx with multiple tracked outputs without
+    /// having to supply the full deposit args). Errors if vout `v` is not a
+    /// tracked deposit address.
+    pub async fn resolve_deposit_from_tx(
+        &self,
+        chain: ChainKind,
+        network: Network,
+        tx_hash: &str,
+        prefer_vout: Option<usize>,
+    ) -> Result<(usize, DepositMsg, PrefetchedTxData)> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof = self
+            .utxo_bridge_client(chain)?
+            .extract_btc_proof(tx_hash)
+            .await?;
+
+        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+
+        if let Some(v) = prefer_vout {
+            let out = parsed_tx.output.get(v).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "vout {v} out of range; tx {tx_hash} has {} outputs",
+                    parsed_tx.output.len()
+                ))
+            })?;
+            let addr = UTXOAddress::from_script(&out.script_pubkey, chain, network)
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
+                    ))
+                })?;
+            let msg = near_bridge_client
+                .get_deposit_msg_by_address(chain, &addr.to_string())
+                .await?
+                .ok_or_else(|| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "vout {v} in tx {tx_hash} is not a deposit address tracked by the bridge indexer"
+                    ))
+                })?;
+            return Ok((v, msg, PrefetchedTxData { proof, parsed_tx }));
+        }
+
+        let mut found: Option<(usize, DepositMsg)> = None;
+        for (i, out) in parsed_tx.output.iter().enumerate() {
+            let Some(addr) = UTXOAddress::from_script(&out.script_pubkey, chain, network) else {
+                continue;
+            };
+            let Some(msg) = near_bridge_client
+                .get_deposit_msg_by_address(chain, &addr.to_string())
+                .await?
+            else {
+                continue;
+            };
+            if let Some((prev_v, _)) = &found {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Ambiguous: outputs at vouts {prev_v} and {i} in tx {tx_hash} are both tracked deposit addresses. Re-run with --vout to pick one."
+                )));
+            }
+            found = Some((i, msg));
+        }
+
+        let (vout, msg) = found.ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "No output in tx {tx_hash} matches a deposit address tracked by the bridge indexer. Pass deposit args explicitly to disambiguate."
+            ))
+        })?;
+        Ok((vout, msg, PrefetchedTxData { proof, parsed_tx }))
     }
 
     pub async fn active_utxo_management(
@@ -2368,6 +2728,7 @@ impl OmniConnector {
                 btc_tx_hash,
                 vout,
                 btc_deposit_args,
+                prefetched,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
@@ -2375,6 +2736,7 @@ impl OmniConnector {
                     btc_tx_hash,
                     vout,
                     btc_deposit_args,
+                    prefetched,
                     transaction_options,
                 )
                 .await

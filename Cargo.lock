@@ -1810,7 +1810,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-connector-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "alloy",
  "eth-proof",
@@ -11088,7 +11088,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
