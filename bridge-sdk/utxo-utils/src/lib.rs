@@ -200,6 +200,11 @@ pub struct WithdrawSelectionParams {
     pub max_change_number: usize,
     pub passive_management_lower_limit: u32,
     pub passive_management_upper_limit: u32,
+    /// Pool size above which we proactively switch withdraws into merge mode
+    /// (drop UTXOs with `balance > net_amount`) to consolidate the pool before
+    /// it reaches `passive_management_upper_limit`. Mirrors the contract
+    /// parameter of the same name.
+    pub active_management_upper_limit: u32,
 }
 
 /// Splits `change` into `n` outputs each strictly less than `max_per_piece`
@@ -459,13 +464,19 @@ fn split_into_n_pieces(
 /// Picks UTXOs to cover `net_amount` such that the resulting change is at least
 /// `min_change_amount` (avoiding the dust-zone where change ∈ (0, min_change_amount)).
 ///
-/// Algorithm:
-/// 0. If `pool_size > passive_management_upper_limit` (HIGH zone), filter out UTXOs
-///    with `balance > net_amount`. This forces multi-input or 1-input absorption,
-///    both of which trivially satisfy `input_num > change_num` (the HIGH zone rule).
-///    Single-input + 1-change is impossible after this filter.
-/// 1. Greedy largest-first determines the minimum number of inputs N
-///    needed to cover `net_amount + min_change_amount`.
+/// Pool-size zones (relative to `pool_size = utxos.len()`):
+/// - Healthy (`pool_size <= active_upper`): normal selection.
+/// - Early-merge (`active_upper < pool_size <= passive_upper`): proactively
+///   filter out UTXOs with `balance > net_amount` to favor consolidation. If
+///   that filter leaves the pool unable to produce a valid selection, fall
+///   back to a normal unfiltered selection — the contract still allows
+///   `input_num <= change_num` here.
+/// - HIGH (`pool_size > passive_upper`): same filter, but no fallback —
+///   the contract requires `input_num > change_num`.
+///
+/// Algorithm (per attempt):
+/// 1. Greedy largest-first determines the minimum number of inputs N needed
+///    to cover `net_amount + min_change_amount`.
 /// 2. Randomized iterative pick: at each step, the candidate pool is UTXOs
 ///    with `balance >= remaining / n_remaining` (compared via multiplication
 ///    to avoid integer-division loss). One candidate is picked uniformly at random.
@@ -487,17 +498,36 @@ pub fn choose_utxos_random<R: rand::Rng>(
         .checked_add(params.min_change_amount)
         .ok_or_else(|| "target overflow".to_string())?;
 
-    // HIGH zone: drop UTXOs that alone would push us into single-input territory.
-    // We keep UTXOs with balance <= net_amount (absorption-friendly threshold).
-    let utxos = if pool_size > params.passive_management_upper_limit {
-        utxos
-            .into_iter()
-            .filter(|(_, u)| u128::from(u.balance) <= net_amount)
-            .collect()
-    } else {
-        utxos
-    };
+    let in_high_zone = pool_size > params.passive_management_upper_limit;
+    let in_merge_zone = pool_size > params.active_management_upper_limit;
 
+    if in_merge_zone {
+        let filtered: HashMap<String, UTXO> = utxos
+            .iter()
+            .filter(|(_, u)| u128::from(u.balance) <= net_amount)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        match select_and_finalize(target, net_amount, filtered, pool_size, params, rng) {
+            Ok(selection) => return Ok(selection),
+            Err(e) if in_high_zone => return Err(e),
+            Err(_) => {
+                // Early-merge zone: fall through to unfiltered selection.
+                // Contract permits `input_num <= change_num` below passive_upper.
+            }
+        }
+    }
+
+    select_and_finalize(target, net_amount, utxos, pool_size, params, rng)
+}
+
+fn select_and_finalize<R: rand::Rng>(
+    target: u128,
+    net_amount: u128,
+    utxos: HashMap<String, UTXO>,
+    pool_size: u32,
+    params: &WithdrawSelectionParams,
+    rng: &mut R,
+) -> Result<UtxoSelection, String> {
     let n = determine_optimal_n(target, &utxos, params.max_withdrawal_input_number)?;
     let selected = choose_random_iterative(target, n, utxos, rng)?;
     let selection = validate_and_repair(

@@ -912,6 +912,7 @@ impl NearBridgeClient {
             max_change_number: config.max_change_number.into(),
             passive_management_lower_limit: config.passive_management_lower_limit,
             passive_management_upper_limit: config.passive_management_upper_limit,
+            active_management_upper_limit: config.active_management_upper_limit,
         })
     }
 
