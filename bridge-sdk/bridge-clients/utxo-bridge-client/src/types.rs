@@ -20,6 +20,17 @@ pub struct TxProof {
     pub merkle_proof: Vec<String>,
 }
 
+/// Bundle of work already done for a deposit BTC tx — the network-fetched
+/// `TxProof` together with its parsed `bitcoin::Transaction`. Produced by
+/// `resolve_deposit_vout` and threaded into a follow-up
+/// `build_fin_btc_transfer_args` / `btc_request_refund` to skip a second
+/// `extract_btc_proof` round-trip and a second tx-bytes parse.
+#[derive(Debug)]
+pub struct PrefetchedTxData {
+    pub proof: TxProof,
+    pub parsed_tx: bitcoin::Transaction,
+}
+
 pub struct UtxoBridgeTransactionData {
     pub tx_hash: String,
     pub deposit_address: String,

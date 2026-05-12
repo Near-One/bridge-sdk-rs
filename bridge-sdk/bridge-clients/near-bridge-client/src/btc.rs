@@ -28,6 +28,8 @@ const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
+const BTC_REQUEST_REFUND_GAS: u64 = 300_000_000_000_000;
+const BTC_VERIFY_REFUND_FINALIZE_GAS: u64 = 300_000_000_000_000;
 const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const INIT_BTC_TRANSFER_DEPOSIT: u128 = 1;
@@ -39,6 +41,8 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
+const BTC_REQUEST_REFUND_DEPOSIT: u128 = 0;
+const BTC_VERIFY_REFUND_FINALIZE_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
@@ -110,6 +114,29 @@ pub struct FinBtcTransferArgs {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
+    pub tx_id: String,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcRequestRefundArgs {
+    pub deposit_msg: DepositMsg,
+    pub refund_address: String,
+    pub tx_bytes: Vec<u8>,
+    pub vout: usize,
+    pub tx_block_blockhash: String,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub gas_fee: Option<u128>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcVerifyRefundFinalizeArgs {
     pub tx_id: String,
     pub tx_block_blockhash: String,
     pub tx_index: u64,
@@ -649,6 +676,70 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Submit a refund request for a never-finalized BTC deposit (Bitcoin only).
+    #[tracing::instrument(skip_all, name = "NEAR BTC REQUEST REFUND")]
+    pub async fn btc_request_refund(
+        &self,
+        args: BtcRequestRefundArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "request_refund".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_REQUEST_REFUND_GAS,
+                deposit: BTC_REQUEST_REFUND_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Request Refund transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    /// Verify that the refund BTC transaction has been confirmed (Bitcoin only).
+    #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY REFUND FINALIZE")]
+    pub async fn btc_verify_refund_finalize(
+        &self,
+        args: BtcVerifyRefundFinalizeArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "verify_refund_finalize".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_VERIFY_REFUND_FINALIZE_GAS,
+                deposit: BTC_VERIFY_REFUND_FINALIZE_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Verify Refund Finalize transaction"
+        );
+        Ok(tx_hash)
+    }
+
     #[tracing::instrument(skip_all, name = "ACTIVE UTXO MANAGEMENT")]
     pub async fn active_utxo_management(
         &self,
@@ -732,6 +823,26 @@ impl NearBridgeClient {
     ) -> Result<String> {
         let deposit_msg =
             self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+    }
+
+    /// Fetch the BTC deposit address for a `DepositMsg` that mints nBTC directly
+    /// to a NEAR account (without the Omni Bridge wrapper).
+    pub async fn get_btc_address_for_near_account(
+        &self,
+        chain: ChainKind,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> Result<String> {
+        let deposit_msg = self.get_deposit_msg_for_near_account(recipient_id, refund_address);
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+    }
+
+    pub async fn get_btc_address_from_deposit_msg(
+        &self,
+        chain: ChainKind,
+        deposit_msg: &DepositMsg,
+    ) -> Result<String> {
         let api_url = self
             .bridge_indexer_api_url()?
             .join("api/v3/utxo/get_user_deposit_address")
@@ -753,47 +864,77 @@ impl NearBridgeClient {
         struct DepositAddressRequest {
             chain: String,
             recipient: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
             safe_deposit: Option<SafeDepositMsg>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            refund_address: Option<String>,
         }
 
         let request_body = DepositAddressRequest {
             chain: chain_name.to_string(),
             recipient: deposit_msg.recipient_id.to_string(),
-            safe_deposit: deposit_msg.safe_deposit,
+            safe_deposit: deposit_msg.safe_deposit.clone(),
+            refund_address: deposit_msg.refund_address.clone(),
         };
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!("Failed to build HTTP client: {e}"))
-            })?;
-
-        let response = client
-            .post(api_url)
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!(
-                    "Failed to fetch deposit address from bridge indexer: {e}"
-                ))
-            })?
-            .error_for_status()
-            .map_err(|e| {
-                BridgeSdkError::UnknownError(format!("Bridge indexer API returned error: {e}"))
-            })?;
 
         #[derive(serde::Deserialize)]
         struct DepositAddressResponse {
             address: String,
         }
 
-        let parsed: DepositAddressResponse = response.json().await.map_err(|e| {
-            BridgeSdkError::UnknownError(format!("Failed to parse deposit address response: {e}"))
-        })?;
+        let body = send_indexer_request(
+            reqwest::Client::new()
+                .post(api_url)
+                .timeout(std::time::Duration::from_secs(10))
+                .json(&request_body),
+        )
+        .await?;
+        let parsed: DepositAddressResponse = serde_json::from_str(&body)?;
 
         Ok(parsed.address)
+    }
+
+    /// Look up the `DepositMsg` that was stored by the bridge indexer when a
+    /// deposit address was issued.
+    ///
+    /// Returns `Ok(None)` if the indexer does not know the address (HTTP 404)
+    /// — caller treats this as "not a tracked deposit address". Any other
+    /// non-success status is reported as an error.
+    pub async fn get_deposit_msg_by_address(
+        &self,
+        chain: ChainKind,
+        address: &str,
+    ) -> Result<Option<DepositMsg>> {
+        let api_url = self
+            .bridge_indexer_api_url()?
+            .join("api/v3/utxo/get_deposit_message")
+            .map_err(|e| {
+                BridgeSdkError::ConfigError(format!("Failed to construct api endpoint url: {e}"))
+            })?;
+
+        let chain_name = match chain {
+            ChainKind::Btc => "btc",
+            ChainKind::Zcash => "zcash",
+            _ => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Unsupported UTXO chain: {chain:?}"
+                )))
+            }
+        };
+
+        let Some(body) = send_indexer_request_opt(
+            reqwest::Client::new()
+                .get(api_url)
+                .timeout(std::time::Duration::from_secs(10))
+                .query(&[("chain", chain_name), ("address", address)]),
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let parsed: DepositMsg = serde_json::from_str(&body)?;
+
+        Ok(Some(parsed))
     }
 
     pub async fn get_utxo_num(&self, chain: ChainKind) -> Result<u32> {
@@ -996,6 +1137,7 @@ impl NearBridgeClient {
             recipient_id: omni_bridge_id,
             post_actions: None,
             extra_msg: None,
+            refund_address,
             safe_deposit: Some(SafeDepositMsg {
                 msg: json!({
                     "UtxoFinTransfer": {
@@ -1007,8 +1149,23 @@ impl NearBridgeClient {
                 })
                 .to_string(),
             }),
-            refund_address,
         })
+    }
+
+    /// Build a `DepositMsg` that mints nBTC directly to a NEAR account, bypassing
+    /// the Omni Bridge safe-deposit wrapper.
+    pub fn get_deposit_msg_for_near_account(
+        &self,
+        recipient_id: AccountId,
+        refund_address: Option<String>,
+    ) -> DepositMsg {
+        DepositMsg {
+            recipient_id,
+            post_actions: None,
+            extra_msg: None,
+            safe_deposit: None,
+            refund_address,
+        }
     }
 
     pub async fn get_btc_tx_data(
@@ -1216,6 +1373,43 @@ impl NearBridgeClient {
     }
 }
 
+fn indexer_request_err(e: reqwest::Error) -> BridgeSdkError {
+    BridgeSdkError::BridgeIndexerError(e.to_string())
+}
+
+/// Send an HTTP request to the bridge indexer and return the response body
+/// as text. Any non-success status (including 404) is reported as an error.
+async fn send_indexer_request(request: reqwest::RequestBuilder) -> Result<String> {
+    request
+        .send()
+        .await
+        .map_err(indexer_request_err)?
+        .error_for_status()
+        .map_err(indexer_request_err)?
+        .text()
+        .await
+        .map_err(indexer_request_err)
+}
+
+/// Like `send_indexer_request`, but maps HTTP 404 to `Ok(None)` so the caller
+/// can distinguish "the indexer doesn't track this resource" from a real
+/// transport / 5xx failure.
+async fn send_indexer_request_opt(
+    request: reqwest::RequestBuilder,
+) -> Result<Option<String>> {
+    let response = request.send().await.map_err(indexer_request_err)?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    response
+        .error_for_status()
+        .map_err(indexer_request_err)?
+        .text()
+        .await
+        .map(Some)
+        .map_err(indexer_request_err)
+}
+
 #[cfg(test)]
 mod tests {
     use bridge_connector_common::result::BridgeSdkError;
@@ -1394,8 +1588,8 @@ mod tests {
             .expect_err("500 status should fail");
 
         assert!(
-            matches!(err, BridgeSdkError::UnknownError(_)),
-            "expected UnknownError, got {err:?}"
+            matches!(err, BridgeSdkError::BridgeIndexerError(_)),
+            "expected BridgeIndexerError, got {err:?}"
         );
     }
 
