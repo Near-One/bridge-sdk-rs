@@ -1376,12 +1376,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 },
             };
 
-            let resolved_vout = match vout {
-                Some(v) => v,
-                None => connector
-                    .resolve_deposit_vout(chain.into(), network.into(), &btc_tx_hash, &deposit_args)
-                    .await
-                    .unwrap(),
+            let (resolved_vout, prefetched) = match vout {
+                Some(v) => (v, None),
+                None => {
+                    let (v, p) = connector
+                        .resolve_deposit_vout(
+                            chain.into(),
+                            network.into(),
+                            &btc_tx_hash,
+                            &deposit_args,
+                        )
+                        .await
+                        .unwrap();
+                    (v, Some(p))
+                }
             };
 
             if dry_run {
@@ -1391,6 +1399,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         btc_tx_hash,
                         resolved_vout,
                         deposit_args,
+                        prefetched,
                     )
                     .await
                     .unwrap();
@@ -1408,6 +1417,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         btc_tx_hash,
                         vout: resolved_vout,
                         btc_deposit_args: deposit_args,
+                        prefetched,
                         transaction_options: TransactionOptions::default(),
                     })
                     .await
@@ -1503,17 +1513,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 },
             };
 
-            let resolved_vout = match vout {
-                Some(v) => v,
-                None => connector
-                    .resolve_deposit_vout(
-                        ChainKind::Btc,
-                        network.into(),
-                        &btc_tx_hash,
-                        &btc_deposit_args,
-                    )
-                    .await
-                    .unwrap(),
+            let (resolved_vout, prefetched) = match vout {
+                Some(v) => (v, None),
+                None => {
+                    let (v, p) = connector
+                        .resolve_deposit_vout(
+                            ChainKind::Btc,
+                            network.into(),
+                            &btc_tx_hash,
+                            &btc_deposit_args,
+                        )
+                        .await
+                        .unwrap();
+                    (v, Some(p))
+                }
             };
 
             connector
@@ -1523,6 +1536,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     btc_deposit_args,
                     refund_address,
                     gas_fee,
+                    prefetched,
                     TransactionOptions::default(),
                 )
                 .await

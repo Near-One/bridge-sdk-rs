@@ -46,7 +46,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use utxo_bridge_client::{
-    types::{Bitcoin, Zcash},
+    types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
 };
 use utxo_utils::{get_gas_fee, UTXO};
@@ -261,6 +261,10 @@ pub enum FinTransferArgs {
         btc_tx_hash: String,
         vout: usize,
         btc_deposit_args: BtcDepositArgs,
+        /// Data already fetched/parsed by a prior `resolve_deposit_vout` call.
+        /// When `Some`, skips a redundant `extract_btc_proof` round-trip and
+        /// a second `tx_bytes` parse.
+        prefetched: Option<PrefetchedTxData>,
         transaction_options: TransactionOptions,
     },
     EvmFinTransfer {
@@ -570,11 +574,25 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
+        prefetched: Option<PrefetchedTxData>,
     ) -> Result<FinBtcTransferArgs> {
-        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
-        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+        let PrefetchedTxData {
+            proof: proof_data,
+            parsed_tx: btc_tx,
+        } = match prefetched {
+            Some(p) => p,
+            None => {
+                let proof = self
+                    .utxo_bridge_client(chain)?
+                    .extract_btc_proof(&tx_hash)
+                    .await?;
+                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+                    .map_err(BridgeSdkError::InvalidArgument)?;
+                PrefetchedTxData { proof, parsed_tx }
+            }
+        };
 
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
@@ -594,8 +612,6 @@ impl OmniConnector {
                 .get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
-        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
-            .map_err(BridgeSdkError::InvalidArgument)?;
         let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
@@ -634,10 +650,11 @@ impl OmniConnector {
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
+        prefetched: Option<PrefetchedTxData>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let args = self
-            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args)
+            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args, prefetched)
             .await?;
 
         self.near_bridge_client()?
@@ -737,15 +754,27 @@ impl OmniConnector {
         deposit_args: BtcDepositArgs,
         refund_address: String,
         gas_fee: Option<u128>,
+        prefetched: Option<PrefetchedTxData>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
         let near_bridge_client = self.near_bridge_client()?;
 
-        let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
+        let PrefetchedTxData {
+            proof: proof_data,
+            parsed_tx: btc_tx,
+        } = match prefetched {
+            Some(p) => p,
+            None => {
+                let proof = self
+                    .utxo_bridge_client(ChainKind::Btc)?
+                    .extract_btc_proof(&btc_tx_hash)
+                    .await?;
+                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
+                    .map_err(BridgeSdkError::InvalidArgument)?;
+                PrefetchedTxData { proof, parsed_tx }
+            }
+        };
 
-        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
-            .map_err(BridgeSdkError::InvalidArgument)?;
         let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
@@ -878,13 +907,18 @@ impl OmniConnector {
     ///
     /// Returns `InvalidArgument` if no output matches or if multiple outputs
     /// match (in which case the candidate vouts are listed in the message).
+    ///
+    /// Also returns the fetched `TxProof` and the parsed transaction so
+    /// callers can hand them to a follow-up `build_fin_btc_transfer_args` /
+    /// `btc_request_refund` and avoid re-fetching the proof / re-parsing the
+    /// tx bytes.
     pub async fn resolve_deposit_vout(
         &self,
         chain: ChainKind,
         network: Network,
         tx_hash: &str,
         deposit_args: &BtcDepositArgs,
-    ) -> Result<usize> {
+    ) -> Result<(usize, PrefetchedTxData)> {
         let expected_address = match deposit_args {
             BtcDepositArgs::OmniDepositArgs {
                 recipient_id,
@@ -923,15 +957,15 @@ impl OmniConnector {
                 ))
             })?;
 
-        let proof_data = self
+        let proof = self
             .utxo_bridge_client(chain)?
             .extract_btc_proof(tx_hash)
             .await?;
 
-        let btc_tx = utxo_utils::try_bytes_to_btc_transaction(&proof_data.tx_bytes)
+        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
             .map_err(BridgeSdkError::InvalidArgument)?;
 
-        let matches: Vec<usize> = btc_tx
+        let matches: Vec<usize> = parsed_tx
             .output
             .iter()
             .enumerate()
@@ -942,7 +976,7 @@ impl OmniConnector {
             [] => Err(BridgeSdkError::InvalidArgument(format!(
                 "No output in tx {tx_hash} matches deposit address `{expected_address}`. Verify the recipient/fee/msg match the original deposit."
             ))),
-            [v] => Ok(*v),
+            [v] => Ok((*v, PrefetchedTxData { proof, parsed_tx })),
             many => Err(BridgeSdkError::InvalidArgument(format!(
                 "Ambiguous: multiple outputs in tx {tx_hash} match deposit address `{expected_address}`. Re-run with vout set to one of: {many:?}"
             ))),
@@ -2590,6 +2624,7 @@ impl OmniConnector {
                 btc_tx_hash,
                 vout,
                 btc_deposit_args,
+                prefetched,
                 transaction_options,
             } => self
                 .near_fin_transfer_btc(
@@ -2597,6 +2632,7 @@ impl OmniConnector {
                     btc_tx_hash,
                     vout,
                     btc_deposit_args,
+                    prefetched,
                     transaction_options,
                 )
                 .await
