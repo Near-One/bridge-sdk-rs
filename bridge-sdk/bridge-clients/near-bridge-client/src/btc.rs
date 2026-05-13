@@ -91,6 +91,26 @@ pub enum PendingInfoState {
     Refund(OriginalState),
 }
 
+impl PendingInfoState {
+    pub fn is_active_utxo_management(&self) -> bool {
+        matches!(
+            self,
+            PendingInfoState::ActiveUtxoManagementOriginal(_)
+                | PendingInfoState::ActiveUtxoManagementRbf(_)
+                | PendingInfoState::ActiveUtxoManagementCancelRbf(_)
+        )
+    }
+
+    pub fn is_withdraw(&self) -> bool {
+        matches!(
+            self,
+            PendingInfoState::WithdrawOriginal(_)
+                | PendingInfoState::WithdrawUserRbf(_)
+                | PendingInfoState::WithdrawCancelRbf(_)
+        )
+    }
+}
+
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct BTCPendingInfoPartial {
@@ -861,7 +881,8 @@ impl NearBridgeClient {
     ) -> Result<String> {
         let deposit_msg =
             self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
-        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg)
+            .await
     }
 
     /// Fetch the BTC deposit address for a `DepositMsg` that mints nBTC directly
@@ -873,7 +894,8 @@ impl NearBridgeClient {
         refund_address: Option<String>,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_near_account(recipient_id, refund_address);
-        self.get_btc_address_from_deposit_msg(chain, &deposit_msg).await
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg)
+            .await
     }
 
     pub async fn get_btc_address_from_deposit_msg(
@@ -1432,9 +1454,7 @@ async fn send_indexer_request(request: reqwest::RequestBuilder) -> Result<String
 /// Like `send_indexer_request`, but maps HTTP 404 to `Ok(None)` so the caller
 /// can distinguish "the indexer doesn't track this resource" from a real
 /// transport / 5xx failure.
-async fn send_indexer_request_opt(
-    request: reqwest::RequestBuilder,
-) -> Result<Option<String>> {
+async fn send_indexer_request_opt(request: reqwest::RequestBuilder) -> Result<Option<String>> {
     let response = request.send().await.map_err(indexer_request_err)?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
