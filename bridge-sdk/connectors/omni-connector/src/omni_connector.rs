@@ -1077,6 +1077,7 @@ impl OmniConnector {
         chain: ChainKind,
         fee_rate: Option<u64>,
         max_input_number: Option<u8>,
+        merge_largest: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1093,6 +1094,7 @@ impl OmniConnector {
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
+            max_change_amount,
         ) = near_bridge_client
             .get_active_management_limit(chain)
             .await?;
@@ -1101,6 +1103,24 @@ impl OmniConnector {
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
+
+        let mut all_balances: Vec<u64> = utxos.values().map(|u| u.balance).collect();
+        all_balances.sort_unstable_by(|a, b| b.cmp(a));
+        tracing::info!(
+            pool_size = utxos.len(),
+            active_lower = active_management_lower_limit,
+            active_upper = active_management_upper_limit,
+            max_input_num = max_active_utxo_management_input_number,
+            max_output_num = max_active_utxo_management_output_number,
+            min_deposit_amount,
+            max_change_amount,
+            fee_rate,
+            merge_largest,
+            change_address = %change_address,
+            pool_total_balance_sat = all_balances.iter().map(|b| u128::from(*b)).sum::<u128>(),
+            pool_balances_desc = ?all_balances,
+            "Active UTXO management: inputs to selection"
+        );
 
         let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
             utxos,
@@ -1115,6 +1135,8 @@ impl OmniConnector {
             min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
+            merge_largest,
+            max_change_amount,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
