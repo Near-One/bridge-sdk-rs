@@ -4957,7 +4957,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.22"
+version = "0.2.23"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
