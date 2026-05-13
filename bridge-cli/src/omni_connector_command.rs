@@ -708,6 +708,11 @@ pub enum OmniConnectorSubCommand {
     ActiveUTXOManagement {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
+        #[clap(
+            long,
+            help = "Merge the largest UTXOs instead of the smallest (use ahead of a large withdrawal)"
+        )]
+        merge_largest: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1621,9 +1626,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
+        OmniConnectorSubCommand::ActiveUTXOManagement {
+            chain,
+            merge_largest,
+            config_cli,
+        } => {
             omni_connector(network, config_cli)
-                .active_utxo_management(chain.into(), TransactionOptions::default())
+                .active_utxo_management(
+                    chain.into(),
+                    merge_largest,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

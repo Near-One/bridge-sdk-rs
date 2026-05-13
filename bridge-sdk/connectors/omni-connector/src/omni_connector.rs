@@ -1004,6 +1004,7 @@ impl OmniConnector {
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
+        merge_largest: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1017,6 +1018,7 @@ impl OmniConnector {
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
+            max_change_amount,
         ) = near_bridge_client
             .get_active_management_limit(chain)
             .await?;
@@ -1033,7 +1035,9 @@ impl OmniConnector {
             max_input_num = max_active_utxo_management_input_number,
             max_output_num = max_active_utxo_management_output_number,
             min_deposit_amount,
+            max_change_amount,
             fee_rate,
+            merge_largest,
             change_address = %change_address,
             pool_total_balance_sat = all_balances.iter().map(|b| u128::from(*b)).sum::<u128>(),
             pool_balances_desc = ?all_balances,
@@ -1053,6 +1057,8 @@ impl OmniConnector {
             min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
+            merge_largest,
+            max_change_amount,
         )
         .map_err(|e| {
             tracing::warn!(error = %e, "Active UTXO management: selection failed");

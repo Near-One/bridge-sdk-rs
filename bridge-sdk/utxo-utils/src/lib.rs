@@ -554,6 +554,8 @@ pub fn choose_utxos_for_active_management(
     min_deposit_amount: usize,
     chain: ChainKind,
     network: Network,
+    merge_largest: bool,
+    max_change_amount: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -600,9 +602,34 @@ pub fn choose_utxos_for_active_management(
             utxo_list.len() - active_management_limit.1,
             max_active_utxo_management_input_number,
         );
-        for utxo_item in utxo_list.iter().take(utxo_amount) {
-            utxos_balance += utxo_item.1.balance;
-            selected.push(utxo_item.clone());
+        if merge_largest {
+            let half_cap = max_change_amount / 2;
+            for utxo_item in utxo_list.iter().rev() {
+                if selected.len() >= utxo_amount {
+                    break;
+                }
+                let next_balance = u128::from(utxo_item.1.balance);
+                // Skip UTXOs that can't usefully pair with any other big UTXO
+                // without pushing the change output past max_change_amount.
+                if next_balance > half_cap {
+                    continue;
+                }
+                if u128::from(utxos_balance) + next_balance >= max_change_amount {
+                    break;
+                }
+                utxos_balance += utxo_item.1.balance;
+                selected.push(utxo_item.clone());
+            }
+            if selected.is_empty() {
+                return Err(format!(
+                    "merge-largest: no UTXOs <= max_change_amount/2 ({half_cap}); nothing to merge"
+                ));
+            }
+        } else {
+            for utxo_item in utxo_list.iter().take(utxo_amount) {
+                utxos_balance += utxo_item.1.balance;
+                selected.push(utxo_item.clone());
+            }
         }
         let gas_fee: u64 = get_gas_fee(
             chain,
