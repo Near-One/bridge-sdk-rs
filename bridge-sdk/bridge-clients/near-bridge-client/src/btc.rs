@@ -56,6 +56,43 @@ pub enum VUTXO {
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct OriginalState {
+    pub stage: PendingInfoStage,
+    #[serde_as(as = "DisplayFromStr")]
+    pub max_gas_fee: u128,
+    pub last_rbf_time_sec: Option<u32>,
+    pub cancel_rbf_reserved: Option<U128>,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub enum PendingInfoStage {
+    PendingSign,
+    PendingVerify,
+    PendingBurn,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub struct RbfState {
+    pub stage: PendingInfoStage,
+    pub original_tx_id: String,
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
+pub enum PendingInfoState {
+    WithdrawOriginal(OriginalState),
+    WithdrawUserRbf(RbfState),
+    WithdrawCancelRbf(RbfState),
+    ActiveUtxoManagementOriginal(OriginalState),
+    ActiveUtxoManagementRbf(RbfState),
+    ActiveUtxoManagementCancelRbf(RbfState),
+    Refund(OriginalState),
+}
+
+#[serde_as]
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct BTCPendingInfoPartial {
     pub account_id: AccountId,
     pub btc_pending_id: String,
@@ -71,6 +108,7 @@ pub struct BTCPendingInfoPartial {
     pub burn_amount: u128,
     pub tx_bytes_with_sign: Option<Vec<u8>>,
     pub vutxos: Vec<VUTXO>,
+    pub state: PendingInfoState,
 }
 
 #[serde_as]
