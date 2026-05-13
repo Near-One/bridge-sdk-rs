@@ -467,10 +467,13 @@ fn split_into_n_pieces(
 /// Pool-size zones (relative to `pool_size = utxos.len()`):
 /// - Healthy (`pool_size <= active_upper`): normal selection.
 /// - Early-merge (`active_upper < pool_size <= passive_upper`): proactively
-///   filter out UTXOs with `balance > net_amount` to favor consolidation. If
-///   that filter leaves the pool unable to produce a valid selection, fall
-///   back to a normal unfiltered selection — the contract still allows
-///   `input_num <= change_num` here.
+///   filter out UTXOs with `balance > net_amount` to favor consolidation. Two
+///   fallbacks to an unfiltered selection apply in this zone (contract still
+///   allows `input_num <= change_num` here):
+///   * the filter leaves the pool unable to produce a valid selection;
+///   * the filtered selection ends up with more than `baseline_n + 1` inputs,
+///     where `baseline_n` is the unfiltered greedy minimum — i.e. consolidation
+///     would be disproportionately expensive for a single withdraw.
 /// - HIGH (`pool_size > passive_upper`): same filter, but no fallback —
 ///   the contract requires `input_num > change_num`.
 ///
@@ -507,8 +510,30 @@ pub fn choose_utxos_random<R: rand::Rng>(
             .filter(|(_, u)| u128::from(u.balance) <= net_amount)
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+
         match select_and_finalize(target, net_amount, filtered, pool_size, params, rng) {
-            Ok(selection) => return Ok(selection),
+            Ok(selection) => {
+                if in_high_zone {
+                    // HIGH zone: contract forbids `input_num <= change_num`, so
+                    // we have no fallback — return whatever merge produced.
+                    return Ok(selection);
+                }
+                // Early-merge zone: cap how aggressive consolidation may be.
+                // If merge inflates input count by more than 1 over the
+                // unfiltered greedy baseline, prefer the baseline and let
+                // active management handle consolidation separately.
+                let baseline_n =
+                    determine_optimal_n(target, &utxos, params.max_withdrawal_input_number)
+                        .ok();
+                let too_fat = matches!(
+                    baseline_n,
+                    Some(n) if selection.selected.len() > n + 1
+                );
+                if !too_fat {
+                    return Ok(selection);
+                }
+                // Too fat: fall through to unfiltered selection.
+            }
             Err(e) if in_high_zone => return Err(e),
             Err(_) => {
                 // Early-merge zone: fall through to unfiltered selection.
