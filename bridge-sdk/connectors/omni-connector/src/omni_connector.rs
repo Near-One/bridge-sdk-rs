@@ -578,19 +578,14 @@ impl OmniConnector {
     ) -> Result<FinBtcTransferArgs> {
         let near_bridge_client = self.near_bridge_client()?;
 
-        let PrefetchedTxData {
-            proof: proof_data,
-            parsed_tx: btc_tx,
-        } = match prefetched {
+        let PrefetchedTxData { proof: proof_data } = match prefetched {
             Some(p) => p,
             None => {
                 let proof = self
                     .utxo_bridge_client(chain)?
                     .extract_btc_proof(&tx_hash)
                     .await?;
-                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
-                    .map_err(BridgeSdkError::InvalidArgument)?;
-                PrefetchedTxData { proof, parsed_tx }
+                PrefetchedTxData { proof }
             }
         };
 
@@ -612,13 +607,13 @@ impl OmniConnector {
                 .get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
-        let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
+        let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
-                btc_tx.output.len()
+                proof_data.outputs.len()
             ))
         })?;
-        let deposit_amount = u128::from(deposit_output.value.to_sat());
+        let deposit_amount = u128::from(deposit_output.value_sat);
 
         // The contract dispatches to `get_extra_msg_confirmations` only when
         // calling `verify_deposit` with `extra_msg` set. `safe_verify_deposit`
@@ -760,29 +755,24 @@ impl OmniConnector {
     ) -> Result<BtcRequestRefundArgs> {
         let near_bridge_client = self.near_bridge_client()?;
 
-        let PrefetchedTxData {
-            proof: proof_data,
-            parsed_tx: btc_tx,
-        } = match prefetched {
+        let PrefetchedTxData { proof: proof_data } = match prefetched {
             Some(p) => p,
             None => {
                 let proof = self
                     .utxo_bridge_client(ChainKind::Btc)?
                     .extract_btc_proof(btc_tx_hash)
                     .await?;
-                let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
-                    .map_err(BridgeSdkError::InvalidArgument)?;
-                PrefetchedTxData { proof, parsed_tx }
+                PrefetchedTxData { proof }
             }
         };
 
-        let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
+        let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
-                btc_tx.output.len()
+                proof_data.outputs.len()
             ))
         })?;
-        let deposit_amount = u128::from(deposit_output.value.to_sat());
+        let deposit_amount = u128::from(deposit_output.value_sat);
 
         self.ensure_sufficient_btc_confirmations(
             ChainKind::Btc,
@@ -987,21 +977,19 @@ impl OmniConnector {
             .extract_btc_proof(tx_hash)
             .await?;
 
-        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
-            .map_err(BridgeSdkError::InvalidArgument)?;
-
-        let matches: Vec<usize> = parsed_tx
-            .output
+        let expected_script_bytes = expected_script.as_bytes();
+        let matches: Vec<usize> = proof
+            .outputs
             .iter()
             .enumerate()
-            .filter_map(|(i, out)| (out.script_pubkey == expected_script).then_some(i))
+            .filter_map(|(i, out)| (out.script_pubkey == expected_script_bytes).then_some(i))
             .collect();
 
         match matches.as_slice() {
             [] => Err(BridgeSdkError::InvalidArgument(format!(
                 "No output in tx {tx_hash} matches deposit address `{expected_address}`. Verify the recipient/fee/msg match the original deposit."
             ))),
-            [v] => Ok((*v, PrefetchedTxData { proof, parsed_tx })),
+            [v] => Ok((*v, PrefetchedTxData { proof })),
             many => Err(BridgeSdkError::InvalidArgument(format!(
                 "Ambiguous: multiple outputs in tx {tx_hash} match deposit address `{expected_address}`. Re-run with vout set to one of: {many:?}"
             ))),
@@ -1033,18 +1021,16 @@ impl OmniConnector {
             .extract_btc_proof(tx_hash)
             .await?;
 
-        let parsed_tx = utxo_utils::try_bytes_to_btc_transaction(&proof.tx_bytes)
-            .map_err(BridgeSdkError::InvalidArgument)?;
-
         if let Some(v) = prefer_vout {
-            let out = parsed_tx.output.get(v).ok_or_else(|| {
+            let out = proof.outputs.get(v).ok_or_else(|| {
                 BridgeSdkError::InvalidArgument(format!(
                     "vout {v} out of range; tx {tx_hash} has {} outputs",
-                    parsed_tx.output.len()
+                    proof.outputs.len()
                 ))
             })?;
-            let addr = UTXOAddress::from_script(&out.script_pubkey, chain, network)
-                .ok_or_else(|| {
+            let script = bitcoin::Script::from_bytes(&out.script_pubkey);
+            let addr =
+                UTXOAddress::from_script(script, chain, network).ok_or_else(|| {
                     BridgeSdkError::InvalidArgument(format!(
                         "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
                     ))
@@ -1057,12 +1043,13 @@ impl OmniConnector {
                         "vout {v} in tx {tx_hash} is not a deposit address tracked by the bridge indexer"
                     ))
                 })?;
-            return Ok((v, msg, PrefetchedTxData { proof, parsed_tx }));
+            return Ok((v, msg, PrefetchedTxData { proof }));
         }
 
         let mut found: Option<(usize, DepositMsg)> = None;
-        for (i, out) in parsed_tx.output.iter().enumerate() {
-            let Some(addr) = UTXOAddress::from_script(&out.script_pubkey, chain, network) else {
+        for (i, out) in proof.outputs.iter().enumerate() {
+            let script = bitcoin::Script::from_bytes(&out.script_pubkey);
+            let Some(addr) = UTXOAddress::from_script(script, chain, network) else {
                 continue;
             };
             let Some(msg) = near_bridge_client
@@ -1084,7 +1071,7 @@ impl OmniConnector {
                 "No output in tx {tx_hash} matches a deposit address tracked by the bridge indexer. Pass deposit args explicitly to disambiguate."
             ))
         })?;
-        Ok((vout, msg, PrefetchedTxData { proof, parsed_tx }))
+        Ok((vout, msg, PrefetchedTxData { proof }))
     }
 
     pub async fn active_utxo_management(

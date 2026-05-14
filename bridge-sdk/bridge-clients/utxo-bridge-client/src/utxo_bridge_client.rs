@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::{marker::PhantomData, str::FromStr};
 
 use crate::error::UtxoClientError;
-use crate::types::{TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeTransactionData};
+use crate::types::{TxOutputView, TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeTransactionData};
 
 pub mod error;
 pub mod types;
@@ -66,19 +66,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         &self,
         tx_hash: &str,
     ) -> Result<BlockHash, UtxoClientError> {
-        let result = self.get_raw_transaction(tx_hash).await?;
-
-        let hash_str = result["blockhash"].as_str().ok_or_else(|| {
-            UtxoClientError::RpcError(format!(
-                "Block hash not found in transaction data. Data: {result}",
-            ))
-        })?;
-
-        let block_hash = BlockHash::from_str(hash_str).map_err(|e| {
-            UtxoClientError::RpcError(format!("Block hash parsing error: {e}. Data: {result}",))
-        })?;
-
-        Ok(block_hash)
+        let raw_tx = self.get_raw_transaction(tx_hash).await?;
+        parse_block_hash(&raw_tx)
     }
 
     pub async fn get_block_height_by_block_hash(
@@ -176,7 +165,9 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn extract_btc_proof(&self, tx_hash: &str) -> Result<TxProof, UtxoClientError> {
-        let block_hash = self.get_block_hash_by_tx_hash(tx_hash).await?;
+        let raw_tx = self.get_raw_transaction(tx_hash).await?;
+        let block_hash = parse_block_hash(&raw_tx)?;
+        let outputs = parse_outputs(&raw_tx)?;
         let block_height = self
             .get_block_height_by_block_hash(&block_hash.to_string())
             .await?;
@@ -237,6 +228,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 .try_into()
                 .expect("Error on convert usize into u64"),
             merkle_proof: merkle_proof_str,
+            outputs,
         })
     }
 
@@ -387,5 +379,145 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
             ))
         })
+    }
+}
+
+fn parse_block_hash(raw_tx: &Value) -> Result<BlockHash, UtxoClientError> {
+    let hash_str = raw_tx["blockhash"].as_str().ok_or_else(|| {
+        UtxoClientError::RpcError(format!(
+            "Block hash not found in transaction data. Data: {raw_tx}",
+        ))
+    })?;
+
+    BlockHash::from_str(hash_str).map_err(|e| {
+        UtxoClientError::RpcError(format!("Block hash parsing error: {e}. Data: {raw_tx}",))
+    })
+}
+
+/// Build a chain-agnostic view of a transaction's transparent outputs from
+/// the verbose `getrawtransaction` JSON. Reading from the JSON (rather than
+/// re-deserializing `tx_bytes`) is the only practical path that works for
+/// both Bitcoin and Zcash, whose whole-tx serializations are incompatible.
+fn parse_outputs(raw_tx: &Value) -> Result<Vec<TxOutputView>, UtxoClientError> {
+    let vout = raw_tx["vout"].as_array().ok_or_else(|| {
+        UtxoClientError::RpcError(format!("vout not found in transaction data. Data: {raw_tx}"))
+    })?;
+
+    vout.iter()
+        .enumerate()
+        .map(|(i, out)| {
+            let value_btc = out["value"].as_f64().ok_or_else(|| {
+                UtxoClientError::RpcError(format!(
+                    "vout[{i}] has no value. Transaction data: {raw_tx}"
+                ))
+            })?;
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                clippy::as_conversions
+            )]
+            let value_sat = (value_btc * SATS_PER_BTC) as u64;
+
+            let script_hex = out["scriptPubKey"]["hex"].as_str().ok_or_else(|| {
+                UtxoClientError::RpcError(format!(
+                    "vout[{i}] missing scriptPubKey.hex. Transaction data: {raw_tx}"
+                ))
+            })?;
+            let script_pubkey = hex::decode(script_hex).map_err(|e| {
+                UtxoClientError::RpcError(format!(
+                    "vout[{i}] has invalid scriptPubKey.hex: {e}. Transaction data: {raw_tx}"
+                ))
+            })?;
+
+            Ok(TxOutputView {
+                value_sat,
+                script_pubkey,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_outputs_bitcoin_style() {
+        // Shape returned by bitcoind getrawtransaction verbose=true.
+        let raw = serde_json::json!({
+            "vout": [
+                {
+                    "value": 0.001,
+                    "n": 0,
+                    "scriptPubKey": {
+                        "hex": "76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac",
+                        "type": "pubkeyhash"
+                    }
+                },
+                {
+                    "value": 0.5,
+                    "n": 1,
+                    "scriptPubKey": {
+                        "hex": "0014751e76e8199196d454941c45d1b3a323f1433bd6",
+                        "type": "witness_v0_keyhash"
+                    }
+                }
+            ]
+        });
+
+        let outs = parse_outputs(&raw).unwrap();
+        assert_eq!(outs.len(), 2);
+        assert_eq!(outs[0].value_sat, 100_000);
+        assert_eq!(
+            outs[0].script_pubkey,
+            hex::decode("76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac").unwrap()
+        );
+        assert_eq!(outs[1].value_sat, 50_000_000);
+    }
+
+    #[test]
+    fn parse_outputs_zcash_style() {
+        // Shape returned by zcashd / zebrad getrawtransaction verbose=1: same
+        // schema for the transparent vout we care about.
+        let raw = serde_json::json!({
+            "vout": [
+                {
+                    "value": 0.00001,
+                    "n": 0,
+                    "scriptPubKey": {
+                        "hex": "76a914a0b0c0d0e0f000112233445566778899aabbccdd88ac",
+                        "type": "pubkeyhash",
+                        "addresses": ["t1abcdef"]
+                    }
+                }
+            ]
+        });
+
+        let outs = parse_outputs(&raw).unwrap();
+        assert_eq!(outs.len(), 1);
+        assert_eq!(outs[0].value_sat, 1000);
+        assert_eq!(outs[0].script_pubkey.len(), 25);
+    }
+
+    #[test]
+    fn parse_outputs_rejects_missing_vout() {
+        let raw = serde_json::json!({});
+        assert!(parse_outputs(&raw).is_err());
+    }
+
+    #[test]
+    fn parse_outputs_rejects_missing_script_hex() {
+        let raw = serde_json::json!({
+            "vout": [{"value": 0.1, "scriptPubKey": {}}]
+        });
+        assert!(parse_outputs(&raw).is_err());
+    }
+
+    #[test]
+    fn parse_outputs_rejects_invalid_script_hex() {
+        let raw = serde_json::json!({
+            "vout": [{"value": 0.1, "scriptPubKey": {"hex": "not-hex"}}]
+        });
+        assert!(parse_outputs(&raw).is_err());
     }
 }

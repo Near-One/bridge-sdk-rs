@@ -725,10 +725,6 @@ pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
     deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
 }
 
-pub fn try_bytes_to_btc_transaction(tx_bytes: &[u8]) -> Result<BtcTransaction, String> {
-    deserialize(tx_bytes).map_err(|e| format!("Failed to deserialize BTC tx_bytes: {e}"))
-}
-
 pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
