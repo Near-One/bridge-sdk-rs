@@ -148,9 +148,7 @@ fn choose_random_iterative<R: rand::Rng>(
         let candidate_indices: Vec<usize> = pool
             .iter()
             .enumerate()
-            .filter(|(_, (_, u))| {
-                u128::from(u.balance).saturating_mul(n_u128) >= remaining
-            })
+            .filter(|(_, (_, u))| u128::from(u.balance).saturating_mul(n_u128) >= remaining)
             .map(|(i, _)| i)
             .collect();
 
@@ -268,10 +266,7 @@ fn validate_and_repair(
             return Err("Selection became empty during repair".to_string());
         }
 
-        let sum: u128 = selected
-            .iter()
-            .map(|(_, u)| u128::from(u.balance))
-            .sum();
+        let sum: u128 = selected.iter().map(|(_, u)| u128::from(u.balance)).sum();
 
         let change = sum
             .checked_sub(net_amount)
@@ -324,8 +319,7 @@ fn validate_and_repair(
             let need_split = num_inputs > 1 && change >= max_change_amount;
 
             let change_amounts = if need_split {
-                let max_per_piece = std::cmp::min(max_change_amount, min_input)
-                    .saturating_sub(1);
+                let max_per_piece = std::cmp::min(max_change_amount, min_input).saturating_sub(1);
                 split_change(change, min_change_amount, max_per_piece, max_change_number)?
             } else {
                 vec![change]
@@ -356,7 +350,7 @@ fn validate_and_repair(
 /// - HIGH zone (`pool_size > passive_upper`): require `input_num > change_num`.
 ///   No automatic adjustment — returns `Err` if violated.
 /// - Healthy zone: no-op.
-fn enforce_passive_management(
+pub(crate) fn enforce_passive_management(
     selection: UtxoSelection,
     pool_size: u32,
     params: &WithdrawSelectionParams,
@@ -532,8 +526,7 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
 ) -> Result<UtxoSelection, String> {
     let mut last_user_payment: u128 = 0;
     for _ in 0..MAX_NO_PAYMENT_RETRIES {
-        let selection =
-            choose_utxos_random(net_amount, utxos.clone(), pool_size, params, rng)?;
+        let selection = choose_utxos_random(net_amount, utxos.clone(), pool_size, params, rng)?;
         if selection.user_payment == 0 {
             return Ok(selection);
         }
