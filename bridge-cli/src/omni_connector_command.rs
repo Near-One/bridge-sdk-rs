@@ -788,6 +788,13 @@ pub enum OmniConnectorSubCommand {
     ActiveUTXOManagement {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
+        #[clap(
+            long,
+            help = "Override the max number of UTXO inputs to consume in the rebalancing tx (defaults to the value from the bridge config)"
+        )]
+        max_input_number: Option<u8>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1697,9 +1704,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
+        OmniConnectorSubCommand::ActiveUTXOManagement {
+            chain,
+            fee_rate,
+            max_input_number,
+            config_cli,
+        } => {
             omni_connector(network, config_cli)
-                .active_utxo_management(chain.into(), TransactionOptions::default())
+                .active_utxo_management(
+                    chain.into(),
+                    fee_rate,
+                    max_input_number,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

@@ -30,9 +30,9 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
-    BtcConfirmationContext, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
-    FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
+    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
+    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -608,8 +608,7 @@ impl OmniConnector {
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
                 refund_address,
-            } => near_bridge_client
-                .get_deposit_msg_for_near_account(recipient_id, refund_address),
+            } => near_bridge_client.get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
         let deposit_output = btc_tx.output.get(vout).ok_or_else(|| {
@@ -1043,8 +1042,8 @@ impl OmniConnector {
                     parsed_tx.output.len()
                 ))
             })?;
-            let addr = UTXOAddress::from_script(&out.script_pubkey, chain, network)
-                .ok_or_else(|| {
+            let addr =
+                UTXOAddress::from_script(&out.script_pubkey, chain, network).ok_or_else(|| {
                     BridgeSdkError::InvalidArgument(format!(
                         "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
                     ))
@@ -1090,10 +1089,15 @@ impl OmniConnector {
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
+        fee_rate: Option<u64>,
+        max_input_number: Option<u8>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
 
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -1107,6 +1111,8 @@ impl OmniConnector {
             .get_active_management_limit(chain)
             .await?;
 
+        let max_input_number = max_input_number.unwrap_or(max_active_utxo_management_input_number);
+
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
@@ -1118,7 +1124,7 @@ impl OmniConnector {
                 active_management_lower_limit.try_into().unwrap(),
                 active_management_upper_limit.try_into().unwrap(),
             ),
-            max_active_utxo_management_input_number.into(),
+            max_input_number.into(),
             max_active_utxo_management_output_number.into(),
             min_deposit_amount.try_into().unwrap(),
             chain,
