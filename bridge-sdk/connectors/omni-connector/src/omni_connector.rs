@@ -30,9 +30,9 @@ use omni_types::{
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
-    BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
-    BtcConfirmationContext, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
-    FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
+    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
+    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -603,8 +603,7 @@ impl OmniConnector {
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
                 refund_address,
-            } => near_bridge_client
-                .get_deposit_msg_for_near_account(recipient_id, refund_address),
+            } => near_bridge_client.get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
         let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
@@ -1029,12 +1028,11 @@ impl OmniConnector {
                 ))
             })?;
             let script = bitcoin::Script::from_bytes(&out.script_pubkey);
-            let addr =
-                UTXOAddress::from_script(script, chain, network).ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument(format!(
-                        "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
-                    ))
-                })?;
+            let addr = UTXOAddress::from_script(script, chain, network).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "vout {v} in tx {tx_hash} has an unrecognized script_pubkey"
+                ))
+            })?;
             let msg = near_bridge_client
                 .get_deposit_msg_by_address(chain, &addr.to_string())
                 .await?

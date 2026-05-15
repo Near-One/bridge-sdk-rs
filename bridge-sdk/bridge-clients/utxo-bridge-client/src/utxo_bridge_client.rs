@@ -14,8 +14,6 @@ use crate::types::{TxOutputView, TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeT
 pub mod error;
 pub mod types;
 
-const SATS_PER_BTC: f64 = 100_000_000.0;
-
 pub enum AuthOptions {
     None,
     XApiKey(String),
@@ -145,12 +143,13 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "Amount not found in output. Transaction data: {result}",
             ))
         })?;
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            clippy::as_conversions
-        )]
-        let amount = (amount_btc * SATS_PER_BTC) as u64;
+        let amount = bitcoin::Amount::from_btc(amount_btc)
+            .map_err(|e| {
+                UtxoClientError::RpcError(format!(
+                    "Invalid output value {amount_btc}: {e}. Transaction data: {result}"
+                ))
+            })?
+            .to_sat();
 
         let vout: u32 = output_index.try_into().map_err(|_| {
             UtxoClientError::RpcError(format!("Output index too large: {output_index}"))
@@ -400,7 +399,9 @@ fn parse_block_hash(raw_tx: &Value) -> Result<BlockHash, UtxoClientError> {
 /// both Bitcoin and Zcash, whose whole-tx serializations are incompatible.
 fn parse_outputs(raw_tx: &Value) -> Result<Vec<TxOutputView>, UtxoClientError> {
     let vout = raw_tx["vout"].as_array().ok_or_else(|| {
-        UtxoClientError::RpcError(format!("vout not found in transaction data. Data: {raw_tx}"))
+        UtxoClientError::RpcError(format!(
+            "vout not found in transaction data. Data: {raw_tx}"
+        ))
     })?;
 
     vout.iter()
@@ -411,12 +412,19 @@ fn parse_outputs(raw_tx: &Value) -> Result<Vec<TxOutputView>, UtxoClientError> {
                     "vout[{i}] has no value. Transaction data: {raw_tx}"
                 ))
             })?;
-            #[allow(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                clippy::as_conversions
-            )]
-            let value_sat = (value_btc * SATS_PER_BTC) as u64;
+            // `bitcoin::Amount::from_btc` does the f64 → sat conversion with
+            // a round-to-nearest step (avoiding the `(0.07 * 1e8) as u64 ==
+            // 6_999_999` off-by-one) and rejects negative / NaN / over-supply
+            // inputs. f64 mantissa precision is still the ceiling — values
+            // with more than ~15 significant decimal digits may still drop a
+            // sat — but BTC/ZEC RPC amounts are well under that bound.
+            let value_sat = bitcoin::Amount::from_btc(value_btc)
+                .map_err(|e| {
+                    UtxoClientError::RpcError(format!(
+                        "vout[{i}] has invalid value {value_btc}: {e}. Transaction data: {raw_tx}"
+                    ))
+                })?
+                .to_sat();
 
             let script_hex = out["scriptPubKey"]["hex"].as_str().ok_or_else(|| {
                 UtxoClientError::RpcError(format!(
@@ -497,6 +505,32 @@ mod tests {
         assert_eq!(outs.len(), 1);
         assert_eq!(outs[0].value_sat, 1000);
         assert_eq!(outs[0].script_pubkey.len(), 25);
+    }
+
+    #[test]
+    fn parse_outputs_handles_float_precision_landmine() {
+        // 0.07_f64 * 1e8 == 6_999_999.999_999_998 in IEEE-754. A naive
+        // `(value * 1e8) as u64` truncates to 6_999_999; `Amount::from_btc`
+        // rounds to nearest and returns 7_000_000.
+        let raw = serde_json::json!({
+            "vout": [{
+                "value": 0.07,
+                "scriptPubKey": {"hex": "00"}
+            }]
+        });
+        let outs = parse_outputs(&raw).unwrap();
+        assert_eq!(outs[0].value_sat, 7_000_000);
+    }
+
+    #[test]
+    fn parse_outputs_rejects_negative_value() {
+        let raw = serde_json::json!({
+            "vout": [{
+                "value": -0.5,
+                "scriptPubKey": {"hex": "00"}
+            }]
+        });
+        assert!(parse_outputs(&raw).is_err());
     }
 
     #[test]

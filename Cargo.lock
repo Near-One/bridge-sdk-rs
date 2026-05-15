@@ -11108,7 +11108,7 @@ dependencies = [
 
 [[package]]
 name = "utxo-utils"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "bitcoin",
  "k256",
