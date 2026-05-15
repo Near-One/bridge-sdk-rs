@@ -2,9 +2,13 @@
 //!
 //! Goal: pick the **maximum** number of UTXOs allowed by a `max_gas_fee`
 //! budget while still covering `net_amount` and producing valid change under
-//! the contract's `change_i < min_input` and `change_num <= max_change_number`
-//! rules. Used to consolidate small UTXOs within a single withdrawal so the
-//! pool drifts toward fewer, larger UTXOs over time.
+//! the `change_i < max_change_amount` and `change_num <= max_change_number`
+//! rules. The contract's `change_i < min_input` constraint is intentionally
+//! **not** enforced here — relaxing it lets a single large change piece
+//! absorb the surplus from many small fillers instead of forcing a split
+//! into many sub-`min_filler` pieces (which fragments the pool with dust).
+//! Used to consolidate small UTXOs within a single withdrawal so the pool
+//! drifts toward fewer, larger UTXOs over time.
 //!
 //! ## Algorithm
 //!
@@ -21,17 +25,18 @@
 //!           UTXO whose balance brings the total to either:
 //!             - `net_amount` exactly (absorption, no change), or
 //!             - `net_amount + change` where
-//!               `change ∈ [min_change_amount, max_change_number * min_filler)`.
+//!               `change ∈ [min_change_amount, max_change_number * max_change_amount)`.
 //!      - Compute the actual fee using the *real* output count produced by
 //!        the candidate; reject if it exceeds `max_gas_fee`.
 //!      - Return the first candidate that passes the fee check and
 //!        `enforce_passive_management`.
 //!
 //! Picking `filler_start = 0` consumes the `K-1` smallest UTXOs — maximum
-//! consolidation. Larger `filler_start` widens the change window (bigger
-//! `min_filler`) at the cost of consolidating fewer smalls. The outer loop
-//! tries `K_max` first so the returned selection uses as much of the gas
-//! budget as the pool allows.
+//! consolidation. With the `< min_input` constraint relaxed the change
+//! window no longer depends on `min_filler`, so larger `filler_start` is
+//! rarely needed; it remains useful only when no anchor exists for the
+//! `filler_start = 0` selection. The outer loop tries `K_max` first so the
+//! returned selection uses as much of the gas budget as the pool allows.
 //!
 //! ## Why "max within budget" not "min fee"
 //!
@@ -213,9 +218,10 @@ fn try_single_input(
             continue;
         }
 
-        // change >= min_change_amount && change < bal.
+        // change >= min_change_amount.
+        // Change-piece cap is `max_change_amount` only — `< min_input` is not enforced.
         let change_amounts = if change >= params.max_change_amount {
-            let max_per_piece = std::cmp::min(params.max_change_amount, bal).saturating_sub(1);
+            let max_per_piece = params.max_change_amount.saturating_sub(1);
             if max_per_piece == 0 {
                 continue;
             }
@@ -260,13 +266,13 @@ fn try_anchor_search(
     }
 
     let sum_fillers: u128 = fillers.iter().map(|(_, u)| u128::from(u.balance)).sum();
-    let min_filler = u128::from(fillers[0].1.balance);
     let input_count = fillers.len() + 1;
 
-    // Each change piece must be < min_input (= min_filler, since `candidates`
-    // are sorted ≥ all fillers) and < max_change_amount, so total change
-    // can be at most max_change_number * (min(max_change_amount, min_filler) - 1).
-    let max_per_piece = std::cmp::min(params.max_change_amount, min_filler).saturating_sub(1);
+    // Each change piece must be < max_change_amount only — the contract's
+    // `change_i < min_input` constraint is intentionally relaxed here so a
+    // single large change piece can absorb the surplus instead of fragmenting
+    // into many sub-`min_filler` pieces.
+    let max_per_piece = params.max_change_amount.saturating_sub(1);
     if max_per_piece == 0 {
         return None;
     }
@@ -309,7 +315,7 @@ fn try_anchor_search(
         let total = sum_fillers + anchor_bal;
         let change = total - net_amount;
 
-        let change_amounts = if change < min_filler && change < params.max_change_amount {
+        let change_amounts = if change < params.max_change_amount {
             vec![change]
         } else {
             match split_change(
@@ -433,20 +439,18 @@ mod tests {
         );
 
         if !selection.change_amounts.is_empty() {
-            let min_input = selection
-                .selected
-                .iter()
-                .map(|(_, u)| u128::from(u.balance))
-                .min()
-                .unwrap();
+            // `change_i < min_input` is intentionally not enforced — the algorithm
+            // relaxed that contract rule. Each piece still satisfies the looser
+            // `min_change_amount <= c < max_change_amount` bounds.
             for &c in &selection.change_amounts {
                 assert!(
                     c >= params.min_change_amount,
                     "change_piece {c} < min_change_amount"
                 );
                 assert!(
-                    c < min_input,
-                    "change_piece {c} not < min_input {min_input}"
+                    c < params.max_change_amount,
+                    "change_piece {c} not < max_change_amount {}",
+                    params.max_change_amount
                 );
             }
         }
