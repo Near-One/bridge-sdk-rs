@@ -1,4 +1,7 @@
 pub mod address;
+pub mod anchor_fill;
+
+pub use anchor_fill::choose_utxos_anchor_fill;
 
 use crate::address::UTXOAddress;
 use address::Network;
@@ -205,7 +208,7 @@ pub struct WithdrawSelectionParams {
 /// Splits `change` into `n` outputs each strictly less than `max_per_piece`
 /// and at least `min_change_amount`. Returns Err if no valid split exists
 /// within `max_change_number`.
-fn split_change(
+pub(crate) fn split_change(
     change: u128,
     min_change_amount: u128,
     max_per_piece: u128,
