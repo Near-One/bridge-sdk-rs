@@ -9,8 +9,11 @@
 //! ## Algorithm
 //!
 //! 1. Sort the pool ascending by balance.
-//! 2. Compute `K_max = min(max_inputs_by_gas, max_withdrawal_input_number, pool.len())`.
+//! 2. Compute `K_max = min(max_withdrawal_input_number, pool.len())`.
 //! 3. For each `K` from `K_max` down to `1`:
+//!      - Skip `K` if the best-case fee (`get_gas_fee(K, 1, …)`, absorption /
+//!        orchard with one output) already exceeds `max_gas_fee` — no
+//!        selection at this `K` can fit the budget.
 //!      - For each `filler_start` in `0..=pool.len() - K`:
 //!         - Take `K-1` consecutive UTXOs starting at `filler_start` as
 //!           "fillers" (the UTXOs we want to consume).
@@ -19,7 +22,10 @@
 //!             - `net_amount` exactly (absorption, no change), or
 //!             - `net_amount + change` where
 //!               `change ∈ [min_change_amount, max_change_number * min_filler)`.
-//!      - Return the first feasible `(K, filler_start, anchor)`.
+//!      - Compute the actual fee using the *real* output count produced by
+//!        the candidate; reject if it exceeds `max_gas_fee`.
+//!      - Return the first candidate that passes the fee check and
+//!        `enforce_passive_management`.
 //!
 //! Picking `filler_start = 0` consumes the `K-1` smallest UTXOs — maximum
 //! consolidation. Larger `filler_start` widens the change window (bigger
@@ -36,7 +42,8 @@
 //! consolidates as a side-effect of normal withdrawals.
 
 use crate::{
-    enforce_passive_management, split_change, UtxoSelection, WithdrawSelectionParams, UTXO,
+    enforce_passive_management, get_gas_fee, split_change, UtxoSelection, WithdrawSelectionParams,
+    UTXO,
 };
 use omni_types::ChainKind;
 use std::collections::HashMap;
@@ -79,77 +86,66 @@ pub fn choose_utxos_anchor_fill(
     let mut sorted: Vec<(String, UTXO)> = utxos.into_iter().collect();
     sorted.sort_by_key(|(_, u)| u.balance);
 
-    // Worst-case num_output makes the fee bound hold regardless of how the
-    // change finally splits (1 target + up to max_change_number change outputs).
-    let worst_case_num_output = 1u64 + params.max_change_number as u64;
-    let k_max_by_gas =
-        max_inputs_by_gas(chain, fee_rate, max_gas_fee, worst_case_num_output, orchard);
-
-    let k_max = std::cmp::min(
-        std::cmp::min(k_max_by_gas, params.max_withdrawal_input_number),
-        sorted.len(),
-    );
+    // K is bounded only by what the contract and pool permit. The gas budget is
+    // enforced per-candidate against the actual output count rather than via a
+    // pessimistic upfront `worst_case_num_output` bound, which would refuse
+    // budgets that real selections (small num_output) can easily fit.
+    let k_max = std::cmp::min(params.max_withdrawal_input_number, sorted.len());
 
     if k_max == 0 {
         return Err(format!(
-            "No inputs admissible within max_gas_fee={max_gas_fee} (k_max_by_gas={k_max_by_gas}, \
-             max_withdrawal_input_number={}, pool_size={})",
+            "No inputs available (max_withdrawal_input_number={}, pool_size={})",
             params.max_withdrawal_input_number,
             sorted.len()
         ));
     }
 
-    // For each K, find a candidate and run it through `enforce_passive_management`
-    // — same LOW/HIGH zone post-check as `choose_utxos_random`. LOW zone may
-    // re-split the change to satisfy `input_num < change_num`; if that fails for
-    // the candidate at K, fall back to a smaller K (LOW-zone is easier to meet
-    // with fewer inputs since fewer change pieces are needed).
-    let mut last_zone_err: Option<String> = None;
+    // For each K, find a candidate, gate it on the gas budget using the actual
+    // output count, and run it through `enforce_passive_management` (same
+    // LOW/HIGH zone post-check as `choose_utxos_random`). Fall back to smaller
+    // K on any rejection.
+    let mut last_err: Option<String> = None;
     for k in (1..=k_max).rev() {
+        // Skip K when even the best-case fee (absorption / orchard, 1 output)
+        // exceeds the budget — no candidate at this K can fit.
+        let best_case_fee = get_gas_fee(chain, k as u64, 1, fee_rate, orchard);
+        if best_case_fee > max_gas_fee {
+            last_err = Some(format!(
+                "best-case fee {best_case_fee} > max_gas_fee {max_gas_fee} at K={k}"
+            ));
+            continue;
+        }
+
         let Some(selection) = try_k_inputs(k, net_amount, &sorted, params, in_high_zone) else {
             continue;
         };
+
+        let actual_num_output = if orchard {
+            1
+        } else {
+            1 + selection.change_amounts.len() as u64
+        };
+        let actual_fee = get_gas_fee(chain, k as u64, actual_num_output, fee_rate, orchard);
+        if actual_fee > max_gas_fee {
+            last_err = Some(format!(
+                "actual fee {actual_fee} > max_gas_fee {max_gas_fee} at K={k} \
+                 with {actual_num_output} outputs"
+            ));
+            continue;
+        }
+
         match enforce_passive_management(selection, pool_size, params) {
             Ok(adjusted) => return Ok(adjusted),
-            Err(e) => last_zone_err = Some(e),
+            Err(e) => last_err = Some(e),
         }
     }
 
-    Err(last_zone_err.unwrap_or_else(|| {
+    Err(last_err.unwrap_or_else(|| {
         format!(
             "No feasible selection for net_amount={net_amount} (k_max={k_max}, pool_size={})",
             sorted.len()
         )
     }))
-}
-
-/// Upper bound on the number of inputs allowed by a `max_gas_fee` budget,
-/// assuming `num_output` outputs. Inverts the `get_gas_fee` formula in
-/// [`crate::get_gas_fee`].
-fn max_inputs_by_gas(
-    chain: ChainKind,
-    fee_rate: u64,
-    max_gas_fee: u64,
-    num_output: u64,
-    orchard: bool,
-) -> usize {
-    if chain == ChainKind::Zcash {
-        // fee = 5000 * max(num_input, num_output) + (orchard ? 5000 : 0)
-        let orchard_offset = if orchard { 5000u64 } else { 0 };
-        let budget = max_gas_fee.saturating_sub(orchard_offset);
-        usize::try_from(budget / 5000).unwrap_or(usize::MAX)
-    } else {
-        // fee = (fee_rate * (12 + num_input * 68 + num_output * 31)) / 1024 + 141
-        if fee_rate == 0 {
-            return usize::MAX;
-        }
-        let budget = max_gas_fee.saturating_sub(141);
-        let tx_size_budget = budget.saturating_mul(1024) / fee_rate;
-        let inputs_size_budget = tx_size_budget
-            .saturating_sub(12)
-            .saturating_sub(num_output.saturating_mul(31));
-        usize::try_from(inputs_size_budget / 68).unwrap_or(usize::MAX)
-    }
 }
 
 fn try_k_inputs(
@@ -475,18 +471,23 @@ mod tests {
             "\n=== anchor_fill | amount={net_amount} sat | fee_rate={fee_rate} | pool=100 tiered ===\n"
         );
         println!(
-            "{:>12} | {:>8} | {:>6} | {:>7} | {:>7}",
-            "max_gas_fee", "k_max", "inputs", "outputs", "fee"
+            "{:>12} | {:>10} | {:>6} | {:>7} | {:>7}",
+            "max_gas_fee", "k_max_opt", "inputs", "outputs", "fee"
         );
-        println!("{}", "-".repeat(56));
+        println!("{}", "-".repeat(58));
 
         for &budget in budgets {
-            let worst_out = 1u64 + params.max_change_number as u64;
-            let k_max_gas = max_inputs_by_gas(chain, fee_rate, budget, worst_out, false);
-            let k_max = std::cmp::min(
-                std::cmp::min(k_max_gas, params.max_withdrawal_input_number),
-                pool.len(),
-            );
+            // Best-case feasible K (assuming the cheapest possible output count
+            // of 1) — the same per-K filter used inside the algorithm. Shown
+            // for context only; the algorithm doesn't cap on this upfront.
+            let mut k_max_opt = 0;
+            for k in 1..=params.max_withdrawal_input_number {
+                if crate::get_gas_fee(chain, k as u64, 1, fee_rate, false) <= budget {
+                    k_max_opt = k;
+                } else {
+                    break;
+                }
+            }
 
             match choose_utxos_anchor_fill(
                 net_amount,
@@ -504,17 +505,13 @@ mod tests {
                     let fee = crate::get_gas_fee(chain, n_in as u64, n_out as u64, fee_rate, false);
                     assert_invariants(&sel, net_amount, &params);
                     assert!(
-                        n_in <= k_max,
-                        "selected {n_in} > k_max {k_max} for budget {budget}"
-                    );
-                    assert!(
                         fee <= budget,
                         "actual fee {fee} > max_gas_fee {budget} (in={n_in}, out={n_out})"
                     );
-                    println!("{budget:>12} | {k_max:>8} | {n_in:>6} | {n_out:>7} | {fee:>7}");
+                    println!("{budget:>12} | {k_max_opt:>10} | {n_in:>6} | {n_out:>7} | {fee:>7}");
                 }
                 Err(_) => {
-                    println!("{budget:>12} | {k_max:>8} | (infeasible)");
+                    println!("{budget:>12} | {k_max_opt:>10} | (infeasible)");
                 }
             }
         }
@@ -560,6 +557,57 @@ mod tests {
             large.selected.len(),
             small.selected.len()
         );
+    }
+
+    /// Regression: the previous algorithm used a pessimistic upfront bound
+    /// (`worst_case_num_output = 1 + max_change_number`) that resolved to
+    /// `k_max_by_gas = 0` at `fee_rate=10000` / `max_gas_fee=1600` — bailing
+    /// before even trying K=1, even though a real K=1 selection produces only
+    /// 2 outputs and fits the budget with a 1527 sat fee. The per-candidate
+    /// `actual_fee` check fixes this.
+    ///
+    /// Under the old upfront-bound code:
+    ///   - `(1600 - 141) * 1024 / 10000 = 149` (tx-size budget)
+    ///   - `149 - 12 - 6 * 31 = -49` → saturates to 0
+    ///   - `k_max_by_gas = 0` → `choose_utxos_anchor_fill` returns Err.
+    ///
+    /// Under the per-candidate fee check:
+    ///   - K=1 best-case fee = 1224 ≤ 1600, try it.
+    ///   - Actual fee at 1 input + 1 change = 1527 ≤ 1600 ✓.
+    #[test]
+    fn anchor_fill_accepts_budget_that_pessimistic_bound_would_reject() {
+        let chain = ChainKind::Btc;
+        let fee_rate = 10_000u64;
+        let params = default_params();
+        let pool = pool_100_tiered();
+        let pool_size = pool.len() as u32;
+        let net_amount: u128 = 1_500_000;
+        let max_gas_fee = 1_600u64;
+
+        let sel = choose_utxos_anchor_fill(
+            net_amount,
+            pool,
+            pool_size,
+            &params,
+            chain,
+            fee_rate,
+            max_gas_fee,
+            false,
+        )
+        .expect("budget=1600 is feasible — real selection has 2 outputs, not the worst-case 6");
+
+        let actual_fee = crate::get_gas_fee(
+            chain,
+            sel.selected.len() as u64,
+            (1 + sel.change_amounts.len()) as u64,
+            fee_rate,
+            false,
+        );
+        assert!(
+            actual_fee <= max_gas_fee,
+            "actual fee {actual_fee} exceeds budget {max_gas_fee}"
+        );
+        assert_invariants(&sel, net_amount, &params);
     }
 
     #[test]
