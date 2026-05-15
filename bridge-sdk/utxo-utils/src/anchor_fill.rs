@@ -388,12 +388,12 @@ mod tests {
 
     fn default_params() -> WithdrawSelectionParams {
         WithdrawSelectionParams {
-            min_change_amount: 5_000,
-            max_change_amount: 2_000_000,
-            max_withdrawal_input_number: 50,
-            max_change_number: 5,
-            passive_management_lower_limit: 10,
-            passive_management_upper_limit: 200,
+            min_change_amount: 537,
+            max_change_amount: 2_500_000_000,
+            max_withdrawal_input_number: 23,
+            max_change_number: 10,
+            passive_management_lower_limit: 0,
+            passive_management_upper_limit: 6000,
         }
     }
 
