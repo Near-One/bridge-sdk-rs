@@ -79,8 +79,10 @@ pub fn get_gas_fee(
     }
 }
 
-/// Inverse of [`get_gas_fee`] for BTC: returns the largest `fee_rate` (sat/vB)
-/// such that `get_gas_fee(chain, num_input, num_output, fee_rate, orchard) <= max_gas_fee`.
+/// Inverse of [`get_gas_fee`] for BTC: returns the largest `fee_rate` (sat/kvB,
+/// matching the unit produced by `UTXOBridgeClient::get_fee_rate()` and consumed
+/// by [`get_gas_fee`]) such that
+/// `get_gas_fee(chain, num_input, num_output, fee_rate, orchard) <= max_gas_fee`.
 ///
 /// Returns `None` for chains where `gas_fee` does not depend on `fee_rate`
 /// (e.g. Zcash). The result is not guaranteed to satisfy the bound when

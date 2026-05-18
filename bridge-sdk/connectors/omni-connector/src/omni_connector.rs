@@ -106,8 +106,10 @@ impl AnyUtxoClient<'_> {
 
 /// Strategy for picking the UTXO chain `fee_rate` used to size a transaction.
 ///
-/// The wrapped `Option<u64>` is the explicit fee rate (sat/vB) to use, or `None`
-/// to fetch the current network rate from the UTXO bridge client.
+/// The wrapped `Option<u64>` is the explicit fee rate (sat/kvB, matching the
+/// unit produced by `UTXOBridgeClient::get_fee_rate()` and Bitcoin Core's
+/// `estimatesmartfee`), or `None` to fetch the current network rate from the
+/// UTXO bridge client.
 #[derive(Clone, Copy, Debug)]
 pub enum FeeRate {
     /// Use the provided rate (or RPC rate when `None`) verbatim.
