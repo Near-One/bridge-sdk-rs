@@ -22,10 +22,10 @@ use omni_types::prover_args::{
     EvmProof, EvmVerifyProofArgs, MpcVerifyProofArgs, WormholeVerifyProofArgs,
 };
 use omni_types::prover_result::ProofKind;
-use omni_types::{near_events::OmniBridgeEvent, ChainKind};
+use omni_types::{ChainKind, near_events::OmniBridgeEvent};
 use omni_types::{
-    EvmAddress, FastTransfer, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferIdKind,
-    TransferMessage, UnifiedTransferId, UtxoId, H160,
+    EvmAddress, FastTransfer, FastTransferId, FastTransferStatus, Fee, H160, OmniAddress,
+    TransferIdKind, TransferMessage, UnifiedTransferId, UtxoId,
 };
 
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
@@ -46,10 +46,10 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use utxo_bridge_client::{
-    types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
+    types::{Bitcoin, PrefetchedTxData, Zcash},
 };
-use utxo_utils::{get_gas_fee, UTXO};
+use utxo_utils::{UTXO, get_gas_fee};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 #[allow(clippy::struct_field_names)]
@@ -102,6 +102,31 @@ impl AnyUtxoClient<'_> {
     forward_common_utxo_method!(send_tx(tx_bytes: &[u8]) -> std::result::Result<String, UtxoClientError>);
     forward_common_utxo_method!(get_current_height() -> std::result::Result<u64, UtxoClientError>);
     forward_common_utxo_method!(get_bridge_transaction_data(tx_hash: &str, deposit_address: &str) -> std::result::Result<utxo_bridge_client::types::UtxoBridgeTransactionData, UtxoClientError>);
+}
+
+/// Strategy for picking the UTXO chain `fee_rate` used to size a transaction.
+///
+/// The wrapped `Option<u64>` is the explicit fee rate (sat/vB) to use, or `None`
+/// to fetch the current network rate from the UTXO bridge client.
+#[derive(Clone, Copy, Debug)]
+pub enum FeeRate {
+    /// Use the provided rate (or RPC rate when `None`) verbatim.
+    ///
+    /// In `near_submit_btc_transfer`, if the resulting `gas_fee` exceeds the
+    /// on-chain `max_gas_fee` recorded for the transfer, the call fails with
+    /// `BridgeSdkError::InsufficientUTXOGasFee`.
+    Strict(Option<u64>),
+    /// Use the provided rate (or RPC rate when `None`), but lower it as needed
+    /// so the resulting `gas_fee` fits within the on-chain `max_gas_fee` and the
+    /// transaction can be broadcast immediately. When the transfer has no
+    /// `max_gas_fee`, behaves identically to `Strict`.
+    CapToMaxGasFee(Option<u64>),
+}
+
+impl Default for FeeRate {
+    fn default() -> Self {
+        FeeRate::Strict(None)
+    }
 }
 
 pub enum WormholeDeployTokenArgs {
@@ -1259,7 +1284,7 @@ impl OmniConnector {
         chain: ChainKind,
         recipient: String,
         amount: u128,
-        fee_rate: Option<u64>,
+        fee_rate: FeeRate,
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
@@ -1276,6 +1301,7 @@ impl OmniConnector {
                 })?,
                 enable_orchard,
                 fee_rate,
+                max_gas_fee,
             )
             .await?;
 
@@ -1453,7 +1479,7 @@ impl OmniConnector {
         chain: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
-        fee_rate: Option<u64>,
+        fee_rate: FeeRate,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -1615,7 +1641,7 @@ impl OmniConnector {
             block_number: rpc_log.block_number.ok_or_else(|| {
                 BridgeSdkError::EthProofError("Block number missing (pending tx?)".into())
             })?,
-            address: Hash160(rpc_log.address().0 .0),
+            address: Hash160(rpc_log.address().0.0),
             data: format!("0x{}", hex::encode(rpc_log.data().data.as_ref())),
             topics: rpc_log.topics().iter().map(|t| Hash256(t.0)).collect(),
         };
@@ -2582,13 +2608,13 @@ impl OmniConnector {
                     (Some(_), Some(_)) => {
                         return Err(BridgeSdkError::ConfigError(
                             "init_transfer can't have both fee and native_fee".to_string(),
-                        ))
+                        ));
                     }
                     (None, None) => {
                         return Err(BridgeSdkError::ConfigError(
                             "init_transfer missing fee: provide fee or native_fee before calling."
                                 .to_string(),
-                        ))
+                        ));
                     }
                     _ => {}
                 }
@@ -3044,7 +3070,7 @@ impl OmniConnector {
             _ => {
                 return Err(BridgeSdkError::ConfigError(format!(
                     "Light client is not supported for {chain:?} chain"
-                )))
+                )));
             }
         };
 
@@ -3459,11 +3485,10 @@ impl OmniConnector {
         if let Some(status) = self
             .near_get_fast_transfer_status(fast_transfer.id())
             .await?
+            && !status.finalised
         {
-            if !status.finalised {
-                *recipient = OmniAddress::Near(status.relayer.clone());
-                *fee_recipient = status.relayer;
-            }
+            *recipient = OmniAddress::Near(status.relayer.clone());
+            *fee_recipient = status.relayer;
         }
 
         Ok(())
@@ -3540,14 +3565,17 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         enable_orchard: bool,
-        fee_rate: Option<u64>,
+        fee_rate: FeeRate,
+        max_gas_fee: Option<u64>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = match fee_rate {
-            Some(rate) => rate,
-            None => utxo_bridge_client.get_fee_rate().await?,
+        let (initial_rate, allow_cap) = match fee_rate {
+            FeeRate::Strict(Some(rate)) => (rate, false),
+            FeeRate::Strict(None) => (utxo_bridge_client.get_fee_rate().await?, false),
+            FeeRate::CapToMaxGasFee(Some(rate)) => (rate, true),
+            FeeRate::CapToMaxGasFee(None) => (utxo_bridge_client.get_fee_rate().await?, true),
         };
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
@@ -3573,19 +3601,37 @@ impl OmniConnector {
                 BridgeSdkError::UtxoManagementError(format!("Error on get input points: {e}"))
             })?;
 
+        let num_inputs: u64 = selection.selected.len().try_into().unwrap();
         let num_outputs: u64 = if enable_orchard {
             1
         } else {
             1 + selection.change_amounts.len() as u64
         };
-        let gas_fee: u128 = get_gas_fee(
-            chain,
-            selection.selected.len().try_into().unwrap(),
-            num_outputs,
-            fee_rate,
-            enable_orchard,
-        )
-        .into();
+
+        let mut gas_fee: u128 =
+            get_gas_fee(chain, num_inputs, num_outputs, initial_rate, enable_orchard).into();
+
+        // For Bitcoin, gas_fee scales linearly with fee_rate, so we can solve for
+        // the largest fee_rate that fits within max_gas_fee. For Zcash, gas_fee is
+        // independent of fee_rate and `max_fee_rate_for_gas_fee` returns `None`.
+        if allow_cap
+            && let Some(max) = max_gas_fee
+            && gas_fee > u128::from(max)
+            && let Some(new_rate) =
+                utxo_utils::max_fee_rate_for_gas_fee(chain, num_inputs, num_outputs, max)
+        {
+            let new_gas_fee: u128 =
+                get_gas_fee(chain, num_inputs, num_outputs, new_rate, enable_orchard).into();
+            tracing::info!(
+                initial_fee_rate = initial_rate,
+                new_fee_rate = new_rate,
+                initial_gas_fee = u64::try_from(gas_fee).unwrap_or(u64::MAX),
+                new_gas_fee = u64::try_from(new_gas_fee).unwrap_or(u64::MAX),
+                max_gas_fee = max,
+                "Lowered fee_rate to fit max_gas_fee (FeeRate::CapToMaxGasFee)"
+            );
+            gas_fee = new_gas_fee;
+        }
 
         let user_amount = amount
             .checked_sub(gas_fee)
