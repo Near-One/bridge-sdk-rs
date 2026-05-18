@@ -1075,10 +1075,15 @@ impl OmniConnector {
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
+        fee_rate: Option<u64>,
+        max_input_number: Option<u8>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
-        let fee_rate = utxo_bridge_client.get_fee_rate().await?;
+        let fee_rate = match fee_rate {
+            Some(rate) => rate,
+            None => utxo_bridge_client.get_fee_rate().await?,
+        };
 
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -1092,6 +1097,8 @@ impl OmniConnector {
             .get_active_management_limit(chain)
             .await?;
 
+        let max_input_number = max_input_number.unwrap_or(max_active_utxo_management_input_number);
+
         let change_address = near_bridge_client.get_change_address(chain).await?;
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
@@ -1103,7 +1110,7 @@ impl OmniConnector {
                 active_management_lower_limit.try_into().unwrap(),
                 active_management_upper_limit.try_into().unwrap(),
             ),
-            max_active_utxo_management_input_number.into(),
+            max_input_number.into(),
             max_active_utxo_management_output_number.into(),
             min_deposit_amount.try_into().unwrap(),
             chain,
