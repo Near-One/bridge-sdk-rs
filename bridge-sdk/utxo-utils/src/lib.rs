@@ -665,6 +665,11 @@ pub fn get_tx_outs_multi(
 /// not via a transparent output, so `tx_outs[0]` is only an amount sentinel
 /// for downstream code and its `script_pubkey` is intentionally empty.
 /// Change outputs use the transparent `change_address`.
+///
+/// The Orchard tx builder accepts a single optional transparent change
+/// (`get_orchard_raw`'s `tx_out_change: Option<&TxOut>`), so this helper
+/// rejects more than one change amount to fail loudly instead of silently
+/// dropping outputs.
 pub fn get_tx_outs_orchard(
     target_amount: u64,
     change_address: &str,
@@ -672,6 +677,13 @@ pub fn get_tx_outs_orchard(
     chain: ChainKind,
     network: Network,
 ) -> Result<Vec<TxOut>, String> {
+    if change_amounts.len() > 1 {
+        return Err(format!(
+            "Orchard mode supports at most one transparent change output, got {}",
+            change_amounts.len()
+        ));
+    }
+
     let mut res = vec![TxOut {
         value: Amount::from_sat(target_amount),
         script_pubkey: ScriptBuf::new(),
@@ -940,5 +952,21 @@ mod tests {
         assert_eq!(outs.len(), 1);
         assert_eq!(outs[0].value.to_sat(), 100_000);
         assert!(outs[0].script_pubkey.is_empty());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_rejects_multi_change() {
+        let err = get_tx_outs_orchard(
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            &[20_000, 30_000],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect_err("orchard mode must reject more than one change output");
+        assert!(
+            err.contains("at most one transparent change output"),
+            "unexpected error: {err}"
+        );
     }
 }
