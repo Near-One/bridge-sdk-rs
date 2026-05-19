@@ -761,30 +761,98 @@ pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Addre
     ))
 }
 
-pub fn contains_orchard_address(uaddress: &str) -> Result<bool, String> {
-    let (_, ua) = unified::Address::decode(uaddress)
-        .map_err(|err| format!("Invalid unified address {err}"))?;
-    for receiver in ua.items() {
-        if let unified::Receiver::Orchard(_) = receiver {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+pub fn contains_orchard_address(address: &str) -> Result<bool, String> {
+    Ok(zcash_address_receivers(address)?.has_orchard)
 }
 
-pub fn contains_transparent_address(uaddress: &str) -> Result<bool, String> {
-    let (_, ua) = unified::Address::decode(uaddress)
-        .map_err(|err| format!("Invalid unified address {err}"))?;
-    for receiver in ua.items() {
-        if let unified::Receiver::P2pkh(_) = receiver {
-            return Ok(true);
-        }
+pub fn contains_transparent_address(address: &str) -> Result<bool, String> {
+    Ok(zcash_address_receivers(address)?.has_transparent)
+}
 
-        if let unified::Receiver::P2sh(_) = receiver {
-            return Ok(true);
-        }
+struct ZcashAddressReceivers {
+    has_orchard: bool,
+    has_transparent: bool,
+}
+
+impl zcash_address::TryFromAddress for ZcashAddressReceivers {
+    type Error = &'static str;
+
+    fn try_from_transparent_p2pkh(
+        _net: zcash_protocol::consensus::NetworkType,
+        _data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        Ok(Self {
+            has_orchard: false,
+            has_transparent: true,
+        })
     }
 
-    Ok(false)
+    fn try_from_transparent_p2sh(
+        _net: zcash_protocol::consensus::NetworkType,
+        _data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        Ok(Self {
+            has_orchard: false,
+            has_transparent: true,
+        })
+    }
+
+    fn try_from_unified(
+        _net: zcash_protocol::consensus::NetworkType,
+        data: unified::Address,
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        let mut has_orchard = false;
+        let mut has_transparent = false;
+        for receiver in data.items() {
+            match receiver {
+                unified::Receiver::Orchard(_) => has_orchard = true,
+                unified::Receiver::P2pkh(_) | unified::Receiver::P2sh(_) => {
+                    has_transparent = true;
+                }
+                _ => {}
+            }
+        }
+        Ok(Self {
+            has_orchard,
+            has_transparent,
+        })
+    }
+}
+
+fn zcash_address_receivers(address: &str) -> Result<ZcashAddressReceivers, String> {
+    let parsed = zcash_address::ZcashAddress::try_from_encoded(address)
+        .map_err(|err| format!("Invalid Zcash address: {err}"))?;
+    parsed
+        .convert::<ZcashAddressReceivers>()
+        .map_err(|err| format!("Unsupported Zcash address: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Transparent P2PKH (`t1...`) mainnet address from the reported bug.
+    const TRANSPARENT_P2PKH_MAINNET: &str = "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o";
+
+    #[test]
+    fn transparent_p2pkh_address_has_no_orchard() {
+        assert_eq!(
+            contains_orchard_address(TRANSPARENT_P2PKH_MAINNET),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn transparent_p2pkh_address_is_transparent() {
+        assert_eq!(
+            contains_transparent_address(TRANSPARENT_P2PKH_MAINNET),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn invalid_address_returns_error() {
+        assert!(contains_orchard_address("not-a-zcash-address").is_err());
+        assert!(contains_transparent_address("not-a-zcash-address").is_err());
+    }
 }
