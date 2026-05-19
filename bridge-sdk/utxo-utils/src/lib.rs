@@ -660,6 +660,40 @@ pub fn get_tx_outs_multi(
     Ok(res)
 }
 
+/// Builds `tx_outs` for an Orchard-shielded Zcash recipient. The recipient
+/// receives funds via the Orchard bundle (carried in `chain_specific_data`),
+/// not via a transparent output, so `tx_outs[0]` is only an amount sentinel
+/// for downstream code and its `script_pubkey` is intentionally empty.
+/// Change outputs use the transparent `change_address`.
+pub fn get_tx_outs_orchard(
+    target_amount: u64,
+    change_address: &str,
+    change_amounts: &[u64],
+    chain: ChainKind,
+    network: Network,
+) -> Result<Vec<TxOut>, String> {
+    let mut res = vec![TxOut {
+        value: Amount::from_sat(target_amount),
+        script_pubkey: ScriptBuf::new(),
+    }];
+
+    if !change_amounts.is_empty() {
+        let change_address_parsed = UTXOAddress::parse(change_address, chain, network)
+            .map_err(|e| format!("Invalid change UTXO address '{change_address}': {e}"))?;
+        let change_script_pubkey = change_address_parsed.script_pubkey().map_err(|e| {
+            format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
+        })?;
+        for &amt in change_amounts {
+            res.push(TxOut {
+                value: Amount::from_sat(amt),
+                script_pubkey: change_script_pubkey.clone(),
+            });
+        }
+    }
+
+    Ok(res)
+}
+
 pub fn get_tx_outs(
     target_btc_address: &str,
     amount: u64,
@@ -834,6 +868,11 @@ mod tests {
     // Transparent P2PKH (`t1...`) mainnet address from the reported bug.
     const TRANSPARENT_P2PKH_MAINNET: &str = "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o";
 
+    // Orchard-only unified mainnet address from the reported bug. It contains
+    // no transparent receiver, so `UTXOAddress::script_pubkey()` cannot derive
+    // a transparent script for it.
+    const ORCHARD_ONLY_UNIFIED_MAINNET: &str = "u15a97e324mckwx89t0ucxytpd7v3pfzey7daldrk4mwu3u55ej39f6v7myqjxw0e098hnhyp0tvfgfnxj8swt22rl4f77a8wrg9zjynh9dwj20lf232h7yzfr0v53l2s824l22l63xwlxyypnxkx9qq7dd249pj565q7490fey5czu2pm";
+
     #[test]
     fn transparent_p2pkh_address_has_no_orchard() {
         assert_eq!(
@@ -854,5 +893,52 @@ mod tests {
     fn invalid_address_returns_error() {
         assert!(contains_orchard_address("not-a-zcash-address").is_err());
         assert!(contains_transparent_address("not-a-zcash-address").is_err());
+    }
+
+    #[test]
+    fn orchard_only_unified_address_classification() {
+        assert_eq!(
+            contains_orchard_address(ORCHARD_ONLY_UNIFIED_MAINNET),
+            Ok(true)
+        );
+        assert_eq!(
+            contains_transparent_address(ORCHARD_ONLY_UNIFIED_MAINNET),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_uses_empty_script_for_recipient() {
+        let change_address = "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o";
+        let outs = get_tx_outs_orchard(
+            100_000,
+            change_address,
+            &[50_000],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("orchard tx_outs build succeeds for orchard-only recipient");
+
+        assert_eq!(outs.len(), 2);
+        assert_eq!(outs[0].value.to_sat(), 100_000);
+        assert!(outs[0].script_pubkey.is_empty());
+        assert_eq!(outs[1].value.to_sat(), 50_000);
+        assert!(!outs[1].script_pubkey.is_empty());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_no_change_returns_single_out() {
+        let outs = get_tx_outs_orchard(
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            &[],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("orchard tx_outs build succeeds without change");
+
+        assert_eq!(outs.len(), 1);
+        assert_eq!(outs[0].value.to_sat(), 100_000);
+        assert!(outs[0].script_pubkey.is_empty());
     }
 }
