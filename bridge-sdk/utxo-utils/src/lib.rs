@@ -695,6 +695,17 @@ pub fn get_tx_outs_orchard(
         let change_script_pubkey = change_address_parsed.script_pubkey().map_err(|e| {
             format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
         })?;
+        // The Orchard tx builder (`get_builder_with_transparent` in zcash.rs)
+        // hard-codes `TransparentAddress::PublicKeyHash` and extracts the hash
+        // from a P2PKH script layout (`script[3..23]`). A non-P2PKH change
+        // script would yield a malformed transparent output and lose the
+        // change. Reject here so the failure is loud and local.
+        if !change_script_pubkey.is_p2pkh() {
+            return Err(format!(
+                "Orchard mode requires a P2PKH transparent change address; \
+                 '{change_address}' produced a non-P2PKH script"
+            ));
+        }
         res.push(TxOut {
             value: Amount::from_sat(total_change),
             script_pubkey: change_script_pubkey,
@@ -1018,5 +1029,16 @@ mod tests {
         let t3 = synthetic_t3_mainnet([0u8; 20]);
         assert_eq!(contains_orchard_address(&t3), Ok(false));
         assert_eq!(contains_transparent_address(&t3), Ok(true));
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_rejects_p2sh_change_address() {
+        let t3 = synthetic_t3_mainnet([0u8; 20]);
+        let err = get_tx_outs_orchard(100_000, &t3, &[50_000], ChainKind::Zcash, Network::Mainnet)
+            .expect_err("orchard mode must reject P2SH change addresses");
+        assert!(
+            err.contains("P2PKH"),
+            "expected P2PKH guard error, got: {err}"
+        );
     }
 }
