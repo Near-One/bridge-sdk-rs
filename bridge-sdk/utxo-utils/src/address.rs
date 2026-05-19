@@ -80,6 +80,26 @@ impl zcash_address::TryFromAddress for UTXOAddress {
         })
     }
 
+    fn try_from_transparent_p2sh(
+        net: NetworkType,
+        data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        let (chain, network) = match net {
+            NetworkType::Main => (ChainKind::Zcash, Network::Mainnet),
+            NetworkType::Test => (ChainKind::Zcash, Network::Testnet),
+            NetworkType::Regtest => {
+                return Err("Regtest network not supported".into());
+            }
+        };
+
+        Ok(Self::P2sh {
+            hash: ScriptHash::from_slice(&data[..])
+                .map_err(|_e| "Invalid script hash for Zcash address")?,
+            chain,
+            network,
+        })
+    }
+
     fn try_from_unified(
         net: NetworkType,
         data: zcash_address::unified::Address,
