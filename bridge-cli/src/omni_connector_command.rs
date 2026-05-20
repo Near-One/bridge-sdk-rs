@@ -1995,6 +1995,21 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .fogo_bridge_address
                 .map(|addr| addr.parse().unwrap()),
         )
+        .wormhole_core(
+            combined_config
+                .fogo_wormhole_address
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_program_id(
+            combined_config
+                .fogo_wormhole_post_message_shim_program_id
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_event_authority(
+            combined_config
+                .fogo_wormhole_post_message_shim_event_authority
+                .map(|addr| addr.parse().unwrap()),
+        )
         .keypair(
             combined_config
                 .fogo_keypair

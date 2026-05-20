@@ -2373,11 +2373,14 @@ impl OmniConnector {
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
                 amount: message_payload.amount.into(),
-                recipient: match message_payload.recipient {
-                    OmniAddress::Sol(addr) | OmniAddress::Fogo(addr) => {
-                        Pubkey::new_from_array(addr.0)
+                recipient: match (chain_kind, message_payload.recipient) {
+                    (ChainKind::Sol, OmniAddress::Sol(addr))
+                    | (ChainKind::Fogo, OmniAddress::Fogo(addr)) => Pubkey::new_from_array(addr.0),
+                    (chain, recipient) => {
+                        return Err(BridgeSdkError::ConfigError(format!(
+                            "Recipient {recipient:?} does not match destination chain {chain:?}"
+                        )));
                     }
-                    _ => return Err(BridgeSdkError::ConfigError("Invalid recipient".to_string())),
                 },
                 fee_recipient: message_payload.fee_recipient.map(|addr| addr.to_string()),
             },

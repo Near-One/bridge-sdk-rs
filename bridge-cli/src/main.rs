@@ -107,6 +107,12 @@ struct CliConfig {
     #[arg(long)]
     fogo_bridge_address: Option<String>,
     #[arg(long)]
+    fogo_wormhole_address: Option<String>,
+    #[arg(long)]
+    fogo_wormhole_post_message_shim_program_id: Option<String>,
+    #[arg(long)]
+    fogo_wormhole_post_message_shim_event_authority: Option<String>,
+    #[arg(long)]
     fogo_keypair: Option<String>,
 
     #[arg(long)]
@@ -232,6 +238,13 @@ impl CliConfig {
 
             fogo_rpc: self.fogo_rpc.or(other.fogo_rpc),
             fogo_bridge_address: self.fogo_bridge_address.or(other.fogo_bridge_address),
+            fogo_wormhole_address: self.fogo_wormhole_address.or(other.fogo_wormhole_address),
+            fogo_wormhole_post_message_shim_program_id: self
+                .fogo_wormhole_post_message_shim_program_id
+                .or(other.fogo_wormhole_post_message_shim_program_id),
+            fogo_wormhole_post_message_shim_event_authority: self
+                .fogo_wormhole_post_message_shim_event_authority
+                .or(other.fogo_wormhole_post_message_shim_event_authority),
             fogo_keypair: self.fogo_keypair.or(other.fogo_keypair),
 
             wormhole_api: self.wormhole_api.or(other.wormhole_api),
@@ -326,6 +339,15 @@ fn env_config() -> CliConfig {
 
         fogo_rpc: env::var("FOGO_RPC").ok(),
         fogo_bridge_address: env::var("FOGO_BRIDGE_ADDRESS").ok(),
+        fogo_wormhole_address: env::var("FOGO_WORMHOLE_ADDRESS").ok(),
+        fogo_wormhole_post_message_shim_program_id: env::var(
+            "FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
+        )
+        .ok(),
+        fogo_wormhole_post_message_shim_event_authority: env::var(
+            "FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
+        )
+        .ok(),
         fogo_keypair: env::var("FOGO_KEYPAIR").ok(),
 
         wormhole_api: env::var("WORMHOLE_API").ok(),
@@ -428,6 +450,9 @@ fn default_config(network: Network) -> CliConfig {
 
             fogo_rpc: Some(defaults::FOGO_RPC_MAINNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_MAINNET.to_owned()),
+            fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+            fogo_wormhole_post_message_shim_program_id: None,
+            fogo_wormhole_post_message_shim_event_authority: None,
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
@@ -526,6 +551,9 @@ fn default_config(network: Network) -> CliConfig {
 
             fogo_rpc: Some(defaults::FOGO_RPC_TESTNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_TESTNET.to_owned()),
+            fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+            fogo_wormhole_post_message_shim_program_id: None,
+            fogo_wormhole_post_message_shim_event_authority: None,
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
@@ -624,6 +652,9 @@ fn default_config(network: Network) -> CliConfig {
 
             fogo_rpc: Some(defaults::FOGO_RPC_DEVNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_DEVNET.to_owned()),
+            fogo_wormhole_address: None,
+            fogo_wormhole_post_message_shim_program_id: None,
+            fogo_wormhole_post_message_shim_event_authority: None,
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),

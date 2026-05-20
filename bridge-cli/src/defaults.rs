@@ -66,6 +66,7 @@ pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
 pub const FOGO_RPC_MAINNET: &str = "https://mainnet.fogo.io";
 pub const FOGO_BRIDGE_ADDRESS_MAINNET: &str = "";
+pub const FOGO_WORMHOLE_ADDRESS_MAINNET: &str = "worm2mrQkG1B1KTz37erMfWN8anHkSK24nzca7UD8BB";
 
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
@@ -135,6 +136,7 @@ pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
 
 pub const FOGO_RPC_TESTNET: &str = "https://testnet.fogo.io";
 pub const FOGO_BRIDGE_ADDRESS_TESTNET: &str = "";
+pub const FOGO_WORMHOLE_ADDRESS_TESTNET: &str = "BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4";
 
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
