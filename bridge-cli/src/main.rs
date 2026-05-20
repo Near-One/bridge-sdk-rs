@@ -451,8 +451,12 @@ fn default_config(network: Network) -> CliConfig {
             fogo_rpc: Some(defaults::FOGO_RPC_MAINNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_MAINNET.to_owned()),
             fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_MAINNET.to_owned()),
-            fogo_wormhole_post_message_shim_program_id: None,
-            fogo_wormhole_post_message_shim_event_authority: None,
+            fogo_wormhole_post_message_shim_program_id: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
+            ),
+            fogo_wormhole_post_message_shim_event_authority: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
+            ),
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
@@ -552,8 +556,12 @@ fn default_config(network: Network) -> CliConfig {
             fogo_rpc: Some(defaults::FOGO_RPC_TESTNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_TESTNET.to_owned()),
             fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_TESTNET.to_owned()),
-            fogo_wormhole_post_message_shim_program_id: None,
-            fogo_wormhole_post_message_shim_event_authority: None,
+            fogo_wormhole_post_message_shim_program_id: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
+            ),
+            fogo_wormhole_post_message_shim_event_authority: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
+            ),
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
@@ -652,9 +660,13 @@ fn default_config(network: Network) -> CliConfig {
 
             fogo_rpc: Some(defaults::FOGO_RPC_DEVNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_DEVNET.to_owned()),
-            fogo_wormhole_address: None,
-            fogo_wormhole_post_message_shim_program_id: None,
-            fogo_wormhole_post_message_shim_event_authority: None,
+            fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+            fogo_wormhole_post_message_shim_program_id: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
+            ),
+            fogo_wormhole_post_message_shim_event_authority: Some(
+                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
+            ),
             fogo_keypair: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
