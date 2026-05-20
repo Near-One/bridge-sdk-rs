@@ -860,7 +860,7 @@ pub(crate) enum InternalSubCommand {
         #[clap(short, long, help = "Target BTC/Zcash address")]
         target_btc_address: String,
         #[clap(short, long, help = "Amount to transfer")]
-        amount: u64,
+        amount: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1820,7 +1820,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .init_near_to_bitcoin_transfer(
                         chain.into(),
                         target_btc_address,
-                        amount.into(),
+                        amount,
                         TransactionOptions::default(),
                     )
                     .await
