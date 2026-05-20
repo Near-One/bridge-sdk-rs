@@ -64,6 +64,9 @@ pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0x05f9a4a841dfb7bb3cde33073b2450fe45dcd407fb6c0985a274b0e943ad8598";
 pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
+pub const FOGO_RPC_MAINNET: &str = "https://mainnet.fogo.io";
+pub const FOGO_BRIDGE_ADDRESS_MAINNET: &str = "";
+
 /// Testnet
 pub const NEAR_RPC_TESTNET: &str = "https://archival-rpc.testnet.fastnear.com/";
 pub const NEAR_TOKEN_LOCKER_ID_TESTNET: &str = "omni.n-bridge.testnet";
@@ -130,6 +133,9 @@ pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x02830785fd87b181c5391819f4a5e6a0b2d76c49d92b7f748a2433495eead162";
 pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
 
+pub const FOGO_RPC_TESTNET: &str = "https://testnet.fogo.io";
+pub const FOGO_BRIDGE_ADDRESS_TESTNET: &str = "";
+
 /// Devnet
 pub const NEAR_RPC_DEVNET: &str = "https://archival-rpc.testnet.near.org/";
 pub const NEAR_TOKEN_LOCKER_ID_DEVNET: &str = "omni-locker.testnet";
@@ -195,3 +201,6 @@ pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.c
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x05a0ad01b18eba34432d22e4cb5c987560cae87a785b494ed58d9553a98bdc8f";
 pub const STARKNET_CHAIN_ID_DEVNET: &str = "SN_SEPOLIA";
+
+pub const FOGO_RPC_DEVNET: &str = "https://testnet.fogo.io";
+pub const FOGO_BRIDGE_ADDRESS_DEVNET: &str = "";
