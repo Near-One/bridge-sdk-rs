@@ -1084,6 +1084,7 @@ impl OmniConnector {
         chain: ChainKind,
         fee_rate: Option<u64>,
         max_input_number: Option<u8>,
+        merge_largest: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1100,6 +1101,7 @@ impl OmniConnector {
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
+            max_change_amount,
         ) = near_bridge_client
             .get_active_management_limit(chain)
             .await?;
@@ -1110,7 +1112,7 @@ impl OmniConnector {
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
         let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
-            utxos,
+            &utxos,
             fee_rate,
             &change_address,
             (
@@ -1122,8 +1124,50 @@ impl OmniConnector {
             min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
+            merge_largest,
+            max_change_amount,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
+
+        let inputs_log: Vec<String> = out_points
+            .iter()
+            .map(|op| {
+                let key = format!("{}@{}", op.txid, op.vout);
+                let balance = utxos.get(&key).map(|u| u.balance);
+                match balance {
+                    Some(b) => format!("{key} ({b} sat)"),
+                    None => format!("{key} (?)"),
+                }
+            })
+            .collect();
+        let input_total: u64 = out_points
+            .iter()
+            .filter_map(|op| utxos.get(&format!("{}@{}", op.txid, op.vout)).map(|u| u.balance))
+            .sum();
+
+        let outputs_log: Vec<String> = tx_outs
+            .iter()
+            .map(|o| format!("{} sat", o.value.to_sat()))
+            .collect();
+        let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+
+        let gas_fee = input_total.saturating_sub(output_total);
+
+        tracing::debug!(
+            pool_size = utxos.len(),
+            active_lower = active_management_lower_limit,
+            active_upper = active_management_upper_limit,
+            fee_rate,
+            num_inputs = out_points.len(),
+            num_outputs = tx_outs.len(),
+            input_total_sat = input_total,
+            output_total_sat = output_total,
+            gas_fee_sat = gas_fee,
+            inputs = ?inputs_log,
+            outputs = ?outputs_log,
+            change_address = %change_address,
+            "Active UTXO management transaction plan"
+        );
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
