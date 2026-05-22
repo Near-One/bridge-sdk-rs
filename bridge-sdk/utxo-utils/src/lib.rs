@@ -538,7 +538,7 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_for_active_management(
-    utxos: HashMap<String, UTXO>,
+    utxos: &HashMap<String, UTXO>,
     fee_rate: u64,
     change_address: &str,
     active_management_limit: (usize, usize),
@@ -550,17 +550,18 @@ pub fn choose_utxos_for_active_management(
     merge_largest: bool,
     max_change_amount: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
-    let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
+    let mut utxo_list: Vec<(&String, &UTXO)> = utxos.iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
 
-    let mut selected = Vec::new();
+    let mut selected: Vec<(String, UTXO)> = Vec::new();
     let mut utxos_balance: u64 = 0;
 
     if utxo_list.len() < active_management_limit.0 {
         let utxo_amount = 1;
         for i in 0..utxo_amount {
             utxos_balance += utxo_list[utxo_list.len() - 1 - i].1.balance;
-            selected.push(utxo_list[i].clone());
+            let (k, v) = utxo_list[i];
+            selected.push((k.clone(), v.clone()));
         }
 
         let output_amount = std::cmp::min(
@@ -611,7 +612,7 @@ pub fn choose_utxos_for_active_management(
                     break;
                 }
                 utxos_balance += utxo_item.1.balance;
-                selected.push(utxo_item.clone());
+                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
             }
             if selected.is_empty() {
                 return Err(format!(
@@ -621,7 +622,7 @@ pub fn choose_utxos_for_active_management(
         } else {
             for utxo_item in utxo_list.iter().take(utxo_amount) {
                 utxos_balance += utxo_item.1.balance;
-                selected.push(utxo_item.clone());
+                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
             }
         }
         let gas_fee: u64 = get_gas_fee(

@@ -1105,7 +1105,7 @@ impl OmniConnector {
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
         let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
-            utxos.clone(),
+            &utxos,
             fee_rate,
             &change_address,
             (
