@@ -795,6 +795,11 @@ pub enum OmniConnectorSubCommand {
             help = "Override the max number of UTXO inputs to consume in the rebalancing tx (defaults to the value from the bridge config)"
         )]
         max_input_number: Option<u8>,
+        #[clap(
+            long,
+            help = "Merge the largest UTXOs instead of the smallest (use ahead of a large withdrawal)"
+        )]
+        merge_largest: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1708,6 +1713,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             fee_rate,
             max_input_number,
+            merge_largest,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1715,6 +1721,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     fee_rate,
                     max_input_number,
+                    merge_largest,
                     TransactionOptions::default(),
                 )
                 .await
