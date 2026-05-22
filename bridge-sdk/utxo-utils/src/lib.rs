@@ -612,9 +612,9 @@ pub fn choose_utxos_for_active_management(
                 utxos_balance += utxo_item.1.balance;
                 selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
             }
-            if selected.is_empty() {
+            if selected.len() < 2 {
                 return Err(format!(
-                    "merge-largest: no UTXOs <= max_change_amount/2 ({half_cap}); nothing to merge"
+                    "merge-largest: need at least 2 UTXOs <= max_change_amount/2 ({half_cap}) to merge"
                 ));
             }
         } else {
