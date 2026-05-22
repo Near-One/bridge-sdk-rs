@@ -603,13 +603,11 @@ pub fn choose_utxos_for_active_management(
                     break;
                 }
                 let next_balance = u128::from(utxo_item.1.balance);
-                // Skip UTXOs that can't usefully pair with any other big UTXO
-                // without pushing the change output past max_change_amount.
                 if next_balance > half_cap {
                     continue;
                 }
                 if u128::from(utxos_balance) + next_balance >= max_change_amount {
-                    break;
+                    continue;
                 }
                 utxos_balance += utxo_item.1.balance;
                 selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
