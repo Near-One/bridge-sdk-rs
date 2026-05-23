@@ -14,7 +14,7 @@ use near_bridge_client::{
 };
 use near_primitives::{hash::CryptoHash, types::AccountId};
 use omni_connector::{
-    BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FinTransferArgs, InitTransferArgs,
+    BindTokenArgs, BtcDepositArgs, DeployTokenArgs, FeeRate, FinTransferArgs, InitTransferArgs,
     OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
@@ -35,6 +35,42 @@ use crate::{combined_config, fee, CliConfig, Network};
 pub enum UTXOChainArg {
     Btc,
     Zcash,
+}
+
+/// Controls how a UTXO `fee_rate` is treated when an on-chain `max_gas_fee` is set
+/// for the transfer.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Default)]
+pub enum FeeRateMode {
+    /// Use the provided/RPC fee rate verbatim; fail if `gas_fee > max_gas_fee`.
+    #[default]
+    Exact,
+    /// Lower the fee rate automatically so that the resulting `gas_fee` fits
+    /// within the on-chain `max_gas_fee` for the transfer and can be broadcast
+    /// immediately. Falls back to `Exact` semantics when the transfer has no
+    /// `max_gas_fee`, or for chains where `gas_fee` does not depend on `fee_rate`
+    /// (e.g. Zcash).
+    Adjustable,
+}
+
+impl FeeRateMode {
+    fn into_fee_rate(self, fee_rate: Option<u64>) -> FeeRate {
+        match self {
+            FeeRateMode::Exact => FeeRate::Strict(fee_rate),
+            FeeRateMode::Adjustable => FeeRate::CapToMaxGasFee(fee_rate),
+        }
+    }
+}
+
+// Needed by clap's `default_value_t`, which formats the default via `Display`.
+// `ValueEnum` does not auto-derive `Display`; this matches clap's kebab-case rendering.
+impl std::fmt::Display for FeeRateMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use clap::ValueEnum;
+        self.to_possible_value()
+            .expect("FeeRateMode variants are not skipped")
+            .get_name()
+            .fmt(f)
+    }
 }
 
 impl From<UTXOChainArg> for ChainKind {
@@ -653,6 +689,16 @@ pub enum OmniConnectorSubCommand {
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
+        #[clap(
+            long,
+            value_enum,
+            default_value_t = FeeRateMode::Exact,
+            help = "How to treat `--fee-rate` versus the transfer's on-chain `max_gas_fee`: \
+                    `exact` uses the provided/RPC rate as-is (fails if gas_fee exceeds max_gas_fee), \
+                    `adjustable` lowers the rate so the resulting gas_fee fits within max_gas_fee \
+                    and the transaction can be broadcast immediately"
+        )]
+        fee_rate_mode: FeeRateMode,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1024,6 +1070,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            fee_rate_mode,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1031,7 +1078,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain.into(),
                     CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
-                    fee_rate,
+                    fee_rate_mode.into_fee_rate(fee_rate),
                     TransactionOptions::default(),
                 )
                 .await

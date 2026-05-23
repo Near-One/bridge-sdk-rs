@@ -56,6 +56,11 @@ pub fn utxo_to_input_points(utxos: Vec<(String, UTXO)>) -> Result<Vec<InputPoint
         .collect())
 }
 
+/// Approximate serialized size (in vbytes) of a P2WPKH spend with the given input/output counts.
+fn btc_tx_size(num_input: u64, num_output: u64) -> u64 {
+    12 + num_input * 68 + num_output * 31
+}
+
 pub fn get_gas_fee(
     chain: ChainKind,
     num_input: u64,
@@ -70,9 +75,29 @@ pub fn get_gas_fee(
         }
         fee
     } else {
-        let tx_size = 12 + num_input * 68 + num_output * 31;
-        (fee_rate * tx_size / 1024) + 141
+        (fee_rate * btc_tx_size(num_input, num_output) / 1024) + 141
     }
+}
+
+/// Inverse of [`get_gas_fee`] for BTC: returns the largest `fee_rate` (sat/kvB,
+/// matching the unit produced by `UTXOBridgeClient::get_fee_rate()` and consumed
+/// by [`get_gas_fee`]) such that
+/// `get_gas_fee(chain, num_input, num_output, fee_rate, orchard) <= max_gas_fee`.
+///
+/// Returns `None` for chains where `gas_fee` does not depend on `fee_rate`
+/// (e.g. Zcash). The result is not guaranteed to satisfy the bound when
+/// `max_gas_fee < 141` (the constant overhead) — callers should re-evaluate
+/// [`get_gas_fee`] and treat any residual overflow as an error.
+pub fn max_fee_rate_for_gas_fee(
+    chain: ChainKind,
+    num_input: u64,
+    num_output: u64,
+    max_gas_fee: u64,
+) -> Option<u64> {
+    if chain == ChainKind::Zcash {
+        return None;
+    }
+    Some(max_gas_fee.saturating_sub(141).saturating_mul(1024) / btc_tx_size(num_input, num_output))
 }
 
 #[allow(clippy::implicit_hasher)]
