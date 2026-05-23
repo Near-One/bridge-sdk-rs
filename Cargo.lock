@@ -1780,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.55"
+version = "0.3.57"
 dependencies = [
  "alloy",
  "clap",
@@ -4957,7 +4957,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.23"
+version = "0.2.24"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.17"
+version = "0.3.19"
 dependencies = [
  "alloy",
  "bip0039",
@@ -5721,7 +5721,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=ffbdc544c0d7f670942e8bf532c7e023c1c6bfec#ffbdc544c0d7f670942e8bf532c7e023c1c6bfec"
+source = "git+https://github.com/near-one/omni-bridge?rev=ba6d1d4470d8dbe2748280647430ebf06a3cc299#ba6d1d4470d8dbe2748280647430ebf06a3cc299"
 dependencies = [
  "alloy",
  "borsh 1.6.1",
@@ -11088,7 +11088,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
@@ -11108,7 +11108,7 @@ dependencies = [
 
 [[package]]
 name = "utxo-utils"
-version = "0.2.4"
+version = "0.3.2"
 dependencies = [
  "bitcoin",
  "k256",
