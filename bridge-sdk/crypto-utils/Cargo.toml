@@ -8,3 +8,6 @@ near-crypto.workspace = true
 crypto-shared.workspace = true
 k256.workspace = true
 near-primitives.workspace = true
+
+[dev-dependencies]
+hex-literal = "1"

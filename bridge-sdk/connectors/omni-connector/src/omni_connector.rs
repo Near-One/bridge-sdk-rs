@@ -1142,7 +1142,11 @@ impl OmniConnector {
             .collect();
         let input_total: u64 = out_points
             .iter()
-            .filter_map(|op| utxos.get(&format!("{}@{}", op.txid, op.vout)).map(|u| u.balance))
+            .filter_map(|op| {
+                utxos
+                    .get(&format!("{}@{}", op.txid, op.vout))
+                    .map(|u| u.balance)
+            })
             .sum();
 
         let outputs_log: Vec<String> = tx_outs
@@ -2198,8 +2202,12 @@ impl OmniConnector {
         program_keypair: Keypair,
     ) -> Result<Signature> {
         let near_bridge_account_id = self.near_bridge_client()?.omni_bridge_id()?;
+        let mpc_root_public_key = match self.network()? {
+            Network::Mainnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_MAINNET,
+            Network::Testnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_TESTNET,
+        };
         let derived_bridge_address =
-            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1");
+            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1", mpc_root_public_key);
 
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
