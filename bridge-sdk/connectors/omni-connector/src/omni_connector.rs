@@ -1142,7 +1142,11 @@ impl OmniConnector {
             .collect();
         let input_total: u64 = out_points
             .iter()
-            .filter_map(|op| utxos.get(&format!("{}@{}", op.txid, op.vout)).map(|u| u.balance))
+            .filter_map(|op| {
+                utxos
+                    .get(&format!("{}@{}", op.txid, op.vout))
+                    .map(|u| u.balance)
+            })
             .sum();
 
         let outputs_log: Vec<String> = tx_outs
@@ -1313,6 +1317,7 @@ impl OmniConnector {
                 })?,
                 enable_orchard,
                 fee_rate,
+                max_gas_fee,
             )
             .await?;
 
@@ -3650,6 +3655,11 @@ impl OmniConnector {
         amount: u128,
         enable_orchard: bool,
         fee_rate: Option<u64>,
+        // When `Some`, drives the anchor-fill selector to consume as many
+        // small UTXOs as the budget allows (1 target + at most 1 change
+        // output). When `None`, falls back to the random selector — picks
+        // the minimum inputs needed to cover `amount`, no consolidation.
+        max_gas_fee: Option<u64>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3665,13 +3675,25 @@ impl OmniConnector {
             .get_withdraw_selection_params(chain)
             .await?;
 
-        let selection = utxo_utils::choose_utxos_random_no_payment(
-            amount,
-            utxos,
-            pool_size,
-            &params,
-            &mut rand::thread_rng(),
-        )
+        let selection = match max_gas_fee {
+            Some(budget) => utxo_utils::choose_utxos_anchor_fill(
+                amount,
+                utxos,
+                pool_size,
+                &params,
+                chain,
+                fee_rate,
+                budget,
+                enable_orchard,
+            ),
+            None => utxo_utils::choose_utxos_random_no_payment(
+                amount,
+                utxos,
+                pool_size,
+                &params,
+                &mut rand::thread_rng(),
+            ),
+        }
         .map_err(|e| {
             tracing::warn!("UTXO selection failed: {e}");
             BridgeSdkError::InsufficientUTXOBalance
