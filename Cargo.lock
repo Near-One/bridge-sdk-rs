@@ -1780,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.56"
+version = "0.3.57"
 dependencies = [
  "alloy",
  "clap",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "crypto-utils"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crypto-shared 0.1.0 (git+https://github.com/near-one/mpc?rev=463172481597ee09b12020b72c61d6b01da7b167)",
  "hex-literal",
@@ -5680,7 +5680,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "alloy",
  "bip0039",
