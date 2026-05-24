@@ -46,6 +46,31 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
+#[clap(name = "svm-chain")]
+pub enum SvmChainArg {
+    Sol,
+    Fogo,
+}
+
+impl From<SvmChainArg> for ChainKind {
+    fn from(value: SvmChainArg) -> Self {
+        match value {
+            SvmChainArg::Sol => ChainKind::Sol,
+            SvmChainArg::Fogo => ChainKind::Fogo,
+        }
+    }
+}
+
+impl SvmChainArg {
+    fn prefix(self) -> &'static str {
+        match self {
+            SvmChainArg::Sol => "sol",
+            SvmChainArg::Fogo => "fogo",
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum BtcRecipient {
     Direct(AccountId),
@@ -102,17 +127,20 @@ fn evm_address_to_omni(chain: ChainKind, address: &str) -> Result<String, String
     Ok(omni.to_string())
 }
 
-fn derive_solana_sender(config: &CliConfig) -> Result<String, String> {
-    let kp = config
-        .solana_keypair
-        .as_ref()
-        .ok_or("solana_keypair not set")?;
+fn derive_svm_sender(chain: SvmChainArg, config: &CliConfig) -> Result<String, String> {
+    let kp = match chain {
+        SvmChainArg::Sol => config
+            .solana_keypair
+            .as_ref()
+            .ok_or("solana_keypair not set")?,
+        SvmChainArg::Fogo => config.fogo_keypair.as_ref().ok_or("fogo_keypair not set")?,
+    };
     let keypair = extract_solana_keypair(kp);
-    Ok(format!("sol:{}", keypair.pubkey()))
+    Ok(format!("{}:{}", chain.prefix(), keypair.pubkey()))
 }
 
-fn solana_native_fee_to_u64(fee: u128) -> Result<u64, String> {
-    u64::try_from(fee).map_err(|_| format!("Solana native_fee {fee} exceeds u64::MAX"))
+fn svm_native_fee_to_u64(fee: u128) -> Result<u64, String> {
+    u64::try_from(fee).map_err(|_| format!("SVM native_fee {fee} exceeds u64::MAX"))
 }
 
 async fn fetch_indexer_fees(
@@ -239,7 +267,8 @@ async fn resolve_btc_deposit(
     }
 }
 
-async fn resolve_solana_fees(
+async fn resolve_svm_fees(
+    chain: SvmChainArg,
     config: &CliConfig,
     token: &str,
     amount: u128,
@@ -250,7 +279,7 @@ async fn resolve_solana_fees(
         .as_deref()
         .ok_or_else(|| "bridge_indexer_api_url must be set to auto-calculate fees".to_string())?;
 
-    let sender = derive_solana_sender(config)?;
+    let sender = derive_svm_sender(chain, config)?;
     let token_addr: OmniAddress = token
         .parse()
         .map_err(|err| format!("Failed to parse token address for fee calculation: {err}"))?;
@@ -258,7 +287,7 @@ async fn resolve_solana_fees(
     let (fee, native_fee, gas_fee) =
         fetch_indexer_fees(api_url, sender, token_addr.to_string(), amount, recipient).await?;
 
-    let native_fee = solana_native_fee_to_u64(native_fee)?;
+    let native_fee = svm_native_fee_to_u64(native_fee)?;
 
     Ok((fee, native_fee, gas_fee))
 }
@@ -471,24 +500,30 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
-    #[clap(about = "Initialize a transfer on Solana")]
-    SolanaInitialize {
+    #[clap(about = "Initialize an SVM OmniBridge program (Solana or Fogo)")]
+    SvmInitialize {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(
             short,
             long,
-            help = "Solana keypair in Base58 or path to a .json keypair file"
+            help = "Keypair in Base58 or path to a .json keypair file"
         )]
         program_keypair: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Get version of Solana OmniBridge program")]
-    SolanaGetVersion {
+    #[clap(about = "Get version of SVM OmniBridge program")]
+    SvmGetVersion {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Initialize a transfer on Solana")]
-    SolanaInitTransfer {
+    #[clap(about = "Initialize a transfer on an SVM chain")]
+    SvmInitTransfer {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Token to transfer")]
         token: String,
         #[clap(short, long, help = "Amount to transfer")]
@@ -508,8 +543,10 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Initialize a native transfer on Solana")]
-    SolanaInitTransferSol {
+    #[clap(about = "Initialize a native SOL transfer on an SVM chain")]
+    SvmInitTransferSol {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Amount to transfer")]
         amount: u128,
         #[clap(short, long, help = "Recipient address on the destination chain")]
@@ -521,19 +558,23 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer on Solana")]
-    SolanaFinalizeTransfer {
+    #[clap(about = "Finalize a transfer on an SVM chain")]
+    SvmFinalizeTransfer {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Transaction hash of sign_transfer call on NEAR")]
         tx_hash: String,
         #[clap(long, help = "Sender ID of the sign_transfer call on NEAR")]
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Token to finalize the transfer for")]
-        solana_token: String,
+        svm_token: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a native transfer on Solana")]
-    SolanaFinalizeTransferSol {
+    #[clap(about = "Finalize a native SOL transfer on an SVM chain")]
+    SvmFinalizeTransferSol {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Transaction hash of sign_transfer call on NEAR")]
         tx_hash: String,
         #[clap(short, long, help = "Sender ID of the sign_transfer call on NEAR")]
@@ -541,17 +582,23 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    SolanaSetAdmin {
+    SvmSetAdmin {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Admin pubkey")]
         admin: String,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    SolanaPause {
+    SvmPause {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    SolanaUpdateMetadata {
+    SvmUpdateMetadata {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Token to update the metadata for")]
         token: String,
         #[clap(short, long, help = "URI to update the metadata to")]
@@ -788,10 +835,22 @@ pub enum OmniConnectorSubCommand {
     ActiveUTXOManagement {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
+        #[clap(
+            long,
+            help = "Override the max number of UTXO inputs to consume in the rebalancing tx (defaults to the value from the bridge config)"
+        )]
+        max_input_number: Option<u8>,
+        #[clap(
+            long,
+            help = "Merge the largest UTXOs instead of the smallest (use ahead of a large withdrawal)"
+        )]
+        merge_largest: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Commands for internal usage, not recommended for the public")]
+    #[clap(hide = true)]
     Internal {
         #[command(subcommand)]
         subcommand: InternalSubCommand,
@@ -799,24 +858,21 @@ pub enum OmniConnectorSubCommand {
 }
 
 #[derive(Subcommand, Debug)]
-pub enum InternalSubCommand {
-    #[clap(about = "Initiate a NEAR-to-Bitcoin transfer")]
+pub(crate) enum InternalSubCommand {
     InitNearToBitcoinTransfer {
-        #[clap(short, long, help = "Chain to transfer to")]
+        #[clap(short, long, help = "UTXO chain (btc or zcash)")]
         chain: UTXOChainArg,
-        #[clap(
-            short,
-            long,
-            help = "The UTXO chain address to which the tokens will eventually be released"
-        )]
+        #[clap(short, long, help = "Target BTC/Zcash address")]
         target_btc_address: String,
-        #[clap(short, long, help = "The amount to be transferred, in satoshis")]
+        #[clap(short, long, help = "Amount to transfer")]
         amount: u128,
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Get Solana token vault (locker) PDA")]
-    SolanaGetTokenVault {
+    #[clap(about = "Get SVM token vault (locker) PDA")]
+    SvmGetTokenVault {
+        #[clap(long, help = "SVM chain (sol or fogo)")]
+        chain: SvmChainArg,
         #[clap(short, long, help = "Token mint address")]
         token: String,
         #[command(flatten)]
@@ -879,7 +935,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             }
             ChainKind::Sol => {
                 omni_connector(network, config_cli)
-                    .deploy_token(DeployTokenArgs::SolanaDeployTokenWithTxHash {
+                    .deploy_token(DeployTokenArgs::SvmDeployTokenWithTxHash {
+                        chain_kind: ChainKind::Sol,
+                        near_tx_hash: tx_hash.parse().unwrap(),
+                        sender_id: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+            ChainKind::Fogo => {
+                omni_connector(network, config_cli)
+                    .deploy_token(DeployTokenArgs::SvmDeployTokenWithTxHash {
+                        chain_kind: ChainKind::Fogo,
                         near_tx_hash: tx_hash.parse().unwrap(),
                         sender_id: None,
                     })
@@ -1060,7 +1127,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 | ChainKind::Bnb
                 | ChainKind::Pol
                 | ChainKind::HyperEvm
-                | ChainKind::Sol => {
+                | ChainKind::Sol
+                | ChainKind::Fogo => {
                     let vaa = connector
                         .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
                         .await
@@ -1232,22 +1300,24 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
 
-        OmniConnectorSubCommand::SolanaInitialize {
+        OmniConnectorSubCommand::SvmInitialize {
+            chain,
             program_keypair,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .solana_initialize(extract_solana_keypair(&program_keypair))
+                .svm_initialize(chain.into(), extract_solana_keypair(&program_keypair))
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaGetVersion { config_cli } => {
+        OmniConnectorSubCommand::SvmGetVersion { chain, config_cli } => {
             omni_connector(network, config_cli)
-                .solana_get_version()
+                .svm_get_version(chain.into())
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaInitTransfer {
+        OmniConnectorSubCommand::SvmInitTransfer {
+            chain,
             token,
             amount,
             recipient,
@@ -1262,9 +1332,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 (Some(f), Some(nf)) => (f, nf, None),
                 (Some(f), None) => (f, 0, None),
                 (None, Some(nf)) => (0, nf, None),
-                _ => match resolve_solana_fees(
+                _ => match resolve_svm_fees(
+                    chain,
                     &combined_config,
-                    &("sol:".to_owned() + &token),
+                    &format!("{}:{token}", chain.prefix()),
                     amount,
                     &recipient,
                 )
@@ -1279,7 +1350,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             };
 
             omni_connector(network, config_cli)
-                .init_transfer(InitTransferArgs::SolanaInitTransfer {
+                .init_transfer(InitTransferArgs::SvmInitTransfer {
+                    chain_kind: chain.into(),
                     token: token.parse().unwrap(),
                     amount,
                     recipient,
@@ -1290,7 +1362,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaInitTransferSol {
+        OmniConnectorSubCommand::SvmInitTransferSol {
+            chain,
             amount,
             recipient,
             fee,
@@ -1303,9 +1376,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 (Some(f), Some(nf)) => (f, nf, None),
                 (Some(f), None) => (f, 0, None),
                 (None, Some(nf)) => (0, nf, None),
-                _ => match resolve_solana_fees(
+                _ => match resolve_svm_fees(
+                    chain,
                     &combined_config,
-                    "sol:So11111111111111111111111111111111111111112",
+                    &format!(
+                        "{}:So11111111111111111111111111111111111111112",
+                        chain.prefix()
+                    ),
                     amount,
                     &recipient,
                 )
@@ -1320,7 +1397,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             };
 
             omni_connector(network, config_cli)
-                .init_transfer(InitTransferArgs::SolanaInitTransferSol {
+                .init_transfer(InitTransferArgs::SvmInitTransferSol {
+                    chain_kind: chain.into(),
                     amount,
                     recipient,
                     fee,
@@ -1330,22 +1408,39 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaFinalizeTransfer {
+        OmniConnectorSubCommand::SvmFinalizeTransfer {
+            chain,
             tx_hash,
             sender_id,
-            solana_token,
+            svm_token,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .fin_transfer(FinTransferArgs::SolanaFinTransferWithTxHash {
+                .fin_transfer(FinTransferArgs::SvmFinTransferWithTxHash {
+                    chain_kind: chain.into(),
                     near_tx_hash: tx_hash.parse().unwrap(),
-                    solana_token: solana_token.parse().unwrap(),
+                    svm_token: svm_token.parse().unwrap(),
                     sender_id,
                 })
                 .await
                 .unwrap();
         }
-        OmniConnectorSubCommand::SolanaFinalizeTransferSol { .. } => {}
+        OmniConnectorSubCommand::SvmFinalizeTransferSol {
+            chain,
+            tx_hash,
+            sender_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .fin_transfer(FinTransferArgs::SvmFinTransferWithTxHash {
+                    chain_kind: chain.into(),
+                    near_tx_hash: tx_hash.parse().unwrap(),
+                    svm_token: solana_sdk::pubkey::Pubkey::default(),
+                    sender_id,
+                })
+                .await
+                .unwrap();
+        }
 
         OmniConnectorSubCommand::BindToken {
             chain,
@@ -1383,30 +1478,36 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .unwrap();
             }
         },
-        OmniConnectorSubCommand::SolanaSetAdmin { admin, config_cli } => {
-            omni_connector(network, config_cli)
-                .solana_set_admin(admin.parse().unwrap())
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::SolanaPause { config_cli } => {
-            omni_connector(network, config_cli)
-                .solana_pause()
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::SolanaUpdateMetadata {
-            token,
-            uri,
+        OmniConnectorSubCommand::SvmSetAdmin {
+            chain,
+            admin,
             config_cli,
-            name,
-            symbol,
         } => {
             omni_connector(network, config_cli)
-                .solana_update_metadata(token.parse().unwrap(), name, symbol, uri)
+                .svm_set_admin(chain.into(), admin.parse().unwrap())
                 .await
                 .unwrap();
         }
+        OmniConnectorSubCommand::SvmPause { chain, config_cli } => {
+            omni_connector(network, config_cli)
+                .svm_pause(chain.into())
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::SvmUpdateMetadata {
+            chain,
+            token,
+            uri,
+            name,
+            symbol,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .svm_update_metadata(chain.into(), token.parse().unwrap(), name, symbol, uri)
+                .await
+                .unwrap();
+        }
+
         OmniConnectorSubCommand::NearSignBTCTransaction {
             chain,
             btc_pending_id,
@@ -1697,9 +1798,21 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::ActiveUTXOManagement { chain, config_cli } => {
+        OmniConnectorSubCommand::ActiveUTXOManagement {
+            chain,
+            fee_rate,
+            max_input_number,
+            merge_largest,
+            config_cli,
+        } => {
             omni_connector(network, config_cli)
-                .active_utxo_management(chain.into(), TransactionOptions::default())
+                .active_utxo_management(
+                    chain.into(),
+                    fee_rate,
+                    max_input_number,
+                    merge_largest,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }
@@ -1722,9 +1835,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
                 tracing::info!("Near Tx Hash: {tx_hash}");
             }
-            InternalSubCommand::SolanaGetTokenVault { token, config_cli } => {
+            InternalSubCommand::SvmGetTokenVault {
+                chain,
+                token,
+                config_cli,
+            } => {
                 omni_connector(network, config_cli)
-                    .solana_get_token_vault(token.parse().unwrap())
+                    .svm_get_token_vault(chain.into(), token.parse().unwrap())
                     .await
                     .unwrap();
             }
@@ -1878,6 +1995,37 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let fogo_bridge_client = SolanaBridgeClientBuilder::default()
+        .client(combined_config.fogo_rpc.map(|rpc| RpcClient::new(rpc)))
+        .program_id(
+            combined_config
+                .fogo_bridge_address
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_core(
+            combined_config
+                .fogo_wormhole_address
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_program_id(
+            combined_config
+                .fogo_wormhole_post_message_shim_program_id
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .wormhole_post_message_shim_event_authority(
+            combined_config
+                .fogo_wormhole_post_message_shim_event_authority
+                .map(|addr| addr.parse().unwrap()),
+        )
+        .keypair(
+            combined_config
+                .fogo_keypair
+                .as_deref()
+                .map(extract_solana_keypair),
+        )
+        .build()
+        .unwrap();
+
     let wormhole_bridge_client = WormholeBridgeClientBuilder::default()
         .endpoint(combined_config.wormhole_api)
         .build()
@@ -1961,6 +2109,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .hyperevm_bridge_client(Some(hyperevm_bridge_client))
         .abs_bridge_client(Some(abs_bridge_client))
         .solana_bridge_client(Some(solana_bridge_client))
+        .fogo_bridge_client(Some(fogo_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))

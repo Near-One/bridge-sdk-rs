@@ -430,6 +430,7 @@ impl EvmBridgeClient {
             }
             ChainKind::Near
             | ChainKind::Sol
+            | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk => Err(EvmBridgeClientError::InvalidArgument(format!(
@@ -612,6 +613,7 @@ impl EvmBridgeClient {
             | OmniAddress::Abs(addr) => Ok(Address::from_slice(&addr.0)),
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
+            | OmniAddress::Fogo(_)
             | OmniAddress::Btc(_)
             | OmniAddress::Zcash(_)
             | OmniAddress::Strk(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
