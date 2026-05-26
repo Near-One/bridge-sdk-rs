@@ -1184,29 +1184,10 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-        self.init_near_to_bitcoin_transfer_with_memo(
-            chain,
-            target_btc_address,
-            amount,
-            transaction_options,
-            None,
-        )
-        .await
-    }
-
-    /// Same as [`init_near_to_bitcoin_transfer`], but attaches an optional Zcash
-    /// memo (max 512 bytes) to the destination shielded output. Ignored on
-    /// transparent BTC/ZEC paths.
-    pub async fn init_near_to_bitcoin_transfer_with_memo(
-        &self,
-        chain: ChainKind,
-        target_btc_address: String,
-        amount: u128,
-        transaction_options: TransactionOptions,
         memo: Option<String>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -1337,36 +1318,10 @@ impl OmniConnector {
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
-    ) -> Result<CryptoHash> {
-        self.near_submit_btc_transfer_with_memo(
-            chain,
-            recipient,
-            amount,
-            fee_rate,
-            transfer_id,
-            transaction_options,
-            max_gas_fee,
-            None,
-        )
-        .await
-    }
-
-    /// Same as [`near_submit_btc_transfer`], but attaches an optional Zcash memo
-    /// (max 512 bytes) to the destination shielded output. Ignored on
-    /// transparent BTC/ZEC paths.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn near_submit_btc_transfer_with_memo(
-        &self,
-        chain: ChainKind,
-        recipient: String,
-        amount: u128,
-        fee_rate: Option<u64>,
-        transfer_id: omni_types::TransferId,
-        transaction_options: TransactionOptions,
-        max_gas_fee: Option<u64>,
         memo: Option<String>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
@@ -1558,28 +1513,6 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-        self.near_submit_btc_transfer_with_tx_hash_and_memo(
-            chain,
-            near_tx_hash,
-            sender_id,
-            fee_rate,
-            transaction_options,
-            None,
-        )
-        .await
-    }
-
-    /// Same as [`near_submit_btc_transfer_with_tx_hash`], but attaches an optional
-    /// Zcash memo (max 512 bytes) to the destination shielded output. Ignored
-    /// on transparent BTC/ZEC paths.
-    pub async fn near_submit_btc_transfer_with_tx_hash_and_memo(
-        &self,
-        chain: ChainKind,
-        near_tx_hash: CryptoHash,
-        sender_id: Option<AccountId>,
-        fee_rate: Option<u64>,
-        transaction_options: TransactionOptions,
         memo: Option<String>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -1592,7 +1525,7 @@ impl OmniConnector {
             .extract_recipient_and_amount_from_logs(near_tx_hash, sender_id)
             .await?;
 
-        self.near_submit_btc_transfer_with_memo(
+        self.near_submit_btc_transfer(
             chain,
             recipient,
             amount,
@@ -3890,5 +3823,56 @@ impl OmniConnector {
         } else {
             Ok((None, tx_outs))
         }
+    }
+}
+
+fn validate_zcash_memo_usage(
+    chain: ChainKind,
+    enable_orchard: bool,
+    memo: Option<&str>,
+) -> Result<()> {
+    if memo.is_none() {
+        return Ok(());
+    }
+
+    if chain != ChainKind::Zcash {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo is only supported for Zcash transfers".to_string(),
+        ));
+    }
+
+    if !enable_orchard {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo requires a shielded Zcash recipient".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_absent_memo_for_btc() {
+        validate_zcash_memo_usage(ChainKind::Btc, false, None).unwrap();
+    }
+
+    #[test]
+    fn accepts_memo_for_shielded_zcash() {
+        validate_zcash_memo_usage(ChainKind::Zcash, true, Some("memo")).unwrap();
+    }
+
+    #[test]
+    fn rejects_memo_for_btc() {
+        let err = validate_zcash_memo_usage(ChainKind::Btc, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo is only supported for Zcash transfers"));
+    }
+
+    #[test]
+    fn rejects_memo_for_transparent_zcash() {
+        let err = validate_zcash_memo_usage(ChainKind::Zcash, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo requires a shielded Zcash recipient"));
     }
 }

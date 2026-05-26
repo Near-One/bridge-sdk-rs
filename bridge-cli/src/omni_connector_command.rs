@@ -643,7 +643,7 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Submit BTC transfer on Near")]
+    #[clap(about = "Submit BTC/Zcash transfer on Near")]
     NearSubmitBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
@@ -653,23 +653,10 @@ pub enum OmniConnectorSubCommand {
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(
-        about = "Submit Zcash transfer on Near with optional ZIP-302 memo (use this instead of `near-submit-btc-transfer --chain zcash` when you need a memo)"
-    )]
-    NearSubmitZcashTransfer {
-        #[clap(short, long, help = "Omni Bridge Transaction Hash")]
-        near_tx_hash: String,
-        #[clap(short, long, help = "Sender ID who init transfer on Near")]
-        sender_id: Option<AccountId>,
-        #[clap(short, long, help = "Fee rate on Zcash chain")]
-        fee_rate: Option<u64>,
         #[clap(
             short,
             long,
-            help = "Optional ZIP-302 memo embedded in the shielded output (max 512 bytes; ignored on transparent recipients)"
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
         )]
         memo: Option<String>,
         #[command(flatten)]
@@ -885,21 +872,10 @@ pub(crate) enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "Amount to transfer")]
         amount: u128,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(
-        about = "Initiate a NEAR-to-Zcash transfer with optional ZIP-302 memo (use this instead of `init-near-to-bitcoin-transfer --chain zcash` when you need a memo)"
-    )]
-    InitNearToZcashTransfer {
-        #[clap(short, long, help = "Target Zcash address (shielded or transparent)")]
-        target_zec_address: String,
-        #[clap(short, long, help = "The amount to be transferred, in zatoshis")]
-        amount: u128,
         #[clap(
             short,
             long,
-            help = "Optional ZIP-302 memo embedded in the shielded output (max 512 bytes; ignored on transparent recipients)"
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
         )]
         memo: Option<String>,
         #[command(flatten)]
@@ -1060,29 +1036,12 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            memo,
             config_cli,
         } => {
             omni_connector(network, config_cli)
                 .near_submit_btc_transfer_with_tx_hash(
                     chain.into(),
-                    CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
-                    sender_id,
-                    fee_rate,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::NearSubmitZcashTransfer {
-            near_tx_hash,
-            sender_id,
-            fee_rate,
-            memo,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .near_submit_btc_transfer_with_tx_hash_and_memo(
-                    ChainKind::Zcash,
                     CryptoHash::from_str(&near_tx_hash).expect("Invalid near_tx_hash"),
                     sender_id,
                     fee_rate,
@@ -1876,30 +1835,13 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                memo,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
                     .init_near_to_bitcoin_transfer(
                         chain.into(),
                         target_btc_address,
-                        amount,
-                        TransactionOptions::default(),
-                    )
-                    .await
-                    .unwrap();
-
-                tracing::info!("Near Tx Hash: {tx_hash}");
-            }
-            InternalSubCommand::InitNearToZcashTransfer {
-                target_zec_address,
-                amount,
-                memo,
-                config_cli,
-            } => {
-                let tx_hash = omni_connector(network, config_cli)
-                    .init_near_to_bitcoin_transfer_with_memo(
-                        ChainKind::Zcash,
-                        target_zec_address,
                         amount,
                         TransactionOptions::default(),
                         memo,
