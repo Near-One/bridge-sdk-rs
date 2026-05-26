@@ -868,16 +868,6 @@ impl zcash_address::TryFromAddress for ZcashAddressReceivers {
         })
     }
 
-    fn try_from_transparent_p2sh(
-        _net: zcash_protocol::consensus::NetworkType,
-        _data: [u8; 20],
-    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
-        Ok(Self {
-            has_orchard: false,
-            has_transparent: true,
-        })
-    }
-
     fn try_from_unified(
         _net: zcash_protocol::consensus::NetworkType,
         data: unified::Address,
@@ -1030,31 +1020,17 @@ mod tests {
     }
 
     #[test]
-    fn zcash_t3_mainnet_parses_as_p2sh() {
+    fn zcash_t3_mainnet_rejected_at_parse() {
         let t3 = synthetic_t3_mainnet([0u8; 20]);
-        let parsed = UTXOAddress::parse(&t3, ChainKind::Zcash, Network::Mainnet)
-            .expect("Zcash t3 mainnet should parse as P2SH");
-        assert!(matches!(
-            parsed,
-            UTXOAddress::P2sh {
-                chain: ChainKind::Zcash,
-                network: Network::Mainnet,
-                ..
-            }
-        ));
-        // Round-trip back to the same encoding.
-        assert_eq!(parsed.to_string(), t3);
-        // script_pubkey lookup works for P2SH.
-        parsed
-            .script_pubkey()
-            .expect("P2SH script_pubkey derivable for t3");
+        UTXOAddress::parse(&t3, ChainKind::Zcash, Network::Mainnet)
+            .expect_err("Zcash P2SH (t3) is unsupported and must not parse");
     }
 
     #[test]
-    fn zcash_t3_classified_as_transparent() {
+    fn zcash_t3_rejected_by_classification() {
         let t3 = synthetic_t3_mainnet([0u8; 20]);
-        assert_eq!(contains_orchard_address(&t3), Ok(false));
-        assert_eq!(contains_transparent_address(&t3), Ok(true));
+        assert!(contains_orchard_address(&t3).is_err());
+        assert!(contains_transparent_address(&t3).is_err());
     }
 
     #[test]
@@ -1063,8 +1039,8 @@ mod tests {
         let err = get_tx_outs_orchard(100_000, &t3, &[50_000], ChainKind::Zcash, Network::Mainnet)
             .expect_err("orchard mode must reject P2SH change addresses");
         assert!(
-            err.contains("P2PKH"),
-            "expected P2PKH guard error, got: {err}"
+            err.contains("Invalid change UTXO address"),
+            "expected change-address parse failure, got: {err}"
         );
     }
 }
