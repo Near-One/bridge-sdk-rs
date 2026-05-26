@@ -1,7 +1,7 @@
 //! Anchor-fill UTXO selection.
 //!
 //! Goal: pick the **maximum** number of UTXOs allowed by a `max_gas_fee`
-//! budget while still covering `net_amount` and producing valid change under
+//! budget while still covering `gross_amount` and producing valid change under
 //! the `change_i < max_change_amount` and `change_num <= max_change_number`
 //! rules. The contract's `change_i < min_input` constraint is intentionally
 //! **not** enforced here — relaxing it lets a single large change piece
@@ -23,8 +23,8 @@
 //!           "fillers" (the UTXOs we want to consume).
 //!         - Binary-search the remaining tail of the pool for an "anchor"
 //!           UTXO whose balance brings the total to either:
-//!             - `net_amount` exactly (absorption, no change), or
-//!             - `net_amount + change` where
+//!             - `gross_amount` exactly (absorption, no change), or
+//!             - `gross_amount + change` where
 //!               `change ∈ [min_change_amount, max_change_number * max_change_amount)`.
 //!      - Compute the actual fee using the *real* output count produced by
 //!        the candidate; reject if it exceeds `max_gas_fee`.
@@ -55,13 +55,18 @@ use std::collections::HashMap;
 
 /// Choose UTXOs maximizing input count within the `max_gas_fee` budget.
 ///
+/// `gross_amount` is the total amount deducted from the pool by the
+/// withdrawal — i.e. `recipient_amount + gas_fee` (and `+ user_payment` when
+/// dust padding fires). The recipient ultimately receives
+/// `gross_amount - gas_fee - user_payment`.
+///
 /// Returns `Err` if the budget is too tight to admit any inputs, if the pool
-/// can't cover `net_amount`, or if no `K`-subset of the pool produces a valid
-/// change configuration.
+/// can't cover `gross_amount`, or if no `K`-subset of the pool produces a
+/// valid change configuration.
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_anchor_fill(
-    net_amount: u128,
+    gross_amount: u128,
     utxos: HashMap<String, UTXO>,
     pool_size: u32,
     params: &WithdrawSelectionParams,
@@ -83,18 +88,18 @@ pub fn choose_utxos_anchor_fill(
         .ok_or_else(|| "min_change_amount + change_reserve overflows u128".to_string())?;
 
     // Overflow guard on the dust target (mirrors `choose_utxos_random`).
-    net_amount
+    gross_amount
         .checked_add(min_change_required)
-        .ok_or_else(|| "net_amount + min_change_required overflows u128".to_string())?;
+        .ok_or_else(|| "gross_amount + min_change_required overflows u128".to_string())?;
 
     let in_high_zone = pool_size > params.passive_management_upper_limit;
 
-    // HIGH zone: drop UTXOs > net_amount so the result satisfies `input_num > change_num`
+    // HIGH zone: drop UTXOs > gross_amount so the result satisfies `input_num > change_num`
     // downstream (single-input + 1-change becomes structurally impossible).
     let utxos = if in_high_zone {
         utxos
             .into_iter()
-            .filter(|(_, u)| u128::from(u.balance) <= net_amount)
+            .filter(|(_, u)| u128::from(u.balance) <= gross_amount)
             .collect::<HashMap<_, _>>()
     } else {
         utxos
@@ -135,7 +140,7 @@ pub fn choose_utxos_anchor_fill(
 
         let Some(selection) = try_k_inputs(
             k,
-            net_amount,
+            gross_amount,
             &sorted,
             params,
             min_change_required,
@@ -166,7 +171,7 @@ pub fn choose_utxos_anchor_fill(
 
     Err(last_err.unwrap_or_else(|| {
         format!(
-            "No feasible selection for net_amount={net_amount} (k_max={k_max}, pool_size={})",
+            "No feasible selection for gross_amount={gross_amount} (k_max={k_max}, pool_size={})",
             sorted.len()
         )
     }))
@@ -174,7 +179,7 @@ pub fn choose_utxos_anchor_fill(
 
 fn try_k_inputs(
     k: usize,
-    net_amount: u128,
+    gross_amount: u128,
     sorted_pool: &[(String, UTXO)],
     params: &WithdrawSelectionParams,
     min_change_required: u128,
@@ -186,7 +191,7 @@ fn try_k_inputs(
 
     if k == 1 {
         return try_single_input(
-            net_amount,
+            gross_amount,
             sorted_pool,
             params,
             min_change_required,
@@ -205,7 +210,7 @@ fn try_k_inputs(
         if let Some(sel) = try_anchor_search(
             fillers,
             candidates,
-            net_amount,
+            gross_amount,
             params,
             min_change_required,
             in_high_zone,
@@ -217,19 +222,19 @@ fn try_k_inputs(
 }
 
 fn try_single_input(
-    net_amount: u128,
+    gross_amount: u128,
     sorted_pool: &[(String, UTXO)],
     params: &WithdrawSelectionParams,
     min_change_required: u128,
     in_high_zone: bool,
 ) -> Option<UtxoSelection> {
     let reserve_active = min_change_required > params.min_change_amount;
-    // Best-fit single input: smallest balance >= net_amount that yields valid change.
-    let lo = sorted_pool.partition_point(|(_, u)| u128::from(u.balance) < net_amount);
+    // Best-fit single input: smallest balance >= gross_amount that yields valid change.
+    let lo = sorted_pool.partition_point(|(_, u)| u128::from(u.balance) < gross_amount);
 
     for entry in &sorted_pool[lo..] {
         let bal = u128::from(entry.1.balance);
-        let change = bal - net_amount;
+        let change = bal - gross_amount;
 
         if change == 0 {
             // Absorption leaves no change to shrink for an RBF bump, so skip
@@ -280,8 +285,8 @@ fn try_single_input(
 
         if in_high_zone && !change_amounts.is_empty() {
             // HIGH zone: input_num=1 > change_num required → change_num must be 0.
-            // The HIGH-zone pool filter already drops UTXOs > net_amount, so this
-            // path only fires when net_amount equals an existing UTXO balance.
+            // The HIGH-zone pool filter already drops UTXOs > gross_amount, so this
+            // path only fires when gross_amount equals an existing UTXO balance.
             continue;
         }
 
@@ -297,7 +302,7 @@ fn try_single_input(
 fn try_anchor_search(
     fillers: &[(String, UTXO)],
     candidates: &[(String, UTXO)],
-    net_amount: u128,
+    gross_amount: u128,
     params: &WithdrawSelectionParams,
     min_change_required: u128,
     in_high_zone: bool,
@@ -321,11 +326,11 @@ fn try_anchor_search(
     // Strict upper bound on change (exclusive).
     let valid_change_max = (params.max_change_number as u128).saturating_mul(max_per_piece + 1);
 
-    // 1) Absorption — anchor balance brings sum to exactly net_amount.
+    // 1) Absorption — anchor balance brings sum to exactly gross_amount.
     //    Skipped when an RBF reserve is required: absorption leaves no change
     //    output to shrink, so a later RBF bump has no headroom.
-    if !reserve_active && sum_fillers < net_amount {
-        let abs_target = net_amount - sum_fillers;
+    if !reserve_active && sum_fillers < gross_amount {
+        let abs_target = gross_amount - sum_fillers;
         if let Some(idx) = find_balance_eq(candidates, abs_target) {
             let mut selected: Vec<(String, UTXO)> = fillers.to_vec();
             selected.push(candidates[idx].clone());
@@ -340,10 +345,10 @@ fn try_anchor_search(
     // 2) Standard / splittable change — anchor balance in [lower, upper).
     //    `min_change_required = min_change_amount + change_reserve` ensures the
     //    total change leaves room for an RBF fee bump of up to `change_reserve`.
-    let lower = net_amount
+    let lower = gross_amount
         .saturating_add(min_change_required)
         .saturating_sub(sum_fillers);
-    let upper = net_amount
+    let upper = gross_amount
         .saturating_add(valid_change_max)
         .saturating_sub(sum_fillers);
 
@@ -359,7 +364,7 @@ fn try_anchor_search(
         }
 
         let total = sum_fillers + anchor_bal;
-        let change = total - net_amount;
+        let change = total - gross_amount;
 
         let change_amounts = if change < params.max_change_amount {
             vec![change]
@@ -451,7 +456,7 @@ mod tests {
 
     fn assert_invariants(
         selection: &UtxoSelection,
-        net_amount: u128,
+        gross_amount: u128,
         params: &WithdrawSelectionParams,
     ) {
         let mut seen = std::collections::HashSet::new();
@@ -480,7 +485,7 @@ mod tests {
         let sum_change: u128 = selection.change_amounts.iter().sum();
         assert_eq!(
             sum_inputs + selection.user_payment,
-            net_amount + sum_change,
+            gross_amount + sum_change,
             "balance equation broken"
         );
 
@@ -511,14 +516,14 @@ mod tests {
         let params = default_params();
         let pool = pool_100_tiered();
         let pool_size = pool.len() as u32;
-        let net_amount: u128 = 1_500_000;
+        let gross_amount: u128 = 1_500_000;
 
         let budgets: &[u64] = &[
             200_000, 100_000, 50_000, 20_000, 10_000, 5_000, 3_000, 2_000, 1_000, 500,
         ];
 
         println!(
-            "\n=== anchor_fill | amount={net_amount} sat | fee_rate={fee_rate} | pool=100 tiered ===\n"
+            "\n=== anchor_fill | amount={gross_amount} sat | fee_rate={fee_rate} | pool=100 tiered ===\n"
         );
         println!(
             "{:>12} | {:>10} | {:>6} | {:>7} | {:>7}",
@@ -540,7 +545,7 @@ mod tests {
             }
 
             match choose_utxos_anchor_fill(
-                net_amount,
+                gross_amount,
                 pool.clone(),
                 pool_size,
                 &params,
@@ -554,7 +559,7 @@ mod tests {
                     let n_in = sel.selected.len();
                     let n_out = 1 + sel.change_amounts.len();
                     let fee = crate::get_gas_fee(chain, n_in as u64, n_out as u64, fee_rate, false);
-                    assert_invariants(&sel, net_amount, &params);
+                    assert_invariants(&sel, gross_amount, &params);
                     assert!(
                         fee <= budget,
                         "actual fee {fee} > max_gas_fee {budget} (in={n_in}, out={n_out})"
@@ -634,11 +639,11 @@ mod tests {
         let params = default_params();
         let pool = pool_100_tiered();
         let pool_size = pool.len() as u32;
-        let net_amount: u128 = 1_500_000;
+        let gross_amount: u128 = 1_500_000;
         let max_gas_fee = 1_600u64;
 
         let sel = choose_utxos_anchor_fill(
-            net_amount,
+            gross_amount,
             pool,
             pool_size,
             &params,
@@ -661,7 +666,7 @@ mod tests {
             actual_fee <= max_gas_fee,
             "actual fee {actual_fee} exceeds budget {max_gas_fee}"
         );
-        assert_invariants(&sel, net_amount, &params);
+        assert_invariants(&sel, gross_amount, &params);
     }
 
     #[test]
@@ -708,13 +713,21 @@ mod tests {
         }
         let pool_size = pool.len() as u32;
 
-        let net_amount: u128 = 1_400_000;
+        let gross_amount: u128 = 1_400_000;
         let selection = choose_utxos_anchor_fill(
-            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false, 0,
+            gross_amount,
+            pool,
+            pool_size,
+            &params,
+            chain,
+            fee_rate,
+            200_000,
+            false,
+            0,
         )
         .expect("LOW-zone selection should succeed");
 
-        assert_invariants(&selection, net_amount, &params);
+        assert_invariants(&selection, gross_amount, &params);
         assert!(
             selection.change_amounts.len() > selection.selected.len(),
             "LOW zone violation: inputs={} not < change_outputs={}",
@@ -750,16 +763,24 @@ mod tests {
         }
         let pool_size = pool.len() as u32;
 
-        // net_amount = 1,150,000 → with all 3 inputs (sum 1,200,000) change = 50,000.
+        // gross_amount = 1,150,000 → with all 3 inputs (sum 1,200,000) change = 50,000.
         // min_filler = 300,000 → 50,000 < 300,000 → naturally 1 change piece (violates LOW).
         // enforce_passive_management must re-split into ≥ K+1 = 4 pieces.
-        let net_amount: u128 = 1_150_000;
+        let gross_amount: u128 = 1_150_000;
         let selection = choose_utxos_anchor_fill(
-            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false, 0,
+            gross_amount,
+            pool,
+            pool_size,
+            &params,
+            chain,
+            fee_rate,
+            200_000,
+            false,
+            0,
         )
         .expect("LOW-zone re-split should succeed");
 
-        assert_invariants(&selection, net_amount, &params);
+        assert_invariants(&selection, gross_amount, &params);
         assert!(
             selection.change_amounts.len() > selection.selected.len(),
             "LOW zone violation: inputs={} not < change_outputs={}",
@@ -780,12 +801,12 @@ mod tests {
         let params = default_params();
         let pool = pool_100_tiered();
         let pool_size = pool.len() as u32;
-        let net_amount: u128 = 1_500_000;
+        let gross_amount: u128 = 1_500_000;
         let max_gas_fee = 200_000u64;
         let change_reserve: u128 = 20_000;
 
         let sel = choose_utxos_anchor_fill(
-            net_amount,
+            gross_amount,
             pool,
             pool_size,
             &params,
@@ -797,7 +818,7 @@ mod tests {
         )
         .expect("selection with RBF reserve should succeed");
 
-        assert_invariants(&sel, net_amount, &params);
+        assert_invariants(&sel, gross_amount, &params);
 
         // Absorption is forbidden when reserve is required.
         assert!(
