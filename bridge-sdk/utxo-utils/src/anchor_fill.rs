@@ -69,11 +69,23 @@ pub fn choose_utxos_anchor_fill(
     fee_rate: u64,
     max_gas_fee: u64,
     orchard: bool,
+    // Extra room (sat) to leave in the change output above `min_change_amount`,
+    // so a later RBF can bump the fee by up to `change_reserve` without driving
+    // the change below the contract's minimum. Pass `0` if RBF headroom isn't
+    // needed. When > 0, absorption (no change) is disabled — there's nothing to
+    // shrink for an RBF bump — and dust padding is disabled too.
+    change_reserve: u128,
 ) -> Result<UtxoSelection, String> {
-    // Match `choose_utxos_random`'s overflow guard on the dust target.
+    // Effective minimum change: `min_change_amount` plus RBF headroom.
+    let min_change_required = params
+        .min_change_amount
+        .checked_add(change_reserve)
+        .ok_or_else(|| "min_change_amount + change_reserve overflows u128".to_string())?;
+
+    // Overflow guard on the dust target (mirrors `choose_utxos_random`).
     net_amount
-        .checked_add(params.min_change_amount)
-        .ok_or_else(|| "net_amount + min_change_amount overflows u128".to_string())?;
+        .checked_add(min_change_required)
+        .ok_or_else(|| "net_amount + min_change_required overflows u128".to_string())?;
 
     let in_high_zone = pool_size > params.passive_management_upper_limit;
 
@@ -121,7 +133,14 @@ pub fn choose_utxos_anchor_fill(
             continue;
         }
 
-        let Some(selection) = try_k_inputs(k, net_amount, &sorted, params, in_high_zone) else {
+        let Some(selection) = try_k_inputs(
+            k,
+            net_amount,
+            &sorted,
+            params,
+            min_change_required,
+            in_high_zone,
+        ) else {
             continue;
         };
 
@@ -158,6 +177,7 @@ fn try_k_inputs(
     net_amount: u128,
     sorted_pool: &[(String, UTXO)],
     params: &WithdrawSelectionParams,
+    min_change_required: u128,
     in_high_zone: bool,
 ) -> Option<UtxoSelection> {
     if k == 0 || sorted_pool.len() < k {
@@ -165,7 +185,13 @@ fn try_k_inputs(
     }
 
     if k == 1 {
-        return try_single_input(net_amount, sorted_pool, params, in_high_zone);
+        return try_single_input(
+            net_amount,
+            sorted_pool,
+            params,
+            min_change_required,
+            in_high_zone,
+        );
     }
 
     // K >= 2: anchor + (K-1) consecutive fillers.
@@ -176,8 +202,14 @@ fn try_k_inputs(
         let fillers = &sorted_pool[filler_start..filler_start + k - 1];
         let candidates = &sorted_pool[filler_start + k - 1..];
 
-        if let Some(sel) = try_anchor_search(fillers, candidates, net_amount, params, in_high_zone)
-        {
+        if let Some(sel) = try_anchor_search(
+            fillers,
+            candidates,
+            net_amount,
+            params,
+            min_change_required,
+            in_high_zone,
+        ) {
             return Some(sel);
         }
     }
@@ -188,8 +220,10 @@ fn try_single_input(
     net_amount: u128,
     sorted_pool: &[(String, UTXO)],
     params: &WithdrawSelectionParams,
+    min_change_required: u128,
     in_high_zone: bool,
 ) -> Option<UtxoSelection> {
+    let reserve_active = min_change_required > params.min_change_amount;
     // Best-fit single input: smallest balance >= net_amount that yields valid change.
     let lo = sorted_pool.partition_point(|(_, u)| u128::from(u.balance) < net_amount);
 
@@ -198,6 +232,11 @@ fn try_single_input(
         let change = bal - net_amount;
 
         if change == 0 {
+            // Absorption leaves no change to shrink for an RBF bump, so skip
+            // when a reserve is required.
+            if reserve_active {
+                continue;
+            }
             return Some(UtxoSelection {
                 selected: vec![entry.clone()],
                 user_payment: 0,
@@ -205,20 +244,21 @@ fn try_single_input(
             });
         }
 
-        if change < params.min_change_amount {
-            if params.min_change_amount < bal {
-                // Dust padding: user covers the gap to bring change up to min_change_amount.
+        if change < min_change_required {
+            if min_change_required < bal {
+                // Dust padding: user covers the gap to bring change up to
+                // `min_change_required` (= `min_change_amount + change_reserve`).
                 // 1 input + 1 change → HIGH zone (input_num > change_num) is satisfied.
                 return Some(UtxoSelection {
                     selected: vec![entry.clone()],
-                    user_payment: params.min_change_amount - change,
-                    change_amounts: vec![params.min_change_amount],
+                    user_payment: min_change_required - change,
+                    change_amounts: vec![min_change_required],
                 });
             }
             continue;
         }
 
-        // change >= min_change_amount.
+        // change >= min_change_required.
         // Change-piece cap is `max_change_amount` only — `< min_input` is not enforced.
         let change_amounts = if change >= params.max_change_amount {
             let max_per_piece = params.max_change_amount.saturating_sub(1);
@@ -259,6 +299,7 @@ fn try_anchor_search(
     candidates: &[(String, UTXO)],
     net_amount: u128,
     params: &WithdrawSelectionParams,
+    min_change_required: u128,
     in_high_zone: bool,
 ) -> Option<UtxoSelection> {
     if fillers.is_empty() || candidates.is_empty() {
@@ -267,6 +308,7 @@ fn try_anchor_search(
 
     let sum_fillers: u128 = fillers.iter().map(|(_, u)| u128::from(u.balance)).sum();
     let input_count = fillers.len() + 1;
+    let reserve_active = min_change_required > params.min_change_amount;
 
     // Each change piece must be < max_change_amount only — the contract's
     // `change_i < min_input` constraint is intentionally relaxed here so a
@@ -280,7 +322,9 @@ fn try_anchor_search(
     let valid_change_max = (params.max_change_number as u128).saturating_mul(max_per_piece + 1);
 
     // 1) Absorption — anchor balance brings sum to exactly net_amount.
-    if sum_fillers < net_amount {
+    //    Skipped when an RBF reserve is required: absorption leaves no change
+    //    output to shrink, so a later RBF bump has no headroom.
+    if !reserve_active && sum_fillers < net_amount {
         let abs_target = net_amount - sum_fillers;
         if let Some(idx) = find_balance_eq(candidates, abs_target) {
             let mut selected: Vec<(String, UTXO)> = fillers.to_vec();
@@ -294,8 +338,10 @@ fn try_anchor_search(
     }
 
     // 2) Standard / splittable change — anchor balance in [lower, upper).
+    //    `min_change_required = min_change_amount + change_reserve` ensures the
+    //    total change leaves room for an RBF fee bump of up to `change_reserve`.
     let lower = net_amount
-        .saturating_add(params.min_change_amount)
+        .saturating_add(min_change_required)
         .saturating_sub(sum_fillers);
     let upper = net_amount
         .saturating_add(valid_change_max)
@@ -502,6 +548,7 @@ mod tests {
                 fee_rate,
                 budget,
                 false,
+                0,
             ) {
                 Ok(sel) => {
                     let n_in = sel.selected.len();
@@ -538,6 +585,7 @@ mod tests {
             fee_rate,
             200_000,
             false,
+            0,
         )
         .expect("large-budget selection");
 
@@ -550,6 +598,7 @@ mod tests {
             fee_rate,
             3_000,
             false,
+            0,
         )
         .expect("small-budget selection");
 
@@ -597,6 +646,7 @@ mod tests {
             fee_rate,
             max_gas_fee,
             false,
+            0,
         )
         .expect("budget=1600 is feasible — real selection has 2 outputs, not the worst-case 6");
 
@@ -623,7 +673,7 @@ mod tests {
         let pool_size = pool.len() as u32;
 
         let res = choose_utxos_anchor_fill(
-            1_500_000, pool, pool_size, &params, chain, fee_rate, 100, false,
+            1_500_000, pool, pool_size, &params, chain, fee_rate, 100, false, 0,
         );
         assert!(res.is_err(), "expected Err for tiny budget, got {res:?}");
     }
@@ -660,7 +710,7 @@ mod tests {
 
         let net_amount: u128 = 1_400_000;
         let selection = choose_utxos_anchor_fill(
-            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false,
+            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false, 0,
         )
         .expect("LOW-zone selection should succeed");
 
@@ -705,7 +755,7 @@ mod tests {
         // enforce_passive_management must re-split into ≥ K+1 = 4 pieces.
         let net_amount: u128 = 1_150_000;
         let selection = choose_utxos_anchor_fill(
-            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false,
+            net_amount, pool, pool_size, &params, chain, fee_rate, 200_000, false, 0,
         )
         .expect("LOW-zone re-split should succeed");
 
@@ -716,5 +766,80 @@ mod tests {
             selection.selected.len(),
             selection.change_amounts.len()
         );
+    }
+
+    /// `change_reserve > 0` must leave that many sats of headroom above
+    /// `min_change_amount` in the total change, so a later RBF bump of up to
+    /// `change_reserve` can shrink the change without driving it below the
+    /// contract minimum. Also: absorption (no change) must NOT be selected
+    /// when a reserve is required.
+    #[test]
+    fn anchor_fill_honors_change_reserve_for_rbf_headroom() {
+        let chain = ChainKind::Btc;
+        let fee_rate = 10_000u64;
+        let params = default_params();
+        let pool = pool_100_tiered();
+        let pool_size = pool.len() as u32;
+        let net_amount: u128 = 1_500_000;
+        let max_gas_fee = 200_000u64;
+        let change_reserve: u128 = 20_000;
+
+        let sel = choose_utxos_anchor_fill(
+            net_amount,
+            pool,
+            pool_size,
+            &params,
+            chain,
+            fee_rate,
+            max_gas_fee,
+            false,
+            change_reserve,
+        )
+        .expect("selection with RBF reserve should succeed");
+
+        assert_invariants(&sel, net_amount, &params);
+
+        // Absorption is forbidden when reserve is required.
+        assert!(
+            !sel.change_amounts.is_empty(),
+            "change_reserve > 0 must produce a non-empty change output"
+        );
+
+        // Total change must clear `min_change_amount + change_reserve`, so an
+        // RBF bump up to `change_reserve` can shrink it and still satisfy the
+        // contract's per-piece minimum.
+        let total_change: u128 = sel.change_amounts.iter().sum();
+        assert!(
+            total_change >= params.min_change_amount + change_reserve,
+            "total_change {total_change} < min_change_amount {} + reserve {change_reserve}",
+            params.min_change_amount
+        );
+    }
+
+    /// A reserve so large the contract's per-tx change cap can't supply it
+    /// must produce a clean error rather than silently relax the headroom
+    /// guarantee. Uses tight params so `valid_change_max = max_change_number
+    /// × max_change_amount` is a small, exact bound that the reserve exceeds.
+    #[test]
+    fn anchor_fill_errors_when_reserve_unsatisfiable() {
+        let chain = ChainKind::Btc;
+        let fee_rate = 10_000u64;
+        // valid_change_max = 5 * 2_000_000 = 10_000_000. A 20_000_000 reserve
+        // exceeds this and no anchor can produce a fitting change.
+        let params = WithdrawSelectionParams {
+            min_change_amount: 5_000,
+            max_change_amount: 2_000_000,
+            max_withdrawal_input_number: 50,
+            max_change_number: 5,
+            passive_management_lower_limit: 10,
+            passive_management_upper_limit: 200,
+        };
+        let pool = pool_100_tiered();
+        let pool_size = pool.len() as u32;
+
+        let res = choose_utxos_anchor_fill(
+            1_500_000, pool, pool_size, &params, chain, fee_rate, 200_000, false, 20_000_000,
+        );
+        assert!(res.is_err(), "unsatisfiable reserve must Err, got {res:?}");
     }
 }

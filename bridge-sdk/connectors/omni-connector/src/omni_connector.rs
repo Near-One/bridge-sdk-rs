@@ -1304,6 +1304,12 @@ impl OmniConnector {
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
+        // Extra headroom (sat) to leave in the change output above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only honoured on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored when falling back to the random selector. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         let near_bridge_client = self.near_bridge_client()?;
@@ -1318,6 +1324,7 @@ impl OmniConnector {
                 enable_orchard,
                 fee_rate,
                 max_gas_fee,
+                change_reserve,
             )
             .await?;
 
@@ -1516,6 +1523,10 @@ impl OmniConnector {
             transfer_id,
             transaction_options,
             max_gas_fee,
+            // `NearToBtcTransferInfo` (from contract logs) doesn't carry a
+            // `change_reserve` field; expose it on this wrapper if/when callers
+            // need RBF headroom on the by-tx-hash submit path.
+            None,
         )
         .await
     }
@@ -3648,6 +3659,7 @@ impl OmniConnector {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn extract_utxo(
         &self,
         chain: ChainKind,
@@ -3660,6 +3672,12 @@ impl OmniConnector {
         // output). When `None`, falls back to the random selector — picks
         // the minimum inputs needed to cover `amount`, no consolidation.
         max_gas_fee: Option<u64>,
+        // Extra headroom (sat) to leave in the change above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only applied on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored by the random fallback. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3685,6 +3703,7 @@ impl OmniConnector {
                 fee_rate,
                 budget,
                 enable_orchard,
+                change_reserve.unwrap_or(0),
             ),
             None => utxo_utils::choose_utxos_random_no_payment(
                 amount,
