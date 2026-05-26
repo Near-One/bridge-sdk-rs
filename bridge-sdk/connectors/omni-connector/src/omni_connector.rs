@@ -3799,10 +3799,7 @@ impl OmniConnector {
                     tx_outs.get(1),
                 )
                 .await?;
-            let mut output = vec![];
-            if tx_outs.len() == 2 {
-                output.push(tx_outs[1].clone());
-            }
+            let output = tx_outs[1..].to_vec();
 
             Ok((
                 Some(ChainSpecificData {
