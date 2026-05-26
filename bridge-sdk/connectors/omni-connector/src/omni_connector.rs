@@ -66,6 +66,7 @@ pub struct OmniConnector {
     hyperevm_bridge_client: Option<EvmBridgeClient>,
     abs_bridge_client: Option<EvmBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
+    fogo_bridge_client: Option<SolanaBridgeClient>,
     wormhole_bridge_client: Option<WormholeBridgeClient>,
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
     zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
@@ -136,10 +137,12 @@ pub enum DeployTokenArgs {
         near_tx_hash: CryptoHash,
         tx_nonce: Option<U256>,
     },
-    SolanaDeployToken {
+    SvmDeployToken {
+        chain_kind: ChainKind,
         event: OmniBridgeEvent,
     },
-    SolanaDeployTokenWithTxHash {
+    SvmDeployTokenWithTxHash {
+        chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
@@ -209,7 +212,8 @@ pub enum InitTransferArgs {
         message: String,
         tx_nonce: Option<U256>,
     },
-    SolanaInitTransfer {
+    SvmInitTransfer {
+        chain_kind: ChainKind,
         token: Pubkey,
         amount: u128,
         recipient: OmniAddress,
@@ -217,7 +221,8 @@ pub enum InitTransferArgs {
         native_fee: u64,
         message: String,
     },
-    SolanaInitTransferSol {
+    SvmInitTransferSol {
+        chain_kind: ChainKind,
         amount: u128,
         recipient: OmniAddress,
         fee: u128,
@@ -277,14 +282,16 @@ pub enum FinTransferArgs {
         near_tx_hash: CryptoHash,
         tx_nonce: Option<U256>,
     },
-    SolanaFinTransfer {
+    SvmFinTransfer {
+        chain_kind: ChainKind,
         event: OmniBridgeEvent,
-        solana_token: Pubkey,
+        svm_token: Pubkey,
     },
-    SolanaFinTransferWithTxHash {
+    SvmFinTransferWithTxHash {
+        chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
-        solana_token: Pubkey,
+        svm_token: Pubkey,
     },
     UTXOChainFinTransfer {
         chain: ChainKind,
@@ -1077,6 +1084,7 @@ impl OmniConnector {
         chain: ChainKind,
         fee_rate: Option<u64>,
         max_input_number: Option<u8>,
+        merge_largest: bool,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1093,6 +1101,7 @@ impl OmniConnector {
             active_management_upper_limit,
             max_active_utxo_management_input_number,
             max_active_utxo_management_output_number,
+            max_change_amount,
         ) = near_bridge_client
             .get_active_management_limit(chain)
             .await?;
@@ -1103,7 +1112,7 @@ impl OmniConnector {
         let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
         let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
-            utxos,
+            &utxos,
             fee_rate,
             &change_address,
             (
@@ -1115,8 +1124,54 @@ impl OmniConnector {
             min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
+            merge_largest,
+            max_change_amount,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
+
+        let inputs_log: Vec<String> = out_points
+            .iter()
+            .map(|op| {
+                let key = format!("{}@{}", op.txid, op.vout);
+                let balance = utxos.get(&key).map(|u| u.balance);
+                match balance {
+                    Some(b) => format!("{key} ({b} sat)"),
+                    None => format!("{key} (?)"),
+                }
+            })
+            .collect();
+        let input_total: u64 = out_points
+            .iter()
+            .filter_map(|op| {
+                utxos
+                    .get(&format!("{}@{}", op.txid, op.vout))
+                    .map(|u| u.balance)
+            })
+            .sum();
+
+        let outputs_log: Vec<String> = tx_outs
+            .iter()
+            .map(|o| format!("{} sat", o.value.to_sat()))
+            .collect();
+        let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+
+        let gas_fee = input_total.saturating_sub(output_total);
+
+        tracing::debug!(
+            pool_size = utxos.len(),
+            active_lower = active_management_lower_limit,
+            active_upper = active_management_upper_limit,
+            fee_rate,
+            num_inputs = out_points.len(),
+            num_outputs = tx_outs.len(),
+            input_total_sat = input_total,
+            output_total_sat = output_total,
+            gas_fee_sat = gas_fee,
+            inputs = ?inputs_log,
+            outputs = ?outputs_log,
+            change_address = %change_address,
+            "Active UTXO management transaction plan"
+        );
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
@@ -2076,12 +2131,13 @@ impl OmniConnector {
         Ok(tx_hash)
     }
 
-    pub async fn solana_get_transfer_event(
+    pub async fn svm_get_transfer_event(
         &self,
+        chain_kind: ChainKind,
         signature: &Signature,
     ) -> Result<solana_bridge_client::Transfer> {
-        let solana_bridge_client = self.solana_bridge_client()?;
-        solana_bridge_client
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        svm_bridge_client
             .get_transfer_event(signature)
             .await
             .map_err(|e| {
@@ -2089,10 +2145,14 @@ impl OmniConnector {
             })
     }
 
-    pub async fn solana_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+    pub async fn svm_is_transfer_finalised(
+        &self,
+        chain_kind: ChainKind,
+        nonce: u64,
+    ) -> Result<bool> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        solana_bridge_client
+        svm_bridge_client
             .is_transfer_finalised(nonce)
             .await
             .map_err(|e| {
@@ -2102,10 +2162,10 @@ impl OmniConnector {
             })
     }
 
-    pub async fn solana_set_admin(&self, admin: Pubkey) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+    pub async fn svm_set_admin(&self, chain_kind: ChainKind, admin: Pubkey) -> Result<Signature> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client.set_admin(admin).await?;
+        let signature = svm_bridge_client.set_admin(admin).await?;
 
         tracing::info!(
             signature = signature.to_string(),
@@ -2115,26 +2175,27 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_pause(&self) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+    pub async fn svm_pause(&self, chain_kind: ChainKind) -> Result<Signature> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client.pause().await?;
+        let signature = svm_bridge_client.pause().await?;
 
         tracing::info!(signature = signature.to_string(), "Sent pause transaction");
 
         Ok(signature)
     }
 
-    pub async fn solana_update_metadata(
+    pub async fn svm_update_metadata(
         &self,
+        chain_kind: ChainKind,
         token: Pubkey,
         name: Option<String>,
         symbol: Option<String>,
         uri: Option<String>,
     ) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client
+        let signature = svm_bridge_client
             .update_metadata(token, name, symbol, uri)
             .await?;
 
@@ -2146,14 +2207,22 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_initialize(&self, program_keypair: Keypair) -> Result<Signature> {
+    pub async fn svm_initialize(
+        &self,
+        chain_kind: ChainKind,
+        program_keypair: Keypair,
+    ) -> Result<Signature> {
         let near_bridge_account_id = self.near_bridge_client()?.omni_bridge_id()?;
+        let mpc_root_public_key = match self.network()? {
+            Network::Mainnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_MAINNET,
+            Network::Testnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_TESTNET,
+        };
         let derived_bridge_address =
-            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1");
+            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1", mpc_root_public_key);
 
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client
+        let signature = svm_bridge_client
             .initialize(derived_bridge_address, program_keypair)
             .await?;
 
@@ -2165,33 +2234,41 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_get_version(&self) -> Result<String> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+    pub async fn svm_get_version(&self, chain_kind: ChainKind) -> Result<String> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let version = solana_bridge_client.get_version().await?;
+        let version = svm_bridge_client.get_version().await?;
 
-        tracing::info!(version = version, "Fetched Solana program version");
+        tracing::info!(version = version, "Fetched SVM program version");
 
         Ok(version)
     }
 
-    pub async fn solana_get_token_vault(&self, token: Pubkey) -> Result<Pubkey> {
-        let solana_bridge_client = self.solana_bridge_client()?;
-        let vault = solana_bridge_client.get_token_vault(token)?;
+    pub async fn svm_get_token_vault(
+        &self,
+        chain_kind: ChainKind,
+        token: Pubkey,
+    ) -> Result<Pubkey> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let vault = svm_bridge_client.get_token_vault(token)?;
 
         tracing::info!(
             token = token.to_string(),
             vault = vault.to_string(),
-            "Derived Solana token vault"
+            "Derived SVM token vault"
         );
 
         Ok(vault)
     }
 
-    pub async fn solana_log_metadata(&self, token: Pubkey) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+    pub async fn svm_log_metadata(
+        &self,
+        chain_kind: ChainKind,
+        token: Pubkey,
+    ) -> Result<Signature> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client.log_metadata(token).await?;
+        let signature = svm_bridge_client.log_metadata(token).await?;
 
         tracing::info!(
             signature = signature.to_string(),
@@ -2201,8 +2278,9 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_deploy_token_with_tx_hash(
+    pub async fn svm_deploy_token_with_tx_hash(
         &self,
+        chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     ) -> Result<Signature> {
@@ -2212,12 +2290,13 @@ impl OmniConnector {
             .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
             .await?;
 
-        self.solana_deploy_token_with_event(serde_json::from_str(&transfer_log)?)
+        self.svm_deploy_token_with_event(chain_kind, serde_json::from_str(&transfer_log)?)
             .await
     }
 
-    pub async fn solana_deploy_token_with_event(
+    pub async fn svm_deploy_token_with_event(
         &self,
+        chain_kind: ChainKind,
         event: OmniBridgeEvent,
     ) -> Result<Signature> {
         let OmniBridgeEvent::LogMetadataEvent {
@@ -2228,7 +2307,7 @@ impl OmniConnector {
             return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
 
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
         let mut signature = signature.to_bytes();
         signature[64] -= 27; // TODO: Remove recovery_id modification in OmniTypes and add it specifically when submitting to EVM chains
@@ -2245,7 +2324,7 @@ impl OmniConnector {
             })?,
         };
 
-        let signature = solana_bridge_client.deploy_token(payload).await?;
+        let signature = svm_bridge_client.deploy_token(payload).await?;
 
         tracing::info!(
             signature = signature.to_string(),
@@ -2255,8 +2334,9 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_init_transfer(
+    pub async fn svm_init_transfer(
         &self,
+        chain_kind: ChainKind,
         token: Pubkey,
         amount: u128,
         recipient: OmniAddress,
@@ -2264,9 +2344,9 @@ impl OmniConnector {
         native_fee: u64,
         message: String,
     ) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client
+        let signature = svm_bridge_client
             .init_transfer(
                 token,
                 amount,
@@ -2285,17 +2365,18 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_init_transfer_sol(
+    pub async fn svm_init_transfer_sol(
         &self,
+        chain_kind: ChainKind,
         amount: u128,
         recipient: OmniAddress,
         fee: u128,
         native_fee: u64,
         message: String,
     ) -> Result<Signature> {
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
-        let signature = solana_bridge_client
+        let signature = svm_bridge_client
             .init_transfer_sol(amount, recipient.to_string(), fee, native_fee, message)
             .await?;
 
@@ -2307,11 +2388,12 @@ impl OmniConnector {
         Ok(signature)
     }
 
-    pub async fn solana_finalize_transfer_with_tx_hash(
+    pub async fn svm_finalize_transfer_with_tx_hash(
         &self,
+        chain_kind: ChainKind,
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
-        solana_token: Pubkey, // TODO: retrieve from near contract
+        svm_token: Pubkey, // TODO: retrieve from near contract
     ) -> Result<Signature> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -2319,14 +2401,19 @@ impl OmniConnector {
             .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
             .await?;
 
-        self.solana_finalize_transfer_with_event(serde_json::from_str(&transfer_log)?, solana_token)
-            .await
+        self.svm_finalize_transfer_with_event(
+            chain_kind,
+            serde_json::from_str(&transfer_log)?,
+            svm_token,
+        )
+        .await
     }
 
-    pub async fn solana_finalize_transfer_with_event(
+    pub async fn svm_finalize_transfer_with_event(
         &self,
+        chain_kind: ChainKind,
         event: OmniBridgeEvent,
-        solana_token: Pubkey, // TODO: retrieve from near contract
+        svm_token: Pubkey, // TODO: retrieve from near contract
     ) -> Result<Signature> {
         let OmniBridgeEvent::SignTransferEvent {
             message_payload,
@@ -2336,7 +2423,7 @@ impl OmniConnector {
             return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
 
-        let solana_bridge_client = self.solana_bridge_client()?;
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
         let mut signature = signature.to_bytes();
         signature[64] -= 27;
@@ -2349,9 +2436,14 @@ impl OmniConnector {
                     origin_nonce: message_payload.transfer_id.origin_nonce,
                 },
                 amount: message_payload.amount.into(),
-                recipient: match message_payload.recipient {
-                    OmniAddress::Sol(addr) => Pubkey::new_from_array(addr.0),
-                    _ => return Err(BridgeSdkError::ConfigError("Invalid recipient".to_string())),
+                recipient: match (chain_kind, message_payload.recipient) {
+                    (ChainKind::Sol, OmniAddress::Sol(addr))
+                    | (ChainKind::Fogo, OmniAddress::Fogo(addr)) => Pubkey::new_from_array(addr.0),
+                    (chain, recipient) => {
+                        return Err(BridgeSdkError::ConfigError(format!(
+                            "Recipient {recipient:?} does not match destination chain {chain:?}"
+                        )));
+                    }
                 },
                 fee_recipient: message_payload.fee_recipient.map(|addr| addr.to_string()),
             },
@@ -2360,11 +2452,11 @@ impl OmniConnector {
             })?,
         };
 
-        let signature = if solana_token == Pubkey::default() {
-            solana_bridge_client.finalize_transfer_sol(payload).await?
+        let signature = if svm_token == Pubkey::default() {
+            svm_bridge_client.finalize_transfer_sol(payload).await?
         } else {
-            solana_bridge_client
-                .finalize_transfer(payload, solana_token)
+            svm_bridge_client
+                .finalize_transfer(payload, svm_token)
                 .await?
         };
 
@@ -2402,7 +2494,13 @@ impl OmniConnector {
                 .map(|hash| hash.to_string()),
             OmniAddress::Sol(sol_address) => {
                 let token = Pubkey::new_from_array(sol_address.0);
-                self.solana_log_metadata(token)
+                self.svm_log_metadata(ChainKind::Sol, token)
+                    .await
+                    .map(|hash| hash.to_string())
+            }
+            OmniAddress::Fogo(fogo_address) => {
+                let token = Pubkey::new_from_array(fogo_address.0);
+                self.svm_log_metadata(ChainKind::Fogo, token)
                     .await
                     .map(|hash| hash.to_string())
             }
@@ -2458,15 +2556,16 @@ impl OmniConnector {
                 .evm_deploy_token_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
                 .map(|hash| hash.to_string()),
-            DeployTokenArgs::SolanaDeployToken { event } => self
-                .solana_deploy_token_with_event(event)
+            DeployTokenArgs::SvmDeployToken { chain_kind, event } => self
+                .svm_deploy_token_with_event(chain_kind, event)
                 .await
                 .map(|hash| hash.to_string()),
-            DeployTokenArgs::SolanaDeployTokenWithTxHash {
+            DeployTokenArgs::SvmDeployTokenWithTxHash {
+                chain_kind,
                 near_tx_hash: tx_hash,
                 sender_id,
             } => self
-                .solana_deploy_token_with_tx_hash(tx_hash, sender_id)
+                .svm_deploy_token_with_tx_hash(chain_kind, tx_hash, sender_id)
                 .await
                 .map(|hash| hash.to_string()),
             DeployTokenArgs::StarknetDeployToken { event } => self
@@ -2614,7 +2713,8 @@ impl OmniConnector {
                 .evm_init_transfer(chain_kind, token, amount, receiver, fee, message, tx_nonce)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            InitTransferArgs::SolanaInitTransfer {
+            InitTransferArgs::SvmInitTransfer {
+                chain_kind,
                 token,
                 amount,
                 recipient,
@@ -2622,17 +2722,20 @@ impl OmniConnector {
                 native_fee,
                 message,
             } => self
-                .solana_init_transfer(token, amount, recipient, fee, native_fee, message)
+                .svm_init_transfer(
+                    chain_kind, token, amount, recipient, fee, native_fee, message,
+                )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            InitTransferArgs::SolanaInitTransferSol {
+            InitTransferArgs::SvmInitTransferSol {
+                chain_kind,
                 amount,
                 recipient,
                 fee,
                 native_fee,
                 message,
             } => self
-                .solana_init_transfer_sol(amount, recipient, fee, native_fee, message)
+                .svm_init_transfer_sol(chain_kind, amount, recipient, fee, native_fee, message)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::StarknetInitTransfer {
@@ -2760,19 +2863,21 @@ impl OmniConnector {
                 .evm_fin_transfer_with_tx_hash(chain_kind, near_tx_hash, tx_nonce)
                 .await
                 .map(alloy::hex::encode_prefixed),
-            FinTransferArgs::SolanaFinTransfer {
+            FinTransferArgs::SvmFinTransfer {
+                chain_kind,
                 event,
-                solana_token,
+                svm_token,
             } => self
-                .solana_finalize_transfer_with_event(event, solana_token)
+                .svm_finalize_transfer_with_event(chain_kind, event, svm_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            FinTransferArgs::SolanaFinTransferWithTxHash {
+            FinTransferArgs::SvmFinTransferWithTxHash {
+                chain_kind,
                 near_tx_hash,
                 sender_id,
-                solana_token,
+                svm_token,
             } => self
-                .solana_finalize_transfer_with_tx_hash(near_tx_hash, sender_id, solana_token)
+                .svm_finalize_transfer_with_tx_hash(chain_kind, near_tx_hash, sender_id, svm_token)
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
             FinTransferArgs::UTXOChainFinTransfer {
@@ -2879,7 +2984,8 @@ impl OmniConnector {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
-            ChainKind::Sol => self.solana_is_transfer_finalised(nonce).await,
+            ChainKind::Sol => self.svm_is_transfer_finalised(ChainKind::Sol, nonce).await,
+            ChainKind::Fogo => self.svm_is_transfer_finalised(ChainKind::Fogo, nonce).await,
             ChainKind::Strk => self.starknet_is_transfer_finalised(nonce).await,
             ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
                 "is_transfer_finalised is not supported for UTXO chains".to_string(),
@@ -3019,6 +3125,7 @@ impl OmniConnector {
             ChainKind::Abs => self.abs_bridge_client.as_ref(),
             ChainKind::Near
             | ChainKind::Sol
+            | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk => {
@@ -3051,11 +3158,26 @@ impl OmniConnector {
     }
 
     pub fn solana_bridge_client(&self) -> Result<&SolanaBridgeClient> {
-        self.solana_bridge_client
-            .as_ref()
-            .ok_or(BridgeSdkError::ConfigError(
-                "SOLANA bridge client is not configured".to_string(),
-            ))
+        self.svm_bridge_client(ChainKind::Sol)
+    }
+
+    pub fn fogo_bridge_client(&self) -> Result<&SolanaBridgeClient> {
+        self.svm_bridge_client(ChainKind::Fogo)
+    }
+
+    pub fn svm_bridge_client(&self, chain_kind: ChainKind) -> Result<&SolanaBridgeClient> {
+        let client = match chain_kind {
+            ChainKind::Sol => self.solana_bridge_client.as_ref(),
+            ChainKind::Fogo => self.fogo_bridge_client.as_ref(),
+            other => {
+                return Err(BridgeSdkError::ConfigError(format!(
+                    "SVM bridge client is not available for {other:?}"
+                )));
+            }
+        };
+        client.ok_or(BridgeSdkError::ConfigError(format!(
+            "{chain_kind:?} SVM bridge client is not configured"
+        )))
     }
 
     pub fn starknet_bridge_client(&self) -> Result<&StarknetBridgeClient> {
@@ -3190,6 +3312,7 @@ impl OmniConnector {
             | ChainKind::HyperEvm
             | ChainKind::Abs
             | ChainKind::Sol
+            | ChainKind::Fogo
             | ChainKind::Strk => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
@@ -3243,7 +3366,14 @@ impl OmniConnector {
                 let signature = Signature::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse signature: {tx_hash}"))
                 })?;
-                self.get_storage_deposit_actions_for_solana_tx(&signature)
+                self.get_storage_deposit_actions_for_svm_tx(ChainKind::Sol, &signature)
+                    .await
+            }
+            ChainKind::Fogo => {
+                let signature = Signature::from_str(&tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!("Failed to parse signature: {tx_hash}"))
+                })?;
+                self.get_storage_deposit_actions_for_svm_tx(ChainKind::Fogo, &signature)
                     .await
             }
             ChainKind::Strk => {
@@ -3316,11 +3446,12 @@ impl OmniConnector {
         .await
     }
 
-    pub async fn get_storage_deposit_actions_for_solana_tx(
+    pub async fn get_storage_deposit_actions_for_svm_tx(
         &self,
+        chain_kind: ChainKind,
         signature: &Signature,
     ) -> Result<Vec<StorageDepositAction>> {
-        let transfer_event = self.solana_get_transfer_event(signature).await?;
+        let transfer_event = self.svm_get_transfer_event(chain_kind, signature).await?;
 
         let token = Pubkey::from_str(&transfer_event.token).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
@@ -3329,8 +3460,8 @@ impl OmniConnector {
             ))
         })?;
 
-        let token_address = OmniAddress::new_from_slice(ChainKind::Sol, &token.to_bytes())
-            .map_err(|_| {
+        let token_address =
+            OmniAddress::new_from_slice(chain_kind, &token.to_bytes()).map_err(|_| {
                 BridgeSdkError::InvalidArgument(format!("Failed to parse token address: {token}"))
             })?;
 
@@ -3349,7 +3480,7 @@ impl OmniConnector {
             })?;
 
         self.get_storage_deposit_actions(
-            ChainKind::Sol,
+            chain_kind,
             &recipient,
             &fee_recipient,
             &token_address,

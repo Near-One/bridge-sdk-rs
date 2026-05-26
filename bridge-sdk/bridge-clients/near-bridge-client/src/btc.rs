@@ -1091,13 +1091,14 @@ impl NearBridgeClient {
     pub async fn get_active_management_limit(
         &self,
         chain: ChainKind,
-    ) -> Result<(u32, u32, u8, u8)> {
+    ) -> Result<(u32, u32, u8, u8, u128)> {
         let config = self.get_config(chain).await?;
         Ok((
             config.active_management_lower_limit,
             config.active_management_upper_limit,
             config.max_active_utxo_management_input_number,
             config.max_active_utxo_management_output_number,
+            config.max_change_amount,
         ))
     }
 
