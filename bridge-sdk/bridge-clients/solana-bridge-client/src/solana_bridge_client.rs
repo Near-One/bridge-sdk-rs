@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
 use sha2::{Digest, Sha256};
+use omni_types::ChainKind;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
     bs58,
@@ -117,26 +118,10 @@ pub struct WormholeSequence {
     pub sequence: u64,
 }
 
-/// Identifies which SVM-based deployment of the bridge program a
-/// [`SolanaBridgeClient`] instance is talking to.
-///
-/// Solana mainnet still runs the program version that predates
-/// omni-bridge PR #562 (the FinalizeTransfer accounts struct without
-/// a top-level mutable `config`). Fogo runs the post-#562 version
-/// where `config` is the first account. The two share the same
-/// program ID and Anchor discriminators, so all other instructions
-/// can use the same account list. Drop this enum once Solana
-/// mainnet is upgraded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SvmChainKind {
-    Solana,
-    Fogo,
-}
-
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct SolanaBridgeClient {
-    chain: Option<SvmChainKind>,
+    chain: Option<ChainKind>,
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
@@ -883,7 +868,7 @@ impl SolanaBridgeClient {
         // Fogo runs the post-omni-bridge-#562 program where `config` is the
         // first top-level account in `FinalizeTransfer`. Solana mainnet still
         // runs the pre-#562 version. Drop this branch once Solana is upgraded.
-        if matches!(self.chain, Some(SvmChainKind::Fogo)) {
+        if matches!(self.chain, Some(ChainKind::Fogo)) {
             accounts.insert(0, AccountMeta::new(config, false));
         }
 

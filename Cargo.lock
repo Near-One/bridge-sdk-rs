@@ -7849,6 +7849,7 @@ dependencies = [
  "borsh 1.6.1",
  "derive_builder",
  "mpl-token-metadata",
+ "omni-types",
  "openssl-sys",
  "sha2 0.10.9",
  "solana-client",
