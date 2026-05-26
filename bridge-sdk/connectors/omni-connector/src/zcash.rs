@@ -343,7 +343,11 @@ impl OmniConnector {
 
     /// Internal helper to regenerate an Orchard bundle for an existing pending transaction.
     /// Returns (`bundle_bytes_hex`, `expiry_height`).
-    async fn regenerate_orchard_bundle(&self, btc_tx_hash: String) -> Result<(String, u32)> {
+    async fn regenerate_orchard_bundle(
+        &self,
+        btc_tx_hash: String,
+        memo: Option<String>,
+    ) -> Result<(String, u32)> {
         let near_bridge_client = self.near_bridge_client()?;
 
         // Get the pending transaction info
@@ -453,15 +457,15 @@ impl OmniConnector {
             None
         };
 
-        // Generate new bundle with the same parameters. The original memo is
-        // encrypted inside the on-chain bundle and not recoverable here, so
-        // RBF necessarily drops it.
+        // The original memo is not stored in pending-info, so callers that
+        // need memo preservation during RBF must provide the same memo again.
         let (bundle_bytes, expiry_height) = self
-            .get_orchard_raw(
+            .get_orchard_raw_with_memo(
                 recipient,
                 orchard_amount,
                 input_points,
                 tx_out_change.as_ref(),
+                memo,
             )
             .await?;
 
@@ -478,14 +482,35 @@ impl OmniConnector {
     /// - The original bundle's expiry height has passed
     /// - The original proof was rejected for some reason
     /// - You need to refresh the bundle without changing withdrawal parameters
+    ///
+    /// This regenerates the bundle without a memo. If the original withdrawal
+    /// used a memo, use [`rbf_update_orchard_bundle_with_memo`] and pass the
+    /// same memo again.
     pub async fn rbf_update_orchard_bundle(
         &self,
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        self.rbf_update_orchard_bundle_with_memo(btc_tx_hash, transaction_options, None)
+            .await
+    }
+
+    /// Regenerates the Orchard bundle for a pending Zcash transaction with an
+    /// optional memo and submits an RBF transaction with the new bundle.
+    ///
+    /// If the original withdrawal used a memo, pass the same memo again so the
+    /// replacement bundle preserves it. The memo cannot be recovered from the
+    /// encrypted on-chain bundle.
+    pub async fn rbf_update_orchard_bundle_with_memo(
+        &self,
+        btc_tx_hash: String,
+        transaction_options: TransactionOptions,
+        memo: Option<String>,
+    ) -> Result<CryptoHash> {
         // Regenerate bundle with same parameters
-        let (bundle_hex, expiry_height) =
-            self.regenerate_orchard_bundle(btc_tx_hash.clone()).await?;
+        let (bundle_hex, expiry_height) = self
+            .regenerate_orchard_bundle(btc_tx_hash.clone(), memo)
+            .await?;
 
         // Submit RBF with only the new bundle - no fee/output changes
         let near_bridge_client = self.near_bridge_client()?;
