@@ -1965,6 +1965,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
+        .chain(Some(ChainKind::Sol))
         .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
         .program_id(
             combined_config
@@ -1996,6 +1997,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let fogo_bridge_client = SolanaBridgeClientBuilder::default()
+        .chain(Some(ChainKind::Fogo))
         .client(combined_config.fogo_rpc.map(|rpc| RpcClient::new(rpc)))
         .program_id(
             combined_config
