@@ -538,7 +538,7 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_for_active_management(
-    utxos: HashMap<String, UTXO>,
+    utxos: &HashMap<String, UTXO>,
     fee_rate: u64,
     change_address: &str,
     active_management_limit: (usize, usize),
@@ -547,18 +547,21 @@ pub fn choose_utxos_for_active_management(
     min_deposit_amount: usize,
     chain: ChainKind,
     network: Network,
+    merge_largest: bool,
+    max_change_amount: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
-    let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
+    let mut utxo_list: Vec<(&String, &UTXO)> = utxos.iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
 
-    let mut selected = Vec::new();
+    let mut selected: Vec<(String, UTXO)> = Vec::new();
     let mut utxos_balance: u64 = 0;
 
     if utxo_list.len() < active_management_limit.0 {
         let utxo_amount = 1;
         for i in 0..utxo_amount {
             utxos_balance += utxo_list[utxo_list.len() - 1 - i].1.balance;
-            selected.push(utxo_list[i].clone());
+            let (k, v) = utxo_list[i];
+            selected.push((k.clone(), v.clone()));
         }
 
         let output_amount = std::cmp::min(
@@ -593,9 +596,32 @@ pub fn choose_utxos_for_active_management(
             utxo_list.len() - active_management_limit.1,
             max_active_utxo_management_input_number,
         );
-        for utxo_item in utxo_list.iter().take(utxo_amount) {
-            utxos_balance += utxo_item.1.balance;
-            selected.push(utxo_item.clone());
+        if merge_largest {
+            let half_cap = max_change_amount / 2;
+            for utxo_item in utxo_list.iter().rev() {
+                if selected.len() >= utxo_amount {
+                    break;
+                }
+                let next_balance = u128::from(utxo_item.1.balance);
+                if next_balance > half_cap {
+                    continue;
+                }
+                if u128::from(utxos_balance) + next_balance >= max_change_amount {
+                    continue;
+                }
+                utxos_balance += utxo_item.1.balance;
+                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
+            }
+            if selected.len() < 2 {
+                return Err(format!(
+                    "merge-largest: need at least 2 UTXOs <= max_change_amount/2 ({half_cap}) to merge"
+                ));
+            }
+        } else {
+            for utxo_item in utxo_list.iter().take(utxo_amount) {
+                utxos_balance += utxo_item.1.balance;
+                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
+            }
         }
         let gas_fee: u64 = get_gas_fee(
             chain,
@@ -660,6 +686,61 @@ pub fn get_tx_outs_multi(
     Ok(res)
 }
 
+/// Builds `tx_outs` for an Orchard-shielded Zcash recipient. The recipient
+/// receives funds via the Orchard bundle (carried in `chain_specific_data`),
+/// not via a transparent output, so `tx_outs[0]` is only an amount sentinel
+/// for downstream code and its `script_pubkey` is intentionally empty.
+/// Change uses the transparent `change_address`.
+///
+/// The Orchard tx builder accepts a single optional transparent change
+/// (`get_orchard_raw`'s `tx_out_change: Option<&TxOut>`), and the orchard
+/// fee model assumes one transparent output. UTXO selection may legitimately
+/// produce multiple change pieces (passive management LOW zone splits change
+/// into `input_num + 1` pieces); they are aggregated into one output here
+/// rather than silently dropped or hard-failed.
+pub fn get_tx_outs_orchard(
+    target_amount: u64,
+    change_address: &str,
+    change_amounts: &[u64],
+    chain: ChainKind,
+    network: Network,
+) -> Result<Vec<TxOut>, String> {
+    let total_change: u64 = change_amounts
+        .iter()
+        .try_fold(0u64, |acc, &x| acc.checked_add(x))
+        .ok_or_else(|| "Orchard change amount sum overflows u64".to_string())?;
+
+    let mut res = vec![TxOut {
+        value: Amount::from_sat(target_amount),
+        script_pubkey: ScriptBuf::new(),
+    }];
+
+    if total_change > 0 {
+        let change_address_parsed = UTXOAddress::parse(change_address, chain, network)
+            .map_err(|e| format!("Invalid change UTXO address '{change_address}': {e}"))?;
+        let change_script_pubkey = change_address_parsed.script_pubkey().map_err(|e| {
+            format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
+        })?;
+        // The Orchard tx builder (`get_builder_with_transparent` in zcash.rs)
+        // hard-codes `TransparentAddress::PublicKeyHash` and extracts the hash
+        // from a P2PKH script layout (`script[3..23]`). A non-P2PKH change
+        // script would yield a malformed transparent output and lose the
+        // change. Reject here so the failure is loud and local.
+        if !change_script_pubkey.is_p2pkh() {
+            return Err(format!(
+                "Orchard mode requires a P2PKH transparent change address; \
+                 '{change_address}' produced a non-P2PKH script"
+            ));
+        }
+        res.push(TxOut {
+            value: Amount::from_sat(total_change),
+            script_pubkey: change_script_pubkey,
+        });
+    }
+
+    Ok(res)
+}
+
 pub fn get_tx_outs(
     target_btc_address: &str,
     amount: u64,
@@ -718,10 +799,6 @@ pub fn bytes_to_btc_transaction(tx_bytes: &[u8]) -> BtcTransaction {
     deserialize(tx_bytes).expect("Deserialization tx_bytes failed")
 }
 
-pub fn try_bytes_to_btc_transaction(tx_bytes: &[u8]) -> Result<BtcTransaction, String> {
-    deserialize(tx_bytes).map_err(|e| format!("Failed to deserialize BTC tx_bytes: {e}"))
-}
-
 pub fn get_tx_outs_utxo_management(
     change_address: &str,
     output_amount: u64,
@@ -765,30 +842,205 @@ pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Addre
     ))
 }
 
-pub fn contains_orchard_address(uaddress: &str) -> Result<bool, String> {
-    let (_, ua) = unified::Address::decode(uaddress)
-        .map_err(|err| format!("Invalid unified address {err}"))?;
-    for receiver in ua.items() {
-        if let unified::Receiver::Orchard(_) = receiver {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+pub fn contains_orchard_address(address: &str) -> Result<bool, String> {
+    Ok(zcash_address_receivers(address)?.has_orchard)
 }
 
-pub fn contains_transparent_address(uaddress: &str) -> Result<bool, String> {
-    let (_, ua) = unified::Address::decode(uaddress)
-        .map_err(|err| format!("Invalid unified address {err}"))?;
-    for receiver in ua.items() {
-        if let unified::Receiver::P2pkh(_) = receiver {
-            return Ok(true);
-        }
+pub fn contains_transparent_address(address: &str) -> Result<bool, String> {
+    Ok(zcash_address_receivers(address)?.has_transparent)
+}
 
-        if let unified::Receiver::P2sh(_) = receiver {
-            return Ok(true);
-        }
+struct ZcashAddressReceivers {
+    has_orchard: bool,
+    has_transparent: bool,
+}
+
+impl zcash_address::TryFromAddress for ZcashAddressReceivers {
+    type Error = &'static str;
+
+    fn try_from_transparent_p2pkh(
+        _net: zcash_protocol::consensus::NetworkType,
+        _data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        Ok(Self {
+            has_orchard: false,
+            has_transparent: true,
+        })
     }
 
-    Ok(false)
+    fn try_from_unified(
+        _net: zcash_protocol::consensus::NetworkType,
+        data: unified::Address,
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        let mut has_orchard = false;
+        let mut has_transparent = false;
+        for receiver in data.items() {
+            match receiver {
+                unified::Receiver::Orchard(_) => has_orchard = true,
+                unified::Receiver::P2pkh(_) | unified::Receiver::P2sh(_) => {
+                    has_transparent = true;
+                }
+                _ => {}
+            }
+        }
+        Ok(Self {
+            has_orchard,
+            has_transparent,
+        })
+    }
+}
+
+fn zcash_address_receivers(address: &str) -> Result<ZcashAddressReceivers, String> {
+    let parsed = zcash_address::ZcashAddress::try_from_encoded(address)
+        .map_err(|err| format!("Invalid Zcash address: {err}"))?;
+    parsed
+        .convert::<ZcashAddressReceivers>()
+        .map_err(|err| format!("Unsupported Zcash address: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::base58;
+
+    // Transparent P2PKH (`t1...`) mainnet address from the reported bug.
+    const TRANSPARENT_P2PKH_MAINNET: &str = "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o";
+
+    // Encodes a fresh Zcash mainnet P2SH (`t3...`) address from a 20-byte
+    // script hash so the test does not depend on a specific live address.
+    fn synthetic_t3_mainnet(script_hash: [u8; 20]) -> String {
+        let mut prefixed = Vec::with_capacity(22);
+        prefixed.extend_from_slice(&[0x1C, 0xBD]);
+        prefixed.extend_from_slice(&script_hash);
+        base58::encode_check(&prefixed)
+    }
+
+    // Orchard-only unified mainnet address from the reported bug. It contains
+    // no transparent receiver, so `UTXOAddress::script_pubkey()` cannot derive
+    // a transparent script for it.
+    const ORCHARD_ONLY_UNIFIED_MAINNET: &str = "u15a97e324mckwx89t0ucxytpd7v3pfzey7daldrk4mwu3u55ej39f6v7myqjxw0e098hnhyp0tvfgfnxj8swt22rl4f77a8wrg9zjynh9dwj20lf232h7yzfr0v53l2s824l22l63xwlxyypnxkx9qq7dd249pj565q7490fey5czu2pm";
+
+    #[test]
+    fn transparent_p2pkh_address_has_no_orchard() {
+        assert_eq!(
+            contains_orchard_address(TRANSPARENT_P2PKH_MAINNET),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn transparent_p2pkh_address_is_transparent() {
+        assert_eq!(
+            contains_transparent_address(TRANSPARENT_P2PKH_MAINNET),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn invalid_address_returns_error() {
+        assert!(contains_orchard_address("not-a-zcash-address").is_err());
+        assert!(contains_transparent_address("not-a-zcash-address").is_err());
+    }
+
+    #[test]
+    fn orchard_only_unified_address_classification() {
+        assert_eq!(
+            contains_orchard_address(ORCHARD_ONLY_UNIFIED_MAINNET),
+            Ok(true)
+        );
+        assert_eq!(
+            contains_transparent_address(ORCHARD_ONLY_UNIFIED_MAINNET),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_uses_empty_script_for_recipient() {
+        let change_address = "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o";
+        let outs = get_tx_outs_orchard(
+            100_000,
+            change_address,
+            &[50_000],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("orchard tx_outs build succeeds for orchard-only recipient");
+
+        assert_eq!(outs.len(), 2);
+        assert_eq!(outs[0].value.to_sat(), 100_000);
+        assert!(outs[0].script_pubkey.is_empty());
+        assert_eq!(outs[1].value.to_sat(), 50_000);
+        assert!(!outs[1].script_pubkey.is_empty());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_no_change_returns_single_out() {
+        let outs = get_tx_outs_orchard(
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            &[],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("orchard tx_outs build succeeds without change");
+
+        assert_eq!(outs.len(), 1);
+        assert_eq!(outs[0].value.to_sat(), 100_000);
+        assert!(outs[0].script_pubkey.is_empty());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_aggregates_multi_change() {
+        let outs = get_tx_outs_orchard(
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            &[20_000, 30_000, 7_000],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("orchard tx_outs build aggregates multi-change");
+        assert_eq!(outs.len(), 2);
+        assert_eq!(outs[0].value.to_sat(), 100_000);
+        assert!(outs[0].script_pubkey.is_empty());
+        assert_eq!(outs[1].value.to_sat(), 57_000);
+        assert!(!outs[1].script_pubkey.is_empty());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_rejects_change_amount_overflow() {
+        let err = get_tx_outs_orchard(
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            &[u64::MAX, 1],
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect_err("orchard tx_outs must reject u64 overflow on change sum");
+        assert!(err.contains("overflows"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn zcash_t3_mainnet_rejected_at_parse() {
+        let t3 = synthetic_t3_mainnet([0u8; 20]);
+        UTXOAddress::parse(&t3, ChainKind::Zcash, Network::Mainnet)
+            .expect_err("Zcash P2SH (t3) is unsupported and must not parse");
+    }
+
+    #[test]
+    fn zcash_t3_rejected_by_classification() {
+        let t3 = synthetic_t3_mainnet([0u8; 20]);
+        assert!(contains_orchard_address(&t3).is_err());
+        assert!(contains_transparent_address(&t3).is_err());
+    }
+
+    #[test]
+    fn get_tx_outs_orchard_rejects_p2sh_change_address() {
+        let t3 = synthetic_t3_mainnet([0u8; 20]);
+        let err = get_tx_outs_orchard(100_000, &t3, &[50_000], ChainKind::Zcash, Network::Mainnet)
+            .expect_err("orchard mode must reject P2SH change addresses");
+        assert!(
+            err.contains("Invalid change UTXO address"),
+            "expected change-address parse failure, got: {err}"
+        );
+    }
 }

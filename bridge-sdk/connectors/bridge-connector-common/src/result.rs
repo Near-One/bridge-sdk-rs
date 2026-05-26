@@ -39,6 +39,8 @@ pub enum BridgeSdkError {
     UtxoClientError(String),
     #[error("Error communicating with Utxo chain RPC: {0}")]
     UtxoRpcError(String),
+    #[error("Bridge indexer API error: {0}")]
+    BridgeIndexerError(String),
     #[error("Insufficient UTXO chain Gas Fee: {0}")]
     InsufficientUTXOGasFee(String),
     #[error("Insufficient UTXO balance to cover amount and fees")]
