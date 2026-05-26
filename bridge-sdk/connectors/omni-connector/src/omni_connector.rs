@@ -1255,16 +1255,27 @@ impl OmniConnector {
             .collect::<Result<Vec<_>>>()?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs_multi(
-            &target_btc_address,
-            user_amount.try_into().map_err(|err| {
-                BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
-            })?,
-            &change_address,
-            &change_amounts_u64,
-            chain,
-            self.network()?,
-        )
+        let target_amount_u64 = user_amount.try_into().map_err(|err| {
+            BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
+        })?;
+        let tx_outs = if enable_orchard {
+            utxo_utils::get_tx_outs_orchard(
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        } else {
+            utxo_utils::get_tx_outs_multi(
+                &target_btc_address,
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        }
         .map_err(|err| {
             BridgeSdkError::UtxoManagementError(format!("Error on get tx out: {err}"))
         })?;
@@ -3726,16 +3737,27 @@ impl OmniConnector {
             .collect::<Result<Vec<_>>>()?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs_multi(
-            &target_btc_address,
-            user_amount.try_into().map_err(|err| {
-                BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
-            })?,
-            &change_address,
-            &change_amounts_u64,
-            chain,
-            self.network()?,
-        )
+        let target_amount_u64 = user_amount.try_into().map_err(|err| {
+            BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
+        })?;
+        let tx_outs = if enable_orchard {
+            utxo_utils::get_tx_outs_orchard(
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        } else {
+            utxo_utils::get_tx_outs_multi(
+                &target_btc_address,
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        }
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
         let (chain_specific_data, output) = self
@@ -3777,10 +3799,7 @@ impl OmniConnector {
                     tx_outs.get(1),
                 )
                 .await?;
-            let mut output = vec![];
-            if tx_outs.len() == 2 {
-                output.push(tx_outs[1].clone());
-            }
+            let output = tx_outs[1..].to_vec();
 
             Ok((
                 Some(ChainSpecificData {

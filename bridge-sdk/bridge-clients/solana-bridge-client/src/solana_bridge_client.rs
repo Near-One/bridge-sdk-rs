@@ -3,8 +3,8 @@ use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
-use sha2::{Digest, Sha256};
 use omni_types::ChainKind;
+use sha2::{Digest, Sha256};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
     bs58,
