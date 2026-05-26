@@ -46,10 +46,7 @@
 //! budget allows — each tx folds many small UTXOs into one change — the pool
 //! consolidates as a side-effect of normal withdrawals.
 
-use crate::{
-    enforce_passive_management, get_gas_fee, split_change, UtxoSelection, WithdrawSelectionParams,
-    UTXO,
-};
+use crate::{get_gas_fee, UtxoSelection, WithdrawSelectionParams, UTXO};
 use omni_types::ChainKind;
 use std::collections::HashMap;
 
@@ -92,6 +89,19 @@ pub fn choose_utxos_anchor_fill(
         .checked_add(min_change_required)
         .ok_or_else(|| "gross_amount + min_change_required overflows u128".to_string())?;
 
+    // LOW zone (`pool_size < passive_management_lower_limit`) requires
+    // `input_num < change_num`, which is unreachable under the single-change
+    // rule. Bail upfront; the caller should run active utxo management
+    // instead of relying on a withdrawal to consolidate.
+    if pool_size < params.passive_management_lower_limit {
+        return Err(format!(
+            "LOW zone (pool_size={pool_size} < passive_management_lower_limit={}) is \
+             incompatible with the single-change-output rule; run active utxo management \
+             instead",
+            params.passive_management_lower_limit
+        ));
+    }
+
     let in_high_zone = pool_size > params.passive_management_upper_limit;
 
     // HIGH zone: drop UTXOs > gross_amount so the result satisfies `input_num > change_num`
@@ -122,10 +132,11 @@ pub fn choose_utxos_anchor_fill(
         ));
     }
 
-    // For each K, find a candidate, gate it on the gas budget using the actual
-    // output count, and run it through `enforce_passive_management` (same
-    // LOW/HIGH zone post-check as `choose_utxos_random`). Fall back to smaller
-    // K on any rejection.
+    // For each K, find a candidate and gate it on the gas budget using the
+    // actual output count. HIGH-zone (`input_num > change_num`) is enforced
+    // inline by `try_single_input` / `try_anchor_search` — the pool filter
+    // above plus the single-change rule make K ≥ 2 trivially satisfy it.
+    // Fall back to smaller K on any rejection.
     let mut last_err: Option<String> = None;
     for k in (1..=k_max).rev() {
         // Skip K when even the best-case fee (absorption / orchard, 1 output)
@@ -154,6 +165,10 @@ pub fn choose_utxos_anchor_fill(
         } else {
             1 + selection.change_amounts.len() as u64
         };
+        debug_assert!(
+            actual_num_output <= 2,
+            "anchor_fill produced {actual_num_output} outputs; expected ≤ 2"
+        );
         let actual_fee = get_gas_fee(chain, k as u64, actual_num_output, fee_rate, orchard);
         if actual_fee > max_gas_fee {
             last_err = Some(format!(
@@ -163,10 +178,7 @@ pub fn choose_utxos_anchor_fill(
             continue;
         }
 
-        match enforce_passive_management(selection, pool_size, params) {
-            Ok(adjusted) => return Ok(adjusted),
-            Err(e) => last_err = Some(e),
-        }
+        return Ok(selection);
     }
 
     Err(last_err.unwrap_or_else(|| {
@@ -213,7 +225,6 @@ fn try_k_inputs(
             gross_amount,
             params,
             min_change_required,
-            in_high_zone,
         ) {
             return Some(sel);
         }
@@ -263,37 +274,26 @@ fn try_single_input(
             continue;
         }
 
-        // change >= min_change_required.
-        // Change-piece cap is `max_change_amount` only — `< min_input` is not enforced.
-        let change_amounts = if change >= params.max_change_amount {
-            let max_per_piece = params.max_change_amount.saturating_sub(1);
-            if max_per_piece == 0 {
-                continue;
-            }
-            match split_change(
-                change,
-                params.min_change_amount,
-                max_per_piece,
-                params.max_change_number,
-            ) {
-                Ok(amts) => amts,
-                Err(_) => continue,
-            }
-        } else {
-            vec![change]
-        };
+        // change ∈ [min_change_required, ?]. The single-change-output rule
+        // requires `change < max_change_amount`; if not, skip this candidate
+        // and try the next bigger one. We never split a K=1 change into
+        // multiple pieces.
+        if change >= params.max_change_amount {
+            continue;
+        }
 
-        if in_high_zone && !change_amounts.is_empty() {
+        if in_high_zone {
             // HIGH zone: input_num=1 > change_num required → change_num must be 0.
-            // The HIGH-zone pool filter already drops UTXOs > gross_amount, so this
-            // path only fires when gross_amount equals an existing UTXO balance.
+            // The HIGH-zone pool filter already drops UTXOs > gross_amount, so
+            // this path only fires when gross_amount equals an existing UTXO
+            // balance (handled by the `change == 0` absorption arm above).
             continue;
         }
 
         return Some(UtxoSelection {
             selected: vec![entry.clone()],
             user_payment: 0,
-            change_amounts,
+            change_amounts: vec![change],
         });
     }
     None
@@ -305,26 +305,24 @@ fn try_anchor_search(
     gross_amount: u128,
     params: &WithdrawSelectionParams,
     min_change_required: u128,
-    in_high_zone: bool,
 ) -> Option<UtxoSelection> {
     if fillers.is_empty() || candidates.is_empty() {
         return None;
     }
 
     let sum_fillers: u128 = fillers.iter().map(|(_, u)| u128::from(u.balance)).sum();
-    let input_count = fillers.len() + 1;
     let reserve_active = min_change_required > params.min_change_amount;
 
-    // Each change piece must be < max_change_amount only — the contract's
-    // `change_i < min_input` constraint is intentionally relaxed here so a
-    // single large change piece can absorb the surplus instead of fragmenting
-    // into many sub-`min_filler` pieces.
-    let max_per_piece = params.max_change_amount.saturating_sub(1);
-    if max_per_piece == 0 {
+    // The bridge withdrawal shape is 1 target + 0-or-1 change. We never split
+    // into multiple change outputs, so the change must fit a single piece in
+    // `[min_change_amount, max_change_amount)`. The contract's
+    // `change_i < min_input` constraint is intentionally **not** enforced here
+    // — relaxing it lets a single large change piece absorb the surplus from
+    // many small fillers instead of fragmenting into sub-`min_filler` pieces.
+    let valid_change_max = params.max_change_amount;
+    if valid_change_max == 0 {
         return None;
     }
-    // Strict upper bound on change (exclusive).
-    let valid_change_max = (params.max_change_number as u128).saturating_mul(max_per_piece + 1);
 
     // 1) Absorption — anchor balance brings sum to exactly gross_amount.
     //    Skipped when an RBF reserve is required: absorption leaves no change
@@ -356,45 +354,28 @@ fn try_anchor_search(
         return None;
     }
 
+    // The smallest candidate with balance ≥ lower is the only one we need:
+    // candidates are sorted ascending, so if its balance is also < upper it's
+    // a valid anchor (change is guaranteed to be a single piece in
+    // `[min_change_required, max_change_amount)`). HIGH-zone rule
+    // `input_num > change_num` is `K ≥ 2 > 1`, trivially satisfied here.
     let lo_idx = candidates.partition_point(|(_, u)| u128::from(u.balance) < lower);
-    for entry in &candidates[lo_idx..] {
-        let anchor_bal = u128::from(entry.1.balance);
-        if anchor_bal >= upper {
-            break;
-        }
-
-        let total = sum_fillers + anchor_bal;
-        let change = total - gross_amount;
-
-        let change_amounts = if change < params.max_change_amount {
-            vec![change]
-        } else {
-            match split_change(
-                change,
-                params.min_change_amount,
-                max_per_piece,
-                params.max_change_number,
-            ) {
-                Ok(amts) => amts,
-                Err(_) => continue,
-            }
-        };
-
-        // HIGH zone requires input_num > change_num.
-        if in_high_zone && input_count <= change_amounts.len() {
-            continue;
-        }
-
-        let mut selected: Vec<(String, UTXO)> = fillers.to_vec();
-        selected.push(entry.clone());
-        return Some(UtxoSelection {
-            selected,
-            user_payment: 0,
-            change_amounts,
-        });
+    let entry = candidates.get(lo_idx)?;
+    let anchor_bal = u128::from(entry.1.balance);
+    if anchor_bal >= upper {
+        return None;
     }
 
-    None
+    let total = sum_fillers + anchor_bal;
+    let change = total - gross_amount;
+
+    let mut selected: Vec<(String, UTXO)> = fillers.to_vec();
+    selected.push(entry.clone());
+    Some(UtxoSelection {
+        selected,
+        user_payment: 0,
+        change_amounts: vec![change],
+    })
 }
 
 fn find_balance_eq(slice: &[(String, UTXO)], target: u128) -> Option<usize> {
@@ -470,11 +451,12 @@ mod tests {
             selection.selected.len(),
             params.max_withdrawal_input_number
         );
+        // anchor_fill never splits change — every successful selection has at
+        // most one change output.
         assert!(
-            selection.change_amounts.len() <= params.max_change_number,
-            "change_num {} > max_change_number {}",
-            selection.change_amounts.len(),
-            params.max_change_number
+            selection.change_amounts.len() <= 1,
+            "change_num {} > 1 — anchor_fill should never split change",
+            selection.change_amounts.len()
         );
 
         let sum_inputs: u128 = selection
@@ -684,11 +666,11 @@ mod tests {
     }
 
     /// LOW zone (`pool_size < passive_management_lower_limit`) requires
-    /// `input_num < change_num`. The selector must run candidates through
-    /// `enforce_passive_management` and either re-split the change or fall
-    /// back to a smaller K — never return a selection violating the rule.
+    /// `input_num < change_num`, which is unreachable under the single-change
+    /// rule. The selector must bail upfront with a clear error rather than
+    /// silently produce a contract-incompatible selection.
     #[test]
-    fn anchor_fill_enforces_low_zone() {
+    fn anchor_fill_rejects_low_zone() {
         let chain = ChainKind::Btc;
         let fee_rate = 10_000u64;
         // Force LOW zone: pool_size=4 < lower_limit=10.
@@ -701,8 +683,6 @@ mod tests {
             passive_management_upper_limit: 200,
         };
 
-        // 4-UTXO pool, all large enough that re-splitting change into multiple
-        // pieces is feasible.
         let mut pool = HashMap::new();
         for (i, bal) in [2_000_000u64, 1_500_000, 1_200_000, 1_000_000]
             .iter()
@@ -713,80 +693,51 @@ mod tests {
         }
         let pool_size = pool.len() as u32;
 
-        let gross_amount: u128 = 1_400_000;
-        let selection = choose_utxos_anchor_fill(
-            gross_amount,
-            pool,
-            pool_size,
-            &params,
-            chain,
-            fee_rate,
-            200_000,
-            false,
-            0,
-        )
-        .expect("LOW-zone selection should succeed");
-
-        assert_invariants(&selection, gross_amount, &params);
+        let res = choose_utxos_anchor_fill(
+            1_400_000, pool, pool_size, &params, chain, fee_rate, 200_000, false, 0,
+        );
         assert!(
-            selection.change_amounts.len() > selection.selected.len(),
-            "LOW zone violation: inputs={} not < change_outputs={}",
-            selection.selected.len(),
-            selection.change_amounts.len()
+            res.is_err(),
+            "LOW zone must Err under the single-change rule, got {res:?}"
+        );
+        assert!(
+            res.unwrap_err().contains("LOW zone"),
+            "error message should mention LOW zone"
         );
     }
 
-    /// LOW zone with a parameter set where the natural anchor-fill output is a
-    /// single change piece — the selector must call `enforce_passive_management`
-    /// to re-split it, otherwise `change_num=1 <= input_num=3` violates the rule.
-    /// Without the enforcement this test fails (1 piece returned instead of ≥4).
+    /// Every successful selection must produce at most 2 outputs (1 target +
+    /// at most 1 change).
     #[test]
-    fn anchor_fill_low_zone_resplits_single_change() {
+    fn anchor_fill_never_produces_more_than_two_outputs() {
         let chain = ChainKind::Btc;
-        let fee_rate = 10_000u64;
-        let params = WithdrawSelectionParams {
-            min_change_amount: 1_000,
-            // Big max_change_amount so single piece is *naturally* preferred.
-            max_change_amount: 10_000_000,
-            max_withdrawal_input_number: 50,
-            max_change_number: 5,
-            passive_management_lower_limit: 10,
-            passive_management_upper_limit: 200,
-        };
-
-        // 3-UTXO pool ⇒ LOW zone. Sizes chosen so K=3 produces a small change
-        // (under min_filler), which without enforcement collapses to 1 piece.
-        let mut pool = HashMap::new();
-        for (i, bal) in [500_000u64, 400_000, 300_000].iter().enumerate() {
-            let (k, v) = mk_utxo(i, *bal);
-            pool.insert(k, v);
-        }
+        let fee_rate = 3_000u64;
+        let params = default_params();
+        let pool = pool_100_tiered();
         let pool_size = pool.len() as u32;
+        let gross_amount: u128 = 1_500_000;
 
-        // gross_amount = 1,150,000 → with all 3 inputs (sum 1,200,000) change = 50,000.
-        // min_filler = 300,000 → 50,000 < 300,000 → naturally 1 change piece (violates LOW).
-        // enforce_passive_management must re-split into ≥ K+1 = 4 pieces.
-        let gross_amount: u128 = 1_150_000;
-        let selection = choose_utxos_anchor_fill(
-            gross_amount,
-            pool,
-            pool_size,
-            &params,
-            chain,
-            fee_rate,
-            200_000,
-            false,
-            0,
-        )
-        .expect("LOW-zone re-split should succeed");
-
-        assert_invariants(&selection, gross_amount, &params);
-        assert!(
-            selection.change_amounts.len() > selection.selected.len(),
-            "LOW zone violation: inputs={} not < change_outputs={}",
-            selection.selected.len(),
-            selection.change_amounts.len()
-        );
+        for &budget in &[
+            200_000u64, 100_000, 50_000, 20_000, 10_000, 5_000, 3_000, 2_000, 1_000,
+        ] {
+            if let Ok(sel) = choose_utxos_anchor_fill(
+                gross_amount,
+                pool.clone(),
+                pool_size,
+                &params,
+                chain,
+                fee_rate,
+                budget,
+                false,
+                0,
+            ) {
+                assert!(
+                    sel.change_amounts.len() <= 1,
+                    "budget={budget}: {} change outputs (expected ≤ 1)",
+                    sel.change_amounts.len()
+                );
+            }
+        }
     }
 
     /// `change_reserve > 0` must leave that many sats of headroom above
