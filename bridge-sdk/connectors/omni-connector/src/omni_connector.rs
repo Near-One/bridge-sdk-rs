@@ -257,18 +257,19 @@ pub enum InitTransferArgs {
     /// the contract-side message-length dispatch parks the supply at
     /// `HlBridgeToken._systemAddress` so HyperCore credits the user.
     ///
-    /// `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`), NOT
-    /// the bridge ERC20 address. `amount` is in bridge ERC20 wei units;
-    /// `decimals` is the bridge token's decimals, formatted as the wire
-    /// decimal string via `amount / 10^decimals`. The bridge token's
-    /// decimals MUST equal Core's `szDecimals + evmExtraWeiDecimals` (the
-    /// HyperCore<->HyperEVM linking invariant); if linked incorrectly the
-    /// formatted amount won't match the user's Core spot balance precision.
+    /// `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`).
+    /// `amount` is in bridge ERC20 wei units.
+    ///
+    /// `hl_bridge_token` and `decimals` may be `None`, in which case the
+    /// connector resolves them via `POST /info {"type":"spotMeta"}` —
+    /// `hl_bridge_token` from the token's `evmContract.address`, `decimals`
+    /// from `weiDecimals + evm_extra_wei_decimals`. Pass `Some` explicitly to
+    /// skip the round-trip when you already have the values.
     HyperCoreTransfer {
         token: String,
-        hl_bridge_token: Address,
+        hl_bridge_token: Option<Address>,
         amount: u128,
-        decimals: u8,
+        decimals: Option<u8>,
         recipient: OmniAddress,
         fee: u128,
         message: String,
@@ -2826,19 +2827,33 @@ impl OmniConnector {
     /// `ACTION_INIT_TRANSFER` (route through `OmniBridge.initTransfer`).
     /// Signs the Hyperliquid action, posts to `/exchange`, and blocks on the
     /// HyperEVM `CoreReceived` log.
+    ///
+    /// `hl_bridge_token` and `decimals` are resolved from Hyperliquid's
+    /// `spotMeta` when either is `None`. Provide both explicitly to skip the
+    /// `/info` round-trip when you already know them.
     #[allow(clippy::too_many_arguments)]
     pub async fn hypercore_transfer(
         &self,
         token: String,
-        hl_bridge_token: Address,
+        hl_bridge_token: Option<Address>,
         amount: u128,
-        decimals: u8,
+        decimals: Option<u8>,
         recipient: OmniAddress,
         fee: u128,
         message: String,
         gas_limit: Option<u64>,
     ) -> Result<TxHash> {
         let client = self.hypercore_bridge_client()?;
+        let (hl_bridge_token, decimals) = match (hl_bridge_token, decimals) {
+            (Some(addr), Some(d)) => (addr, d),
+            _ => {
+                let resolved = client.resolve_spot_token(&token).await?;
+                (
+                    hl_bridge_token.unwrap_or(resolved.hl_bridge_token),
+                    decimals.unwrap_or(resolved.decimals),
+                )
+            }
+        };
         let amount_str = format_amount(amount, decimals);
         let data = match &recipient {
             OmniAddress::HyperEvm(addr) => encode_transfer_action(Address::from_slice(&addr.0)),

@@ -17,11 +17,13 @@ pub use builder::HyperCoreBridgeClientBuilder;
 pub use encoders::{
     encode_init_transfer_action, encode_transfer_action, ACTION_INIT_TRANSFER, ACTION_TRANSFER,
 };
+pub use info::{EvmContract, ResolvedSpotToken, SpotMetaResponse, SpotMetaToken};
 
 mod action;
 mod builder;
 pub mod encoders;
 pub mod error;
+mod info;
 mod signing;
 
 sol! {
@@ -79,6 +81,37 @@ impl HyperCoreBridgeClient {
             encoders::ACTION_INIT_TRANSFER => DEFAULT_GAS_LIMIT_INIT_TRANSFER,
             _ => DEFAULT_GAS_LIMIT_TRANSFER,
         }
+    }
+
+    /// Resolves a Hyperliquid spot identifier (`"NAME:0x<32hex>"`) into the
+    /// linked HyperEVM ERC20 address and the bridge token's decimals by
+    /// querying `POST /info {"type":"spotMeta"}`.
+    ///
+    /// `decimals = weiDecimals + evm_extra_wei_decimals` per Hyperliquid's
+    /// spot↔EVM linking convention. Errors if the token isn't in the spotMeta
+    /// universe or has no `evmContract` entry (not linked).
+    pub async fn resolve_spot_token(&self, token: &str) -> Result<info::ResolvedSpotToken> {
+        let (name, token_id) = info::parse_token_identifier(token)?;
+        let url = format!("{}/info", self.api_url);
+        let response = self
+            .http_client
+            .post(&url)
+            .json(&serde_json::json!({"type": "spotMeta"}))
+            .send()
+            .await
+            .map_err(|e| HyperCoreBridgeClientError::Http(e.to_string()))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(HyperCoreBridgeClientError::Http(format!(
+                "spotMeta HTTP {status}: {body}"
+            )));
+        }
+        let meta: info::SpotMetaResponse = response
+            .json()
+            .await
+            .map_err(|e| HyperCoreBridgeClientError::Http(format!("invalid spotMeta JSON: {e}")))?;
+        info::pick_resolved_token(&meta, name, &token_id)
     }
 
     /// Builds, signs, and posts a `sendToEvmWithData` action targeting `hl_bridge_token`

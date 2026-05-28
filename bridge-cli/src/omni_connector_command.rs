@@ -476,12 +476,18 @@ pub enum OmniConnectorSubCommand {
     HyperCoreTransfer {
         #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
         token: String,
-        #[clap(long, help = "HlBridgeToken contract address on HyperEVM")]
-        hl_token: EvmH160,
+        #[clap(
+            long,
+            help = "HlBridgeToken contract address on HyperEVM (resolved from spotMeta if omitted)"
+        )]
+        hl_token: Option<EvmH160>,
         #[clap(short, long, help = "Amount in bridge ERC20 wei units")]
         amount: u128,
-        #[clap(long, help = "Bridge token decimals")]
-        decimals: u8,
+        #[clap(
+            long,
+            help = "Bridge token decimals (resolved from spotMeta if omitted)"
+        )]
+        decimals: Option<u8>,
         #[clap(
             short,
             long,
