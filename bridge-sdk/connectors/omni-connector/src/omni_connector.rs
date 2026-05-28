@@ -251,6 +251,12 @@ pub enum InitTransferArgs {
     ///   `OmniBridge.initTransfer`; `fee` is paid out of `amount`, `message`
     ///   is forwarded with the bridge event.
     ///
+    /// For the **inbound** direction (any chain → HyperCore Core user) see
+    /// [`FinTransferArgs::EvmFinTransfer`]: target `chain_kind = HyperEvm`
+    /// with a non-empty `message` on the source-side `init_transfer` and
+    /// the contract-side message-length dispatch parks the supply at
+    /// `HlBridgeToken._systemAddress` so HyperCore credits the user.
+    ///
     /// `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`), NOT
     /// the bridge ERC20 address. `amount` is in bridge ERC20 wei units;
     /// `decimals` is the bridge token's decimals, formatted as the wire
