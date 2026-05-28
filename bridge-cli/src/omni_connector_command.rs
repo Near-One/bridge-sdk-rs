@@ -470,8 +470,10 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
-    #[clap(about = "HyperCore -> NEAR/other chain via sendToEvmWithData (ACTION_INIT_TRANSFER)")]
-    HyperCoreInitTransfer {
+    #[clap(about = "HyperCore -> any destination via sendToEvmWithData. \
+                 hlevm:0x... recipient uses ACTION_TRANSFER (direct pool release on HyperEVM); \
+                 any other recipient uses ACTION_INIT_TRANSFER (route through OmniBridge).")]
+    HyperCoreTransfer {
         #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
         token: String,
         #[clap(long, help = "HlBridgeToken contract address on HyperEVM")]
@@ -480,31 +482,24 @@ pub enum OmniConnectorSubCommand {
         amount: u128,
         #[clap(long, help = "Bridge token decimals")]
         decimals: u8,
-        #[clap(short, long, help = "Recipient OmniAddress (near:..., sol:..., etc.)")]
+        #[clap(
+            short,
+            long,
+            help = "Recipient OmniAddress: hlevm:0x... (pool release on HyperEVM) or near:... / sol:... / eth:0x... etc. (bridge)"
+        )]
         recipient: OmniAddress,
-        #[clap(short, long, help = "Bridge fee (in bridge ERC20 wei units)")]
+        #[clap(
+            short,
+            long,
+            help = "Bridge fee in bridge ERC20 wei units (ignored when recipient is hlevm:)"
+        )]
         fee: Option<u128>,
-        #[clap(short, long, help = "Additional message routed through the bridge")]
+        #[clap(
+            short,
+            long,
+            help = "Additional message routed through the bridge (ignored when recipient is hlevm:)"
+        )]
         message: Option<String>,
-        #[clap(long, help = "Override HyperEVM gas limit for the system call")]
-        gas_limit: Option<u64>,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(
-        about = "HyperCore -> HyperEVM via sendToEvmWithData (ACTION_TRANSFER): pool release to an EVM recipient"
-    )]
-    HyperCoreEvmTransfer {
-        #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
-        token: String,
-        #[clap(long, help = "HlBridgeToken contract address on HyperEVM")]
-        hl_token: EvmH160,
-        #[clap(short, long, help = "Amount in bridge ERC20 wei units")]
-        amount: u128,
-        #[clap(long, help = "Bridge token decimals")]
-        decimals: u8,
-        #[clap(short = 'r', long, help = "HyperEVM recipient address")]
-        evm_recipient: EvmH160,
         #[clap(long, help = "Override HyperEVM gas limit for the system call")]
         gas_limit: Option<u64>,
         #[command(flatten)]
@@ -1299,7 +1294,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
 
-        OmniConnectorSubCommand::HyperCoreInitTransfer {
+        OmniConnectorSubCommand::HyperCoreTransfer {
             token,
             hl_token,
             amount,
@@ -1311,7 +1306,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .init_transfer(InitTransferArgs::HyperCoreInitTransfer {
+                .init_transfer(InitTransferArgs::HyperCoreTransfer {
                     token,
                     hl_bridge_token: hl_token,
                     amount,
@@ -1319,27 +1314,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     recipient,
                     fee: fee.unwrap_or_default(),
                     message: message.unwrap_or_default(),
-                    gas_limit,
-                })
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::HyperCoreEvmTransfer {
-            token,
-            hl_token,
-            amount,
-            decimals,
-            evm_recipient,
-            gas_limit,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .init_transfer(InitTransferArgs::HyperCoreEvmTransfer {
-                    token,
-                    hl_bridge_token: hl_token,
-                    amount,
-                    decimals,
-                    evm_recipient,
                     gas_limit,
                 })
                 .await

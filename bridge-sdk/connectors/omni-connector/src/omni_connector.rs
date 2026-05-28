@@ -241,20 +241,24 @@ pub enum InitTransferArgs {
         native_fee: u128,
         message: String,
     },
-    /// HyperCore -> NEAR/other-chain via `sendToEvmWithData` with
-    /// `ACTION_INIT_TRANSFER`. Releases `amount` from the HlBridgeToken
-    /// system-address pool through `OmniBridge.initTransfer`.
+    /// HyperCore -> any destination via `sendToEvmWithData`. The connector
+    /// picks the on-chain action based on `recipient`:
     ///
-    /// - `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`), NOT
-    ///   the bridge ERC20 address.
-    /// - `amount` is in bridge ERC20 wei units. `decimals` is the bridge
-    ///   token's decimals. The connector formats `amount / 10^decimals` as a
-    ///   minimal decimal string for the Hyperliquid wire field.
-    /// - The bridge token's decimals MUST equal Core's `szDecimals +
-    ///   evmExtraWeiDecimals` (the HyperCore<->HyperEVM linking invariant). If
-    ///   the token was linked incorrectly, the formatted amount will not
-    ///   match the user's Core spot balance precision.
-    HyperCoreInitTransfer {
+    /// - `OmniAddress::HyperEvm(addr)` → `ACTION_TRANSFER`. Pool release
+    ///   directly from `HlBridgeToken._systemAddress` to `addr` on HyperEVM;
+    ///   `fee` and `message` are unused.
+    /// - any other variant → `ACTION_INIT_TRANSFER`. Routes through
+    ///   `OmniBridge.initTransfer`; `fee` is paid out of `amount`, `message`
+    ///   is forwarded with the bridge event.
+    ///
+    /// `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`), NOT
+    /// the bridge ERC20 address. `amount` is in bridge ERC20 wei units;
+    /// `decimals` is the bridge token's decimals, formatted as the wire
+    /// decimal string via `amount / 10^decimals`. The bridge token's
+    /// decimals MUST equal Core's `szDecimals + evmExtraWeiDecimals` (the
+    /// HyperCore<->HyperEVM linking invariant); if linked incorrectly the
+    /// formatted amount won't match the user's Core spot balance precision.
+    HyperCoreTransfer {
         token: String,
         hl_bridge_token: Address,
         amount: u128,
@@ -262,20 +266,6 @@ pub enum InitTransferArgs {
         recipient: OmniAddress,
         fee: u128,
         message: String,
-        gas_limit: Option<u64>,
-    },
-    /// HyperCore -> HyperEVM via `sendToEvmWithData` with `ACTION_TRANSFER`.
-    /// Releases `amount` from the HlBridgeToken system-address pool to
-    /// `evm_recipient` on HyperEVM. No bridge involvement.
-    ///
-    /// Same `decimals` invariant as [`HyperCoreInitTransfer`]: must equal
-    /// Core's `szDecimals + evmExtraWeiDecimals`.
-    HyperCoreEvmTransfer {
-        token: String,
-        hl_bridge_token: Address,
-        amount: u128,
-        decimals: u8,
-        evm_recipient: Address,
         gas_limit: Option<u64>,
     },
 }
@@ -2800,7 +2790,7 @@ impl OmniConnector {
                 .starknet_init_transfer(token, amount, fee, native_fee, recipient, message)
                 .await
                 .map(|tx_hash| format!("{tx_hash:#066x}")),
-            InitTransferArgs::HyperCoreInitTransfer {
+            InitTransferArgs::HyperCoreTransfer {
                 token,
                 hl_bridge_token,
                 amount,
@@ -2810,7 +2800,7 @@ impl OmniConnector {
                 message,
                 gas_limit,
             } => self
-                .hypercore_init_transfer(
+                .hypercore_transfer(
                     token,
                     hl_bridge_token,
                     amount,
@@ -2822,31 +2812,16 @@ impl OmniConnector {
                 )
                 .await
                 .map(|tx_hash| tx_hash.to_string()),
-            InitTransferArgs::HyperCoreEvmTransfer {
-                token,
-                hl_bridge_token,
-                amount,
-                decimals,
-                evm_recipient,
-                gas_limit,
-            } => self
-                .hypercore_evm_transfer(
-                    token,
-                    hl_bridge_token,
-                    amount,
-                    decimals,
-                    evm_recipient,
-                    gas_limit,
-                )
-                .await
-                .map(|tx_hash| tx_hash.to_string()),
         }
     }
 
-    /// HyperCore -> NEAR/other chain. Encodes `ACTION_INIT_TRANSFER`, signs and
-    /// posts the Hyperliquid action, blocks on the HyperEVM `CoreReceived` log.
+    /// HyperCore -> any destination. Picks `ACTION_TRANSFER` when the
+    /// recipient is a HyperEVM address (direct pool release), otherwise
+    /// `ACTION_INIT_TRANSFER` (route through `OmniBridge.initTransfer`).
+    /// Signs the Hyperliquid action, posts to `/exchange`, and blocks on the
+    /// HyperEVM `CoreReceived` log.
     #[allow(clippy::too_many_arguments)]
-    pub async fn hypercore_init_transfer(
+    pub async fn hypercore_transfer(
         &self,
         token: String,
         hl_bridge_token: Address,
@@ -2859,27 +2834,10 @@ impl OmniConnector {
     ) -> Result<TxHash> {
         let client = self.hypercore_bridge_client()?;
         let amount_str = format_amount(amount, decimals);
-        let data = encode_init_transfer_action(fee, &recipient, &message);
-        let tx_hash = client
-            .send_to_evm_with_data(token, amount_str, hl_bridge_token, data, gas_limit)
-            .await?;
-        Ok(tx_hash)
-    }
-
-    /// HyperCore -> HyperEVM. Encodes `ACTION_TRANSFER`, signs and posts the
-    /// Hyperliquid action, blocks on the HyperEVM `CoreReceived` log.
-    pub async fn hypercore_evm_transfer(
-        &self,
-        token: String,
-        hl_bridge_token: Address,
-        amount: u128,
-        decimals: u8,
-        evm_recipient: Address,
-        gas_limit: Option<u64>,
-    ) -> Result<TxHash> {
-        let client = self.hypercore_bridge_client()?;
-        let amount_str = format_amount(amount, decimals);
-        let data = encode_transfer_action(evm_recipient);
+        let data = match &recipient {
+            OmniAddress::HyperEvm(addr) => encode_transfer_action(Address::from_slice(&addr.0)),
+            _ => encode_init_transfer_action(fee, &recipient, &message),
+        };
         let tx_hash = client
             .send_to_evm_with_data(token, amount_str, hl_bridge_token, data, gas_limit)
             .await?;
