@@ -221,81 +221,79 @@ impl HyperCoreBridgeClient {
         topic1[12..].copy_from_slice(signer_address.as_slice());
         let topic1 = FixedBytes::<32>::from(topic1);
 
-        let head_at_start = self
+        let mut head = self
             .hyperevm_provider
             .get_block_number()
             .await
             .map_err(|e| HyperCoreBridgeClientError::Rpc(e.to_string()))?;
         // Look back ~10 blocks in case the system tx already landed during the
         // POST round-trip; HyperEVM small blocks are 1s.
-        let mut from_block = head_at_start.saturating_sub(10);
+        let mut from_block = head.saturating_sub(10);
 
         let start = Instant::now();
         loop {
-            tokio::time::sleep(self.poll_interval).await;
-            if start.elapsed() > self.poll_timeout {
-                return Err(HyperCoreBridgeClientError::PollTimeout);
+            if head >= from_block {
+                let filter = Filter::new()
+                    .address(hl_bridge_token)
+                    .event_signature(topic0)
+                    .topic1(topic1)
+                    .from_block(from_block)
+                    .to_block(head);
+
+                let logs = self
+                    .hyperevm_provider
+                    .get_logs(&filter)
+                    .await
+                    .map_err(|e| HyperCoreBridgeClientError::Rpc(e.to_string()))?;
+
+                for log in logs {
+                    let inner = log.inner.clone();
+                    let decoded = HlBridgeToken::CoreReceived::decode_log(&inner).map_err(|e| {
+                        HyperCoreBridgeClientError::Rpc(format!(
+                            "failed to decode CoreReceived log: {e}"
+                        ))
+                    })?;
+                    if decoded.data.data.as_ref() != expected_data {
+                        continue;
+                    }
+                    let tx_hash = log.transaction_hash.ok_or_else(|| {
+                        HyperCoreBridgeClientError::Rpc(
+                            "CoreReceived log missing transaction_hash".to_string(),
+                        )
+                    })?;
+                    let block_number = log.block_number.ok_or_else(|| {
+                        HyperCoreBridgeClientError::Rpc(
+                            "CoreReceived log missing block_number".to_string(),
+                        )
+                    })?;
+                    let HlBridgeToken::CoreReceived {
+                        sender,
+                        action,
+                        amount,
+                        data,
+                    } = decoded.data;
+                    return Ok(CoreReceivedLog {
+                        sender,
+                        action,
+                        amount,
+                        data,
+                        transaction_hash: tx_hash,
+                        block_number,
+                    });
+                }
+
+                from_block = head.saturating_add(1);
             }
 
-            let head = self
+            if start.elapsed() >= self.poll_timeout {
+                return Err(HyperCoreBridgeClientError::PollTimeout);
+            }
+            tokio::time::sleep(self.poll_interval).await;
+            head = self
                 .hyperevm_provider
                 .get_block_number()
                 .await
                 .map_err(|e| HyperCoreBridgeClientError::Rpc(e.to_string()))?;
-            if head < from_block {
-                continue;
-            }
-
-            let filter = Filter::new()
-                .address(hl_bridge_token)
-                .event_signature(topic0)
-                .topic1(topic1)
-                .from_block(from_block)
-                .to_block(head);
-
-            let logs = self
-                .hyperevm_provider
-                .get_logs(&filter)
-                .await
-                .map_err(|e| HyperCoreBridgeClientError::Rpc(e.to_string()))?;
-
-            for log in logs {
-                let inner = log.inner.clone();
-                let decoded = HlBridgeToken::CoreReceived::decode_log(&inner).map_err(|e| {
-                    HyperCoreBridgeClientError::Rpc(format!(
-                        "failed to decode CoreReceived log: {e}"
-                    ))
-                })?;
-                if decoded.data.data.as_ref() != expected_data {
-                    continue;
-                }
-                let tx_hash = log.transaction_hash.ok_or_else(|| {
-                    HyperCoreBridgeClientError::Rpc(
-                        "CoreReceived log missing transaction_hash".to_string(),
-                    )
-                })?;
-                let block_number = log.block_number.ok_or_else(|| {
-                    HyperCoreBridgeClientError::Rpc(
-                        "CoreReceived log missing block_number".to_string(),
-                    )
-                })?;
-                let HlBridgeToken::CoreReceived {
-                    sender,
-                    action,
-                    amount,
-                    data,
-                } = decoded.data;
-                return Ok(CoreReceivedLog {
-                    sender,
-                    action,
-                    amount,
-                    data,
-                    transaction_hash: tx_hash,
-                    block_number,
-                });
-            }
-
-            from_block = head.saturating_add(1);
         }
     }
 }

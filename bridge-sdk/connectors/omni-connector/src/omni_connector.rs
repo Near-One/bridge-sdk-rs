@@ -248,8 +248,8 @@ pub enum InitTransferArgs {
     /// - `token` is the Hyperliquid spot identifier (`"NAME:0x<32hex>"`), NOT
     ///   the bridge ERC20 address.
     /// - `amount` is in bridge ERC20 wei units. `decimals` is the bridge
-    ///   token's decimals. The connector formats `amount * 10^-decimals` as
-    ///   the Hyperliquid wire decimal string.
+    ///   token's decimals. The connector formats `amount / 10^decimals` as a
+    ///   minimal decimal string for the Hyperliquid wire field.
     /// - The bridge token's decimals MUST equal Core's `szDecimals +
     ///   evmExtraWeiDecimals` (the HyperCore<->HyperEVM linking invariant). If
     ///   the token was linked incorrectly, the formatted amount will not
@@ -2821,7 +2821,7 @@ impl OmniConnector {
                     gas_limit,
                 )
                 .await
-                .map(|tx_hash| format!("{tx_hash:?}")),
+                .map(|tx_hash| tx_hash.to_string()),
             InitTransferArgs::HyperCoreEvmTransfer {
                 token,
                 hl_bridge_token,
@@ -2839,7 +2839,7 @@ impl OmniConnector {
                     gas_limit,
                 )
                 .await
-                .map(|tx_hash| format!("{tx_hash:?}")),
+                .map(|tx_hash| tx_hash.to_string()),
         }
     }
 

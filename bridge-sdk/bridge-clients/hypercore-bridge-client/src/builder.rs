@@ -106,9 +106,7 @@ impl HyperCoreBridgeClientBuilder {
         })?;
 
         let api_url = self.api_url.ok_or_else(|| {
-            HyperCoreBridgeClientError::ConfigError(
-                "Hyperliquid api_url is required".to_string(),
-            )
+            HyperCoreBridgeClientError::ConfigError("Hyperliquid api_url is required".to_string())
         })?;
         let hyperevm_rpc_url = self.hyperevm_rpc_url.ok_or_else(|| {
             HyperCoreBridgeClientError::ConfigError(
