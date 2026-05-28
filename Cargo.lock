@@ -1786,6 +1786,7 @@ dependencies = [
  "clap",
  "dotenv",
  "evm-bridge-client",
+ "hypercore-bridge-client",
  "light-client",
  "near-bridge-client",
  "near-mpc-contract-interface",
@@ -1815,6 +1816,7 @@ dependencies = [
  "alloy",
  "eth-proof",
  "evm-bridge-client",
+ "hypercore-bridge-client",
  "near-rpc-client",
  "serde_json",
  "solana-bridge-client",
@@ -4122,6 +4124,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "hypercore-bridge-client"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "hex",
+ "omni-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5692,6 +5709,7 @@ dependencies = [
  "eth-proof",
  "evm-bridge-client",
  "hex",
+ "hypercore-bridge-client",
  "light-client",
  "near-bridge-client",
  "near-contract-standards",

@@ -7,6 +7,7 @@ use std::{path::Path, str::FromStr};
 use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
+use hypercore_bridge_client::{HyperCoreBridgeClientBuilder, HyperliquidNetwork};
 use light_client::LightClientBuilder;
 use near_bridge_client::{
     btc::{format_max_gas_fee, DepositMsg, SafeDepositMsg},
@@ -469,6 +470,46 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
+    #[clap(about = "HyperCore -> NEAR/other chain via sendToEvmWithData (ACTION_INIT_TRANSFER)")]
+    HyperCoreInitTransfer {
+        #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
+        token: String,
+        #[clap(long, help = "HlBridgeToken contract address on HyperEVM")]
+        hl_token: EvmH160,
+        #[clap(short, long, help = "Amount in bridge ERC20 wei units")]
+        amount: u128,
+        #[clap(long, help = "Bridge token decimals")]
+        decimals: u8,
+        #[clap(short, long, help = "Recipient OmniAddress (near:..., sol:..., etc.)")]
+        recipient: OmniAddress,
+        #[clap(short, long, help = "Bridge fee (in bridge ERC20 wei units)")]
+        fee: Option<u128>,
+        #[clap(short, long, help = "Additional message routed through the bridge")]
+        message: Option<String>,
+        #[clap(long, help = "Override HyperEVM gas limit for the system call")]
+        gas_limit: Option<u64>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(
+        about = "HyperCore -> HyperEVM via sendToEvmWithData (ACTION_TRANSFER): pool release to an EVM recipient"
+    )]
+    HyperCoreEvmTransfer {
+        #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
+        token: String,
+        #[clap(long, help = "HlBridgeToken contract address on HyperEVM")]
+        hl_token: EvmH160,
+        #[clap(short, long, help = "Amount in bridge ERC20 wei units")]
+        amount: u128,
+        #[clap(long, help = "Bridge token decimals")]
+        decimals: u8,
+        #[clap(short = 'r', long, help = "HyperEVM recipient address")]
+        evm_recipient: EvmH160,
+        #[clap(long, help = "Override HyperEVM gas limit for the system call")]
+        gas_limit: Option<u64>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on Starknet")]
     StarknetInitTransfer {
         #[clap(short, long, help = "Token address on Starknet (felt hex)")]
@@ -1258,6 +1299,53 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
 
+        OmniConnectorSubCommand::HyperCoreInitTransfer {
+            token,
+            hl_token,
+            amount,
+            decimals,
+            recipient,
+            fee,
+            message,
+            gas_limit,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .init_transfer(InitTransferArgs::HyperCoreInitTransfer {
+                    token,
+                    hl_bridge_token: hl_token,
+                    amount,
+                    decimals,
+                    recipient,
+                    fee: fee.unwrap_or_default(),
+                    message: message.unwrap_or_default(),
+                    gas_limit,
+                })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::HyperCoreEvmTransfer {
+            token,
+            hl_token,
+            amount,
+            decimals,
+            evm_recipient,
+            gas_limit,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .init_transfer(InitTransferArgs::HyperCoreEvmTransfer {
+                    token,
+                    hl_bridge_token: hl_token,
+                    amount,
+                    decimals,
+                    evm_recipient,
+                    gas_limit,
+                })
+                .await
+                .unwrap();
+        }
+
         OmniConnectorSubCommand::StarknetInitTransfer {
             token,
             amount,
@@ -1948,8 +2036,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let hyperevm_bridge_client = EvmBridgeClientBuilder::default()
-        .endpoint(combined_config.hyperevm_rpc)
-        .private_key(combined_config.hyperevm_private_key)
+        .endpoint(combined_config.hyperevm_rpc.clone())
+        .private_key(combined_config.hyperevm_private_key.clone())
         .omni_bridge_address(combined_config.hyperevm_bridge_token_factory_address)
         .wormhole_core_address(combined_config.hyperevm_wormhole_address)
         .build()
@@ -1963,6 +2051,23 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .mpc_finality(Some(EvmFinality::Latest))
         .build()
         .unwrap();
+
+    let hypercore_network = match network {
+        Network::Mainnet => HyperliquidNetwork::Mainnet,
+        Network::Testnet | Network::Devnet => HyperliquidNetwork::Testnet,
+    };
+    let hypercore_bridge_client = combined_config.hyperevm_private_key.as_ref().map(|pk| {
+        HyperCoreBridgeClientBuilder::default()
+            .network(hypercore_network)
+            .api_url(combined_config.hypercore_api.clone())
+            .hyperevm_rpc_url(combined_config.hyperevm_rpc.clone())
+            .private_key(Some(pk.clone()))
+            .signature_chain_id(combined_config.hypercore_signature_chain_id.clone())
+            .poll_interval(None)
+            .poll_timeout(None)
+            .build()
+            .unwrap()
+    });
 
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
         .chain(Some(ChainKind::Sol))
@@ -2110,6 +2215,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .pol_bridge_client(Some(pol_bridge_client))
         .hyperevm_bridge_client(Some(hyperevm_bridge_client))
         .abs_bridge_client(Some(abs_bridge_client))
+        .hypercore_bridge_client(hypercore_bridge_client)
         .solana_bridge_client(Some(solana_bridge_client))
         .fogo_bridge_client(Some(fogo_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
