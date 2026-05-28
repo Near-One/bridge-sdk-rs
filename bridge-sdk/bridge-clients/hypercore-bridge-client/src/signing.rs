@@ -9,11 +9,16 @@ use crate::error::{HyperCoreBridgeClientError, Result};
 
 /// EIP-712 type string for `HyperliquidTransaction:SendToEvmWithData`.
 ///
-/// **Inferred** from the JSON shape (GitBook docs llms-full.txt:5837) and the
-/// user-signed-action convention in hyperliquid-python-sdk:signing.py:88-119.
-/// Hyperliquid's own SDKs do not implement this action; until we validate
-/// signer recovery on testnet, treat field order and integer widths as the
-/// primary suspects if the L1 rejects with a signature/user-not-found error.
+/// Originally inferred from the GitBook docs (`llms-full.txt:5837`) and the
+/// user-signed-action convention in hyperliquid-python-sdk:signing.py:88-119,
+/// because neither official SDK implements `sendToEvmWithData`.
+///
+/// **Validated against Hyperliquid testnet `/exchange`**: signing with a
+/// random key and posting yields `"Must deposit before performing actions.
+/// User: <our-address>"`, where the embedded address matches the signer.
+/// That proves the L1 recovers the correct address from our digest —
+/// i.e. field order, integer widths, and which fields are signed are all
+/// correct. See `testnet_l1_recovers_our_address` below.
 const SEND_TO_EVM_WITH_DATA_TYPE: &str = "HyperliquidTransaction:SendToEvmWithData(string hyperliquidChain,string token,string amount,string sourceDex,string destinationRecipient,string addressEncoding,uint32 destinationChainId,uint64 gasLimit,bytes data,uint64 nonce)";
 
 const EIP712_DOMAIN_TYPE: &str =
@@ -162,6 +167,102 @@ mod tests {
         let mut variant = sample_action();
         variant.data = "0x01ff".to_string();
         assert_ne!(compute_struct_hash(&variant).unwrap(), base);
+    }
+
+    /// Smoke-tests the EIP-712 type list against the real Hyperliquid testnet
+    /// `/exchange` endpoint.
+    ///
+    /// We sign with a fresh random key whose address has no HyperCore account,
+    /// then POST the action. The L1 recomputes the digest, recovers `(r,s,v)`
+    /// against it, and rejects because the recovered address has no Core
+    /// balance. Crucially the error embeds the recovered address — when that
+    /// matches the wallet we signed with, our type list / field order /
+    /// integer widths are all correct.
+    ///
+    /// Don't use a deterministic well-known key (Anvil `0xac09…`): someone has
+    /// configured that address as a multi-sig account on testnet, which
+    /// triggers a different (less informative) `"Multi-sig required"` error.
+    ///
+    /// Ignored by default because it hits the network. Run with:
+    ///   `cargo test -p hypercore-bridge-client testnet -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "hits Hyperliquid testnet /exchange"]
+    async fn testnet_l1_recovers_our_address() {
+        use crate::encoders::encode_transfer_action;
+
+        // Fresh random key — 1 in 2^160 chance of colliding with a real
+        // account on testnet. If the response is still "Multi-sig required"
+        // with a brand-new address, that tells us `sendToEvmWithData` itself
+        // requires multi-sig (not an artifact of someone else's testing).
+        let signer = PrivateKeySigner::random();
+        let our_address = signer.address();
+        println!("\n=== Our signer address: {our_address:?} ===\n");
+
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        // ACTION_TRANSFER with our own address as the recipient (pool release).
+        // Doesn't matter that the HlBridgeToken at destinationRecipient doesn't
+        // exist — we just want the L1 to evaluate our signature.
+        let data_bytes = encode_transfer_action(our_address);
+        let data_hex = format!("0x{}", hex::encode(&data_bytes));
+
+        let action = SendToEvmWithDataAction {
+            action_type: "sendToEvmWithData",
+            hyperliquid_chain: "Testnet",
+            signature_chain_id: "0x66eee".to_string(),
+            token: "PURR:0xc4bf3f870c0e9465323c0b6ed28096c2".to_string(),
+            amount: "0.01".to_string(),
+            source_dex: "spot".to_string(),
+            destination_recipient: format!("{our_address:?}").to_lowercase(),
+            address_encoding: "hex".to_string(),
+            destination_chain_id: 998,
+            gas_limit: 800_000,
+            data: data_hex,
+            nonce,
+        };
+        println!("Action: {}", serde_json::to_string_pretty(&action).unwrap());
+
+        let signature = sign_action(&signer, &action).unwrap();
+        println!("Signature: {signature:?}\n");
+
+        #[derive(serde::Serialize)]
+        struct Envelope<'a> {
+            action: &'a SendToEvmWithDataAction,
+            nonce: u64,
+            signature: &'a ActionSignature,
+        }
+        let envelope = Envelope {
+            action: &action,
+            nonce,
+            signature: &signature,
+        };
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let response = client
+            .post("https://api.hyperliquid-testnet.xyz/exchange")
+            .json(&envelope)
+            .send()
+            .await
+            .expect("POST failed");
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        println!("=== HTTP {status} ===");
+        println!("Body: {body}");
+
+        let our_addr_lower = format!("{our_address:?}").to_lowercase();
+        assert!(
+            body.to_lowercase().contains(&our_addr_lower),
+            "Hyperliquid response did not reference our signing address {our_addr_lower}.\n\
+             This means the L1 recovered a different signer from our digest — \
+             EIP-712 type list or field order is wrong.\nFull body: {body}"
+        );
     }
 
     #[test]
