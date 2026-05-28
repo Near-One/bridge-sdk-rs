@@ -7,14 +7,7 @@ pub enum HyperliquidNetwork {
 }
 
 impl HyperliquidNetwork {
-    #[must_use]
-    pub fn api_url(self) -> &'static str {
-        match self {
-            Self::Mainnet => "https://api.hyperliquid.xyz",
-            Self::Testnet => "https://api.hyperliquid-testnet.xyz",
-        }
-    }
-
+    /// `hyperliquidChain` value embedded in the signed action JSON.
     #[must_use]
     pub fn hyperliquid_chain(self) -> &'static str {
         match self {
@@ -23,19 +16,12 @@ impl HyperliquidNetwork {
         }
     }
 
+    /// HyperEVM chain id (`destinationChainId` in the action JSON).
     #[must_use]
     pub fn hyperevm_chain_id(self) -> u32 {
         match self {
             Self::Mainnet => 999,
             Self::Testnet => 998,
-        }
-    }
-
-    #[must_use]
-    pub fn default_hyperevm_rpc(self) -> &'static str {
-        match self {
-            Self::Mainnet => "https://rpc.hyperliquid.xyz/evm",
-            Self::Testnet => "https://rpc.hyperliquid-testnet.xyz/evm",
         }
     }
 }

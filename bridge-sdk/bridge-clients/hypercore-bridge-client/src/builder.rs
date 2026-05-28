@@ -36,15 +36,18 @@ impl HyperCoreBridgeClientBuilder {
         self
     }
 
-    /// Override the Hyperliquid REST base URL (defaults to the per-network value).
-    /// Provide the BASE URL without the `/exchange` suffix.
+    /// Hyperliquid REST base URL. Required. Provide the BASE URL without the
+    /// `/exchange` suffix. The caller is the source of truth — see
+    /// `bridge-cli/src/defaults.rs::HYPERCORE_API_*`.
     #[must_use]
     pub fn api_url(mut self, api_url: Option<String>) -> Self {
         self.api_url = api_url;
         self
     }
 
-    /// Override the HyperEVM RPC URL used for the post-action `CoreReceived` poll.
+    /// HyperEVM RPC URL used for the post-action `CoreReceived` poll.
+    /// Required. The caller is the source of truth — see
+    /// `bridge-cli/src/defaults.rs::HYPEREVM_RPC_*`.
     #[must_use]
     pub fn hyperevm_rpc_url(mut self, hyperevm_rpc_url: Option<String>) -> Self {
         self.hyperevm_rpc_url = hyperevm_rpc_url;
@@ -102,12 +105,16 @@ impl HyperCoreBridgeClientBuilder {
             HyperCoreBridgeClientError::ConfigError("Invalid HyperCore private key".to_string())
         })?;
 
-        let api_url = self
-            .api_url
-            .unwrap_or_else(|| network.api_url().to_string());
-        let hyperevm_rpc_url = self
-            .hyperevm_rpc_url
-            .unwrap_or_else(|| network.default_hyperevm_rpc().to_string());
+        let api_url = self.api_url.ok_or_else(|| {
+            HyperCoreBridgeClientError::ConfigError(
+                "Hyperliquid api_url is required".to_string(),
+            )
+        })?;
+        let hyperevm_rpc_url = self.hyperevm_rpc_url.ok_or_else(|| {
+            HyperCoreBridgeClientError::ConfigError(
+                "hyperevm_rpc_url is required (used for CoreReceived polling)".to_string(),
+            )
+        })?;
 
         let rpc_url: Url = hyperevm_rpc_url.parse().map_err(|_| {
             HyperCoreBridgeClientError::ConfigError(
