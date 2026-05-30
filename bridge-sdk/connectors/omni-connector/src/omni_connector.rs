@@ -52,6 +52,16 @@ use utxo_bridge_client::{
 use utxo_utils::{get_gas_fee, UTXO};
 use wormhole_bridge_client::WormholeBridgeClient;
 
+/// Result of UTXO selection for a BTC/Zcash withdrawal — feed into
+/// [`OmniConnector::near_submit_prepared_btc_transfer`].
+#[derive(Clone)]
+pub struct BtcTransferSelection {
+    pub out_points: Vec<OutPoint>,
+    pub tx_outs: Vec<TxOut>,
+    pub chain_specific_data: Option<ChainSpecificData>,
+    pub gas_fee: u64,
+}
+
 #[allow(clippy::struct_field_names)]
 #[derive(Builder, Default)]
 #[builder(pattern = "owned")]
@@ -1309,14 +1319,12 @@ impl OmniConnector {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn near_submit_btc_transfer(
+    pub async fn near_select_btc_utxos(
         &self,
         chain: ChainKind,
         recipient: String,
         amount: u128,
         fee_rate: Option<u64>,
-        transfer_id: omni_types::TransferId,
-        transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
         // Extra headroom (sat) to leave in the change output above
         // `min_change_amount`, so a later RBF can bump the fee by up to
@@ -1328,7 +1336,7 @@ impl OmniConnector {
         // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
         // pulling the full set from the NEAR connector.
         utxos: Option<HashMap<String, UTXO>>,
-    ) -> Result<CryptoHash> {
+    ) -> Result<BtcTransferSelection> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let near_bridge_client = self.near_bridge_client()?;
@@ -1336,7 +1344,7 @@ impl OmniConnector {
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
             .extract_utxo(
                 chain,
-                recipient.clone(),
+                recipient,
                 amount.checked_sub(fee).ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
                 })?,
@@ -1349,6 +1357,29 @@ impl OmniConnector {
             )
             .await?;
 
+        Ok(BtcTransferSelection {
+            out_points,
+            tx_outs,
+            chain_specific_data,
+            gas_fee,
+        })
+    }
+
+    pub async fn near_submit_prepared_btc_transfer(
+        &self,
+        recipient: String,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
+        selection: BtcTransferSelection,
+    ) -> Result<CryptoHash> {
+        let BtcTransferSelection {
+            out_points,
+            tx_outs,
+            chain_specific_data,
+            gas_fee,
+        } = selection;
+
         let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {
             if gas_fee > max_gas_fee {
                 return Err(BridgeSdkError::InsufficientUTXOGasFee(format!(
@@ -1360,7 +1391,7 @@ impl OmniConnector {
             None
         };
 
-        near_bridge_client
+        self.near_bridge_client()?
             .submit_btc_transfer(
                 transfer_id,
                 TokenReceiverMessage::Withdraw {
@@ -1373,6 +1404,43 @@ impl OmniConnector {
                 transaction_options,
             )
             .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn near_submit_btc_transfer(
+        &self,
+        chain: ChainKind,
+        recipient: String,
+        amount: u128,
+        fee_rate: Option<u64>,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
+    ) -> Result<CryptoHash> {
+        let selection = self
+            .near_select_btc_utxos(
+                chain,
+                recipient.clone(),
+                amount,
+                fee_rate,
+                max_gas_fee,
+                change_reserve,
+                memo,
+                utxos,
+            )
+            .await?;
+
+        self.near_submit_prepared_btc_transfer(
+            recipient,
+            transfer_id,
+            transaction_options,
+            max_gas_fee,
+            selection,
+        )
+        .await
     }
 
     /// Initiates an RBF (Replace-By-Fee) transaction to increase gas fee.
