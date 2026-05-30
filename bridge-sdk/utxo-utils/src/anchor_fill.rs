@@ -53,9 +53,11 @@ use std::collections::HashMap;
 /// Choose UTXOs maximizing input count within the `max_gas_fee` budget.
 ///
 /// `gross_amount` is the total amount deducted from the pool by the
-/// withdrawal — i.e. `recipient_amount + gas_fee` (and `+ user_payment` when
-/// dust padding fires). The recipient ultimately receives
-/// `gross_amount - gas_fee - user_payment`.
+/// withdrawal — i.e. `recipient_amount + gas_fee`. The recipient ultimately
+/// receives `gross_amount - gas_fee`. Every returned selection has
+/// `user_payment == 0`; if the algorithm can't produce an exact payout
+/// without dust-padding, it errors instead of silently shrinking the
+/// recipient's amount.
 ///
 /// Returns `Err` if the budget is too tight to admit any inputs, if the pool
 /// can't cover `gross_amount`, or if no `K`-subset of the pool produces a
@@ -75,7 +77,7 @@ pub fn choose_utxos_anchor_fill(
     // so a later RBF can bump the fee by up to `change_reserve` without driving
     // the change below the contract's minimum. Pass `0` if RBF headroom isn't
     // needed. When > 0, absorption (no change) is disabled — there's nothing to
-    // shrink for an RBF bump — and dust padding is disabled too.
+    // shrink for an RBF bump.
     change_reserve: u128,
 ) -> Result<UtxoSelection, String> {
     // Effective minimum change: `min_change_amount` plus RBF headroom.
@@ -261,16 +263,10 @@ fn try_single_input(
         }
 
         if change < min_change_required {
-            if min_change_required < bal {
-                // Dust padding: user covers the gap to bring change up to
-                // `min_change_required` (= `min_change_amount + change_reserve`).
-                // 1 input + 1 change → HIGH zone (input_num > change_num) is satisfied.
-                return Some(UtxoSelection {
-                    selected: vec![entry.clone()],
-                    user_payment: min_change_required - change,
-                    change_amounts: vec![min_change_required],
-                });
-            }
+            // Dust zone: change is positive but too small to be a valid output.
+            // We don't dust-pad (which would silently shrink the recipient's
+            // payout) — skip this candidate and try the next bigger one. If
+            // none satisfies, the outer loop falls back to lower K.
             continue;
         }
 
