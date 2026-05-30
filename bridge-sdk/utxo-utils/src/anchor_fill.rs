@@ -134,6 +134,15 @@ pub fn choose_utxos_anchor_fill(
         ));
     }
 
+    // Minimum reachable output count for the per-K filter below.
+    //   - orchard: always 1 (the shielded recipient is in the orchard bundle,
+    //     not counted as a transparent output in the fee formula).
+    //   - non-orchard with reserve_active: 2 (absorption is disabled because
+    //     there'd be no change for an RBF bump to shrink → at least 1 change).
+    //   - non-orchard without reserve: 1 (absorption case is reachable).
+    let reserve_active = min_change_required > params.min_change_amount;
+    let best_case_num_output: u64 = if orchard || !reserve_active { 1 } else { 2 };
+
     // For each K, find a candidate and gate it on the gas budget using the
     // actual output count. HIGH-zone (`input_num > change_num`) is enforced
     // inline by `try_single_input` / `try_anchor_search` — the pool filter
@@ -141,9 +150,9 @@ pub fn choose_utxos_anchor_fill(
     // Fall back to smaller K on any rejection.
     let mut last_err: Option<String> = None;
     for k in (1..=k_max).rev() {
-        // Skip K when even the best-case fee (absorption / orchard, 1 output)
-        // exceeds the budget — no candidate at this K can fit.
-        let best_case_fee = get_gas_fee(chain, k as u64, 1, fee_rate, orchard);
+        // Skip K when even the best-case fee (cheapest reachable num_output at
+        // this K) exceeds the budget — no candidate at this K can fit.
+        let best_case_fee = get_gas_fee(chain, k as u64, best_case_num_output, fee_rate, orchard);
         if best_case_fee > max_gas_fee {
             last_err = Some(format!(
                 "best-case fee {best_case_fee} > max_gas_fee {max_gas_fee} at K={k}"
