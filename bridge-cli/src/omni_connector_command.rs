@@ -654,6 +654,12 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
         #[clap(
+            long,
+            help = "Change reserve for RBF transactions",
+            default_value = "5000"
+        )]
+        change_reserve: Option<u128>,
+        #[clap(
             short,
             long,
             help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
@@ -1036,6 +1042,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            change_reserve,
             memo,
             config_cli,
         } => {
@@ -1046,6 +1053,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     sender_id,
                     fee_rate,
                     TransactionOptions::default(),
+                    change_reserve,
                     memo,
                 )
                 .await

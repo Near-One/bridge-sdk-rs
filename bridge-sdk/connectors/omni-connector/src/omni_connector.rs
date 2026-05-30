@@ -1521,6 +1521,7 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
+        change_reserve: Option<u128>,
         memo: Option<String>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
@@ -1541,10 +1542,7 @@ impl OmniConnector {
             transfer_id,
             transaction_options,
             max_gas_fee,
-            // `NearToBtcTransferInfo` (from contract logs) doesn't carry a
-            // `change_reserve` field; expose it on this wrapper if/when callers
-            // need RBF headroom on the by-tx-hash submit path.
-            None,
+            change_reserve,
             memo,
         )
         .await
