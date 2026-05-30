@@ -853,6 +853,11 @@ pub enum OmniConnectorSubCommand {
             help = "Merge the largest UTXOs instead of the smallest (use ahead of a large withdrawal)"
         )]
         merge_largest: bool,
+        #[clap(
+            long,
+            help = "Override the max change amount per output (defaults to the value from the bridge config)"
+        )]
+        max_change_amount: Option<u128>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1817,6 +1822,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee_rate,
             max_input_number,
             merge_largest,
+            max_change_amount,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1825,6 +1831,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     fee_rate,
                     max_input_number,
                     merge_largest,
+                    max_change_amount,
                     TransactionOptions::default(),
                 )
                 .await
