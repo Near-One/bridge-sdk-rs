@@ -1055,6 +1055,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     TransactionOptions::default(),
                     change_reserve,
                     memo,
+                    None,
                 )
                 .await
                 .unwrap();

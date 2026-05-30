@@ -1325,6 +1325,9 @@ impl OmniConnector {
         // ignored when falling back to the random selector. `None` ⇒ no reserve.
         change_reserve: Option<u128>,
         memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
@@ -1342,6 +1345,7 @@ impl OmniConnector {
                 max_gas_fee,
                 change_reserve,
                 memo,
+                utxos,
             )
             .await?;
 
@@ -1514,6 +1518,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: ChainKind,
@@ -1523,6 +1528,7 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         change_reserve: Option<u128>,
         memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
@@ -1544,6 +1550,7 @@ impl OmniConnector {
             max_gas_fee,
             change_reserve,
             memo,
+            utxos,
         )
         .await
     }
@@ -3700,6 +3707,9 @@ impl OmniConnector {
         // ignored by the random fallback. `None` ⇒ no reserve.
         change_reserve: Option<u128>,
         memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3709,7 +3719,10 @@ impl OmniConnector {
             None => utxo_bridge_client.get_fee_rate().await?,
         };
 
-        let utxos = near_bridge_client.get_utxos(chain).await?;
+        let utxos = match utxos {
+            Some(utxos) => utxos,
+            None => near_bridge_client.get_utxos(chain).await?,
+        };
         let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
         let params = near_bridge_client
             .get_withdraw_selection_params(chain)
