@@ -114,7 +114,8 @@ impl UTXOAddress {
 
         if let Some(hrp) = get_segwit_hrp(chain, network) {
             if let Ok((decoded_hrp, witness_version, data)) = bech32::segwit::decode(address) {
-                if decoded_hrp.as_str() != hrp {
+                let expected_hrp = Hrp::parse(hrp).expect("static HRP must be valid");
+                if decoded_hrp != expected_hrp {
                     return Err(format!(
                         "Bech32 HRP mismatch: expected '{hrp}', got '{decoded_hrp}'"
                     ));
@@ -389,5 +390,23 @@ fn get_script_address_prefix(chain: ChainKind, network: Network) -> Vec<u8> {
         // (ChainKind::Doge, Network::Mainnet) => vec![0x16], // "9"
         // (ChainKind::Doge, Network::Testnet) => vec![0xC4], // same as Bitcoin testnet
         _ => unimplemented!("Unsupported chain or network"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_btc_segwit_accepts_uppercase_and_lowercase() {
+        let upper = "BC1QTGJGS0VZ4FFAEZ59Y64VYTJP6034RPEZGYH8JT";
+        let lower = "bc1qtgjgs0vz4ffaez59y64vytjp6034rpezgyh8jt";
+
+        let parsed_upper = UTXOAddress::parse(upper, ChainKind::Btc, Network::Mainnet)
+            .expect("uppercase bech32 must parse");
+        let parsed_lower = UTXOAddress::parse(lower, ChainKind::Btc, Network::Mainnet)
+            .expect("lowercase bech32 must parse");
+
+        assert_eq!(parsed_upper, parsed_lower);
     }
 }

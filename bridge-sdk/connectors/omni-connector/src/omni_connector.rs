@@ -1184,8 +1184,10 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
+        memo: Option<String>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -1255,16 +1257,27 @@ impl OmniConnector {
             .collect::<Result<Vec<_>>>()?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs_multi(
-            &target_btc_address,
-            user_amount.try_into().map_err(|err| {
-                BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
-            })?,
-            &change_address,
-            &change_amounts_u64,
-            chain,
-            self.network()?,
-        )
+        let target_amount_u64 = user_amount.try_into().map_err(|err| {
+            BridgeSdkError::InvalidLog(format!("Error on amount conversion: {err}"))
+        })?;
+        let tx_outs = if enable_orchard {
+            utxo_utils::get_tx_outs_orchard(
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        } else {
+            utxo_utils::get_tx_outs_multi(
+                &target_btc_address,
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        }
         .map_err(|err| {
             BridgeSdkError::UtxoManagementError(format!("Error on get tx out: {err}"))
         })?;
@@ -1275,6 +1288,7 @@ impl OmniConnector {
                 target_btc_address.clone(),
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -1310,8 +1324,10 @@ impl OmniConnector {
         // Only honoured on the anchor-fill path (`max_gas_fee = Some(..)`);
         // ignored when falling back to the random selector. `None` ⇒ no reserve.
         change_reserve: Option<u128>,
+        memo: Option<String>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
@@ -1325,6 +1341,7 @@ impl OmniConnector {
                 fee_rate,
                 max_gas_fee,
                 change_reserve,
+                memo,
             )
             .await?;
 
@@ -1504,6 +1521,7 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
+        memo: Option<String>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
@@ -1527,6 +1545,7 @@ impl OmniConnector {
             // `change_reserve` field; expose it on this wrapper if/when callers
             // need RBF headroom on the by-tx-hash submit path.
             None,
+            memo,
         )
         .await
     }
@@ -2214,8 +2233,12 @@ impl OmniConnector {
         program_keypair: Keypair,
     ) -> Result<Signature> {
         let near_bridge_account_id = self.near_bridge_client()?.omni_bridge_id()?;
+        let mpc_root_public_key = match self.network()? {
+            Network::Mainnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_MAINNET,
+            Network::Testnet => crypto_utils::MPC_ROOT_PUBLIC_KEY_TESTNET,
+        };
         let derived_bridge_address =
-            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1");
+            crypto_utils::derive_address(&near_bridge_account_id, "bridge-1", mpc_root_public_key);
 
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
 
@@ -3678,6 +3701,7 @@ impl OmniConnector {
         // Only applied on the anchor-fill path (`max_gas_fee = Some(..)`);
         // ignored by the random fallback. `None` ⇒ no reserve.
         change_reserve: Option<u128>,
+        memo: Option<String>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3759,16 +3783,27 @@ impl OmniConnector {
             .collect::<Result<Vec<_>>>()?;
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
-        let tx_outs = utxo_utils::get_tx_outs_multi(
-            &target_btc_address,
-            user_amount.try_into().map_err(|err| {
-                BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
-            })?,
-            &change_address,
-            &change_amounts_u64,
-            chain,
-            self.network()?,
-        )
+        let target_amount_u64 = user_amount.try_into().map_err(|err| {
+            BridgeSdkError::UnknownError(format!("Amount is unexpectedly large: {err}"))
+        })?;
+        let tx_outs = if enable_orchard {
+            utxo_utils::get_tx_outs_orchard(
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        } else {
+            utxo_utils::get_tx_outs_multi(
+                &target_btc_address,
+                target_amount_u64,
+                &change_address,
+                &change_amounts_u64,
+                chain,
+                self.network()?,
+            )
+        }
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
         let (chain_specific_data, output) = self
@@ -3777,6 +3812,7 @@ impl OmniConnector {
                 target_btc_address,
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -3796,10 +3832,11 @@ impl OmniConnector {
         target_btc_address: String,
         tx_outs: Vec<TxOut>,
         selected_utxo: Vec<(String, UTXO)>,
+        memo: Option<String>,
     ) -> Result<(Option<ChainSpecificData>, Vec<TxOut>)> {
         if enable_orchard {
             let (orchard, expiry_height) = self
-                .get_orchard_raw(
+                .get_orchard_raw_with_memo(
                     target_btc_address.clone(),
                     tx_outs[0].clone().value.to_sat(),
                     utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
@@ -3808,12 +3845,10 @@ impl OmniConnector {
                         ))
                     })?,
                     tx_outs.get(1),
+                    memo,
                 )
                 .await?;
-            let mut output = vec![];
-            if tx_outs.len() == 2 {
-                output.push(tx_outs[1].clone());
-            }
+            let output = tx_outs[1..].to_vec();
 
             Ok((
                 Some(ChainSpecificData {
@@ -3825,5 +3860,56 @@ impl OmniConnector {
         } else {
             Ok((None, tx_outs))
         }
+    }
+}
+
+fn validate_zcash_memo_usage(
+    chain: ChainKind,
+    enable_orchard: bool,
+    memo: Option<&str>,
+) -> Result<()> {
+    if memo.is_none() {
+        return Ok(());
+    }
+
+    if chain != ChainKind::Zcash {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo is only supported for Zcash transfers".to_string(),
+        ));
+    }
+
+    if !enable_orchard {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo requires a shielded Zcash recipient".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_absent_memo_for_btc() {
+        validate_zcash_memo_usage(ChainKind::Btc, false, None).unwrap();
+    }
+
+    #[test]
+    fn accepts_memo_for_shielded_zcash() {
+        validate_zcash_memo_usage(ChainKind::Zcash, true, Some("memo")).unwrap();
+    }
+
+    #[test]
+    fn rejects_memo_for_btc() {
+        let err = validate_zcash_memo_usage(ChainKind::Btc, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo is only supported for Zcash transfers"));
+    }
+
+    #[test]
+    fn rejects_memo_for_transparent_zcash() {
+        let err = validate_zcash_memo_usage(ChainKind::Zcash, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo requires a shielded Zcash recipient"));
     }
 }

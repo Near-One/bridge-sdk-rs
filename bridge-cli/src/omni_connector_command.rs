@@ -643,7 +643,7 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Submit BTC transfer on Near")]
+    #[clap(about = "Submit BTC/Zcash transfer on Near")]
     NearSubmitBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
@@ -653,6 +653,12 @@ pub enum OmniConnectorSubCommand {
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
+        #[clap(
+            short,
+            long,
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
+        )]
+        memo: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -866,6 +872,12 @@ pub(crate) enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "Amount to transfer")]
         amount: u128,
+        #[clap(
+            short,
+            long,
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
+        )]
+        memo: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1024,6 +1036,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            memo,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1033,6 +1046,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     sender_id,
                     fee_rate,
                     TransactionOptions::default(),
+                    memo,
                 )
                 .await
                 .unwrap();
@@ -1821,6 +1835,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                memo,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1829,6 +1844,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         target_btc_address,
                         amount,
                         TransactionOptions::default(),
+                        memo,
                     )
                     .await
                     .unwrap();
@@ -1965,6 +1981,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
+        .chain(Some(ChainKind::Sol))
         .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
         .program_id(
             combined_config
@@ -1996,6 +2013,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let fogo_bridge_client = SolanaBridgeClientBuilder::default()
+        .chain(Some(ChainKind::Fogo))
         .client(combined_config.fogo_rpc.map(|rpc| RpcClient::new(rpc)))
         .program_id(
             combined_config

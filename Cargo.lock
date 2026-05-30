@@ -1780,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.56"
+version = "0.3.58"
 dependencies = [
  "alloy",
  "clap",
@@ -2442,9 +2442,10 @@ dependencies = [
 
 [[package]]
 name = "crypto-utils"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crypto-shared 0.1.0 (git+https://github.com/near-one/mpc?rev=463172481597ee09b12020b72c61d6b01da7b167)",
+ "hex-literal",
  "k256",
  "near-crypto",
  "near-primitives",
@@ -3910,6 +3911,12 @@ checksum = "fda06d18ac606267c40c04e41b9947729bf8b9efe74bd4e82b61a5f26a510b9f"
 dependencies = [
  "arrayvec",
 ]
+
+[[package]]
+name = "hex-literal"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
 
 [[package]]
 name = "hex_lit"
@@ -5673,7 +5680,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.18"
+version = "0.3.19"
 dependencies = [
  "alloy",
  "bip0039",
@@ -7835,13 +7842,14 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
  "borsh 1.6.1",
  "derive_builder",
  "mpl-token-metadata",
+ "omni-types",
  "openssl-sys",
  "sha2 0.10.9",
  "solana-client",
