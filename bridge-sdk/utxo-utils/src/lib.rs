@@ -455,10 +455,11 @@ fn split_into_n_pieces(
 ///
 /// Algorithm:
 /// 0. If `pool_size > passive_management_upper_limit` (HIGH zone) — or always, when
-///    `always_filter_large_utxos` is set — filter out UTXOs with `balance > net_amount`.
-///    This forces multi-input or 1-input absorption, both of which trivially satisfy
-///    `input_num > change_num` (the HIGH zone rule).
-///    Single-input + 1-change is impossible after this filter.
+///    `always_filter_large_utxos` is set — restrict selection to UTXOs with
+///    `balance <= net_amount`. This forces multi-input or 1-input absorption, both of
+///    which trivially satisfy `input_num > change_num` (the HIGH zone rule).
+///    If those small UTXOs cannot cover the target, fall back to exactly one input:
+///    the smallest single UTXO that covers the target.
 /// 1. Greedy largest-first determines the minimum number of inputs N
 ///    needed to cover `net_amount + min_change_amount`.
 /// 2. Randomized iterative pick: at each step, the candidate pool is UTXOs
@@ -486,26 +487,59 @@ pub fn choose_utxos_random<R: rand::Rng>(
     // HIGH zone: drop UTXOs that alone would push us into single-input territory.
     // We keep UTXOs with balance <= net_amount (absorption-friendly threshold).
     // With `always_filter_large_utxos`, this filter is applied unconditionally.
-    let utxos = if always_filter_large_utxos
-        || pool_size > params.passive_management_upper_limit
-    {
-        utxos
-            .into_iter()
+    let filter_large =
+        always_filter_large_utxos || pool_size > params.passive_management_upper_limit;
+
+    let selection = if filter_large {
+        let small: HashMap<String, UTXO> = utxos
+            .iter()
             .filter(|(_, u)| u128::from(u.balance) <= net_amount)
-            .collect()
+            .map(|(k, u)| (k.clone(), u.clone()))
+            .collect();
+
+        match determine_optimal_n(target, &small, params.max_withdrawal_input_number) {
+            // Small UTXOs cover the target — select from them as usual.
+            Ok(n) => {
+                let selected = choose_random_iterative(target, n, small, rng)?;
+                validate_and_repair(
+                    selected,
+                    net_amount,
+                    params.min_change_amount,
+                    params.max_change_amount,
+                    params.max_change_number,
+                )?
+            }
+            // Small UTXOs can't cover the target — fall back to exactly one input,
+            // the smallest UTXO that on its own covers the target.
+            Err(_) => {
+                let (k, u) = utxos
+                    .into_iter()
+                    .filter(|(_, u)| u128::from(u.balance) >= target)
+                    .min_by_key(|(_, u)| u.balance)
+                    .ok_or_else(|| {
+                        "No single UTXO can cover the withdrawal as a fallback input".to_string()
+                    })?;
+                validate_and_repair(
+                    vec![(k, u)],
+                    net_amount,
+                    params.min_change_amount,
+                    params.max_change_amount,
+                    params.max_change_number,
+                )?
+            }
+        }
     } else {
-        utxos
+        let n = determine_optimal_n(target, &utxos, params.max_withdrawal_input_number)?;
+        let selected = choose_random_iterative(target, n, utxos, rng)?;
+        validate_and_repair(
+            selected,
+            net_amount,
+            params.min_change_amount,
+            params.max_change_amount,
+            params.max_change_number,
+        )?
     };
 
-    let n = determine_optimal_n(target, &utxos, params.max_withdrawal_input_number)?;
-    let selected = choose_random_iterative(target, n, utxos, rng)?;
-    let selection = validate_and_repair(
-        selected,
-        net_amount,
-        params.min_change_amount,
-        params.max_change_amount,
-        params.max_change_number,
-    )?;
     enforce_passive_management(selection, pool_size, params)
 }
 
