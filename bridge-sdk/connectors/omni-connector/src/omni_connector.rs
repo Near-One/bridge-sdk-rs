@@ -1318,7 +1318,16 @@ impl OmniConnector {
         transfer_id: omni_types::TransferId,
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
+        // Extra headroom (sat) to leave in the change output above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only honoured on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored when falling back to the random selector. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
         memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
@@ -1333,7 +1342,10 @@ impl OmniConnector {
                 })?,
                 enable_orchard,
                 fee_rate,
+                max_gas_fee,
+                change_reserve,
                 memo,
+                utxos,
             )
             .await?;
 
@@ -1506,6 +1518,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: ChainKind,
@@ -1513,7 +1526,9 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
+        change_reserve: Option<u128>,
         memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
@@ -1533,7 +1548,9 @@ impl OmniConnector {
             transfer_id,
             transaction_options,
             max_gas_fee,
+            change_reserve,
             memo,
+            utxos,
         )
         .await
     }
@@ -3670,6 +3687,7 @@ impl OmniConnector {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn extract_utxo(
         &self,
         chain: ChainKind,
@@ -3677,7 +3695,21 @@ impl OmniConnector {
         amount: u128,
         enable_orchard: bool,
         fee_rate: Option<u64>,
+        // When `Some`, drives the anchor-fill selector to consume as many
+        // small UTXOs as the budget allows (1 target + at most 1 change
+        // output). When `None`, falls back to the random selector — picks
+        // the minimum inputs needed to cover `amount`, no consolidation.
+        max_gas_fee: Option<u64>,
+        // Extra headroom (sat) to leave in the change above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only applied on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored by the random fallback. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
         memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3687,19 +3719,35 @@ impl OmniConnector {
             None => utxo_bridge_client.get_fee_rate().await?,
         };
 
-        let utxos = near_bridge_client.get_utxos(chain).await?;
+        let utxos = match utxos {
+            Some(utxos) => utxos,
+            None => near_bridge_client.get_utxos(chain).await?,
+        };
         let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
         let params = near_bridge_client
             .get_withdraw_selection_params(chain)
             .await?;
 
-        let selection = utxo_utils::choose_utxos_random_no_payment(
-            amount,
-            utxos,
-            pool_size,
-            &params,
-            &mut rand::thread_rng(),
-        )
+        let selection = match max_gas_fee {
+            Some(budget) => utxo_utils::choose_utxos_anchor_fill(
+                amount,
+                utxos,
+                pool_size,
+                &params,
+                chain,
+                fee_rate,
+                budget,
+                enable_orchard,
+                change_reserve.unwrap_or(0),
+            ),
+            None => utxo_utils::choose_utxos_random_no_payment(
+                amount,
+                utxos,
+                pool_size,
+                &params,
+                &mut rand::thread_rng(),
+            ),
+        }
         .map_err(|e| {
             tracing::warn!("UTXO selection failed: {e}");
             BridgeSdkError::InsufficientUTXOBalance
