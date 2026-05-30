@@ -549,6 +549,7 @@ pub fn choose_utxos_for_active_management(
     network: Network,
     merge_largest: bool,
     max_change_amount: u128,
+    merge_cap_divisor: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
     let mut utxo_list: Vec<(&String, &UTXO)> = utxos.iter().collect();
     utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
@@ -597,7 +598,10 @@ pub fn choose_utxos_for_active_management(
             max_active_utxo_management_input_number,
         );
         if merge_largest {
-            let half_cap = max_change_amount / 2;
+            if merge_cap_divisor == 0 {
+                return Err("merge_cap_divisor must be positive".to_string());
+            }
+            let half_cap = max_change_amount / merge_cap_divisor;
             for utxo_item in utxo_list.iter().rev() {
                 if selected.len() >= utxo_amount {
                     break;
@@ -614,7 +618,7 @@ pub fn choose_utxos_for_active_management(
             }
             if selected.len() < 2 {
                 return Err(format!(
-                    "merge-largest: need at least 2 UTXOs <= max_change_amount/2 ({half_cap}) to merge"
+                    "merge-largest: need at least 2 UTXOs <= max_change_amount/{merge_cap_divisor} ({half_cap}) to merge"
                 ));
             }
         } else {

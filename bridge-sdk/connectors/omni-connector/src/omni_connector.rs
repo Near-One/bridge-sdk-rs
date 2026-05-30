@@ -1087,6 +1087,7 @@ impl OmniConnector {
         max_input_number: Option<u8>,
         merge_largest: bool,
         max_change_amount: Option<u128>,
+        merge_cap_divisor: Option<u128>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1109,6 +1110,7 @@ impl OmniConnector {
             .await?;
 
         let max_change_amount = max_change_amount.unwrap_or(config_max_change_amount);
+        let merge_cap_divisor = merge_cap_divisor.unwrap_or(2);
         let max_input_number = max_input_number.unwrap_or(max_active_utxo_management_input_number);
 
         let change_address = near_bridge_client.get_change_address(chain).await?;
@@ -1129,6 +1131,7 @@ impl OmniConnector {
             self.network()?,
             merge_largest,
             max_change_amount,
+            merge_cap_divisor,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
