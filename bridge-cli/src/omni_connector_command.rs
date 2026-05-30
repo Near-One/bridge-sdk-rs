@@ -659,6 +659,11 @@ pub enum OmniConnectorSubCommand {
             help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
         )]
         memo: Option<String>,
+        #[clap(
+            long,
+            help = "Always filter out UTXOs with balance > net_amount during selection, regardless of pool size"
+        )]
+        always_filter_large_utxos: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -878,6 +883,11 @@ pub(crate) enum InternalSubCommand {
             help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
         )]
         memo: Option<String>,
+        #[clap(
+            long,
+            help = "Always filter out UTXOs with balance > net_amount during selection, regardless of pool size"
+        )]
+        always_filter_large_utxos: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1037,6 +1047,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             sender_id,
             fee_rate,
             memo,
+            always_filter_large_utxos,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1047,6 +1058,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     fee_rate,
                     TransactionOptions::default(),
                     memo,
+                    always_filter_large_utxos,
                 )
                 .await
                 .unwrap();
@@ -1836,6 +1848,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 target_btc_address,
                 amount,
                 memo,
+                always_filter_large_utxos,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1845,6 +1858,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         amount,
                         TransactionOptions::default(),
                         memo,
+                        always_filter_large_utxos,
                     )
                     .await
                     .unwrap();

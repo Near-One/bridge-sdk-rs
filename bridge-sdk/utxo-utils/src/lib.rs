@@ -454,9 +454,10 @@ fn split_into_n_pieces(
 /// `min_change_amount` (avoiding the dust-zone where change ∈ (0, min_change_amount)).
 ///
 /// Algorithm:
-/// 0. If `pool_size > passive_management_upper_limit` (HIGH zone), filter out UTXOs
-///    with `balance > net_amount`. This forces multi-input or 1-input absorption,
-///    both of which trivially satisfy `input_num > change_num` (the HIGH zone rule).
+/// 0. If `pool_size > passive_management_upper_limit` (HIGH zone) — or always, when
+///    `always_filter_large_utxos` is set — filter out UTXOs with `balance > net_amount`.
+///    This forces multi-input or 1-input absorption, both of which trivially satisfy
+///    `input_num > change_num` (the HIGH zone rule).
 ///    Single-input + 1-change is impossible after this filter.
 /// 1. Greedy largest-first determines the minimum number of inputs N
 ///    needed to cover `net_amount + min_change_amount`.
@@ -475,6 +476,7 @@ pub fn choose_utxos_random<R: rand::Rng>(
     utxos: HashMap<String, UTXO>,
     pool_size: u32,
     params: &WithdrawSelectionParams,
+    always_filter_large_utxos: bool,
     rng: &mut R,
 ) -> Result<UtxoSelection, String> {
     let target = net_amount
@@ -483,7 +485,10 @@ pub fn choose_utxos_random<R: rand::Rng>(
 
     // HIGH zone: drop UTXOs that alone would push us into single-input territory.
     // We keep UTXOs with balance <= net_amount (absorption-friendly threshold).
-    let utxos = if pool_size > params.passive_management_upper_limit {
+    // With `always_filter_large_utxos`, this filter is applied unconditionally.
+    let utxos = if always_filter_large_utxos
+        || pool_size > params.passive_management_upper_limit
+    {
         utxos
             .into_iter()
             .filter(|(_, u)| u128::from(u.balance) <= net_amount)
@@ -519,11 +524,19 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
     utxos: HashMap<String, UTXO>,
     pool_size: u32,
     params: &WithdrawSelectionParams,
+    always_filter_large_utxos: bool,
     rng: &mut R,
 ) -> Result<UtxoSelection, String> {
     let mut last_user_payment: u128 = 0;
     for _ in 0..MAX_NO_PAYMENT_RETRIES {
-        let selection = choose_utxos_random(net_amount, utxos.clone(), pool_size, params, rng)?;
+        let selection = choose_utxos_random(
+            net_amount,
+            utxos.clone(),
+            pool_size,
+            params,
+            always_filter_large_utxos,
+            rng,
+        )?;
         if selection.user_payment == 0 {
             return Ok(selection);
         }

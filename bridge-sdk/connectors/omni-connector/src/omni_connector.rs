@@ -1178,6 +1178,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn init_near_to_bitcoin_transfer(
         &self,
         chain: ChainKind,
@@ -1185,6 +1186,7 @@ impl OmniConnector {
         amount: u128,
         transaction_options: TransactionOptions,
         memo: Option<String>,
+        always_filter_large_utxos: bool,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
         validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
@@ -1209,6 +1211,7 @@ impl OmniConnector {
             utxos,
             pool_size,
             &params,
+            always_filter_large_utxos,
             &mut rand::thread_rng(),
         )
         .map_err(|e| {
@@ -1319,6 +1322,7 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
         memo: Option<String>,
+        always_filter_large_utxos: bool,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
         validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
@@ -1334,6 +1338,7 @@ impl OmniConnector {
                 enable_orchard,
                 fee_rate,
                 memo,
+                always_filter_large_utxos,
             )
             .await?;
 
@@ -1506,6 +1511,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: ChainKind,
@@ -1514,6 +1520,7 @@ impl OmniConnector {
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
         memo: Option<String>,
+        always_filter_large_utxos: bool,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
@@ -1534,6 +1541,7 @@ impl OmniConnector {
             transaction_options,
             max_gas_fee,
             memo,
+            always_filter_large_utxos,
         )
         .await
     }
@@ -3670,6 +3678,7 @@ impl OmniConnector {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn extract_utxo(
         &self,
         chain: ChainKind,
@@ -3678,6 +3687,7 @@ impl OmniConnector {
         enable_orchard: bool,
         fee_rate: Option<u64>,
         memo: Option<String>,
+        always_filter_large_utxos: bool,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3698,6 +3708,7 @@ impl OmniConnector {
             utxos,
             pool_size,
             &params,
+            always_filter_large_utxos,
             &mut rand::thread_rng(),
         )
         .map_err(|e| {
