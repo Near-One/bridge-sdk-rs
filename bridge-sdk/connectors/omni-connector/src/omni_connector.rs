@@ -3796,19 +3796,26 @@ impl OmniConnector {
             .get_withdraw_selection_params(chain)
             .await?;
 
+        // Algorithm selection:
+        // - No budget (`max_gas_fee = None`) ⇒ always the random selector.
+        // - With a budget, only consolidate (anchor-fill) when the pool is
+        //   above the active-management upper limit (`pool_size >
+        //   active_management_upper_limit`); otherwise fall back to random.
         let selection = match max_gas_fee {
-            Some(budget) => utxo_utils::choose_utxos_anchor_fill(
-                amount,
-                utxos,
-                pool_size,
-                &params,
-                chain,
-                fee_rate,
-                budget,
-                enable_orchard,
-                change_reserve.unwrap_or(0),
-            ),
-            None => utxo_utils::choose_utxos_random_no_payment(
+            Some(budget) if pool_size > params.active_management_upper_limit => {
+                utxo_utils::choose_utxos_anchor_fill(
+                    amount,
+                    utxos,
+                    pool_size,
+                    &params,
+                    chain,
+                    fee_rate,
+                    budget,
+                    enable_orchard,
+                    change_reserve.unwrap_or(0),
+                )
+            }
+            _ => utxo_utils::choose_utxos_random_no_payment(
                 amount,
                 utxos,
                 pool_size,
