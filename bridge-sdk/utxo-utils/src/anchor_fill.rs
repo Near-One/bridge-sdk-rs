@@ -437,7 +437,7 @@ mod tests {
             max_change_number: 10,
             passive_management_lower_limit: 0,
             passive_management_upper_limit: 6000,
-            active_management_upper_limit: 8000,
+            active_management_upper_limit: 4000,
         }
     }
 
@@ -687,7 +687,7 @@ mod tests {
             max_change_number: 5,
             passive_management_lower_limit: 10,
             passive_management_upper_limit: 200,
-            active_management_upper_limit: 300,
+            active_management_upper_limit: 150,
         };
 
         let mut pool = HashMap::new();
@@ -812,7 +812,7 @@ mod tests {
             max_change_number: 5,
             passive_management_lower_limit: 10,
             passive_management_upper_limit: 200,
-            active_management_upper_limit: 300,
+            active_management_upper_limit: 150,
         };
         let pool = pool_100_tiered();
         let pool_size = pool.len() as u32;
