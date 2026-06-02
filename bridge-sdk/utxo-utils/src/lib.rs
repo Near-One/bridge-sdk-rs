@@ -201,6 +201,7 @@ pub struct WithdrawSelectionParams {
     pub max_change_number: usize,
     pub passive_management_lower_limit: u32,
     pub passive_management_upper_limit: u32,
+    pub active_management_upper_limit: u32,
 }
 
 /// Splits `change` into `n` outputs each strictly less than `max_per_piece`
