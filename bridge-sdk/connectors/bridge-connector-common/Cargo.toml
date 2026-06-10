@@ -17,3 +17,4 @@ solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
+aptos-bridge-client = { path = "../../bridge-clients/aptos-bridge-client" }

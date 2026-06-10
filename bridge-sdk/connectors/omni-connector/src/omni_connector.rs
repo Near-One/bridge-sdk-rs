@@ -6,6 +6,7 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
 use light_client::LightClient;
 use near_mpc_contract_interface::types::{
+    AptosAddress, AptosEvent, AptosExtractedValue, AptosExtractor, AptosRpcRequest, AptosTxId,
     EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
     ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
     StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog, StarknetRpcRequest,
@@ -28,6 +29,7 @@ use omni_types::{
     TransferMessage, UnifiedTransferId, UtxoId, H160,
 };
 
+use aptos_bridge_client::{AptosBridgeClient, AptosInitTransferEvent};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
@@ -81,6 +83,7 @@ pub struct OmniConnector {
     btc_bridge_client: Option<UTXOBridgeClient<Bitcoin>>,
     zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
     starknet_bridge_client: Option<StarknetBridgeClient>,
+    aptos_bridge_client: Option<AptosBridgeClient>,
     eth_light_client: Option<LightClient>,
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
@@ -160,6 +163,13 @@ pub enum DeployTokenArgs {
         event: OmniBridgeEvent,
     },
     StarknetDeployTokenWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    },
+    AptosDeployToken {
+        event: OmniBridgeEvent,
+    },
+    AptosDeployTokenWithTxHash {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
@@ -247,6 +257,14 @@ pub enum InitTransferArgs {
         native_fee: u128,
         message: String,
     },
+    AptosInitTransfer {
+        token: String,
+        amount: u128,
+        recipient: String,
+        fee: u128,
+        native_fee: u128,
+        message: String,
+    },
 }
 
 pub enum FinTransferArgs {
@@ -312,6 +330,13 @@ pub enum FinTransferArgs {
         event: OmniBridgeEvent,
     },
     StarknetFinTransferWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    },
+    AptosFinTransfer {
+        event: OmniBridgeEvent,
+    },
+    AptosFinTransferWithTxHash {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
@@ -1839,6 +1864,58 @@ impl OmniConnector {
         })
     }
 
+    pub async fn build_aptos_mpc_sign_payload(
+        &self,
+        tx_hash: String,
+        proof_kind: ProofKind,
+    ) -> Result<Vec<u8>> {
+        let aptos_client = self.aptos_bridge_client()?;
+        let finality = aptos_client.check_mpc_finality(&tx_hash).await?;
+
+        let log = match proof_kind {
+            ProofKind::InitTransfer => aptos_client.get_init_transfer_log(&tx_hash).await?,
+            ProofKind::DeployToken => aptos_client.get_deploy_token_log(&tx_hash).await?,
+            ProofKind::FinTransfer => aptos_client.get_fin_transfer_log(&tx_hash).await?,
+            other => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Unsupported proof kind for Aptos MPC payload: {other:?}"
+                )));
+            }
+        };
+
+        let tx_id = {
+            let hex_str = tx_hash.strip_prefix("0x").unwrap_or(&tx_hash);
+            let bytes = hex::decode(hex_str).map_err(|e| {
+                BridgeSdkError::InvalidArgument(format!("Invalid Aptos tx hash {tx_hash}: {e}"))
+            })?;
+            <[u8; 32]>::try_from(bytes).map_err(|_| {
+                BridgeSdkError::InvalidArgument("Aptos tx hash must be 32 bytes".to_string())
+            })?
+        };
+
+        let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
+                tx_id: AptosTxId(tx_id),
+                finality,
+                extractors: vec![AptosExtractor::Event {
+                    event_index: log.event_index,
+                }],
+            }),
+            values: vec![ExtractedValue::AptosExtractedValue(
+                AptosExtractedValue::Event(AptosEvent {
+                    account_address: AptosAddress(log.account_address),
+                    sequence_number: log.sequence_number,
+                    type_tag: log.type_tag,
+                    data: log.data,
+                }),
+            )],
+        });
+
+        borsh::to_vec(&sign_payload).map_err(|_| {
+            BridgeSdkError::EthProofError("Failed to serialize MPC sign payload".to_string())
+        })
+    }
+
     pub async fn near_claim_fee(
         &self,
         claim_fee_args: omni_types::locker_args::ClaimFeeArgs,
@@ -2603,6 +2680,10 @@ impl OmniConnector {
                     .await
                     .map(|hash| format!("{hash:#066x}"))
             }
+            OmniAddress::Aptos(aptos_address) => {
+                self.aptos_log_metadata(format!("0x{}", hex::encode(aptos_address.0)))
+                    .await
+            }
             OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
                 "Log metadata is not supported for this chain".to_string(),
             )),
@@ -2672,6 +2753,16 @@ impl OmniConnector {
                 .starknet_deploy_token_with_tx_hash(near_tx_hash, sender_id)
                 .await
                 .map(|hash| format!("{hash:#066x}")),
+            DeployTokenArgs::AptosDeployToken { event } => {
+                self.aptos_deploy_token_with_event(event).await
+            }
+            DeployTokenArgs::AptosDeployTokenWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => {
+                self.aptos_deploy_token_with_tx_hash(near_tx_hash, sender_id)
+                    .await
+            }
         }
     }
 
@@ -2741,6 +2832,10 @@ impl OmniConnector {
                                 ))
                             })?;
                         self.build_strk_mpc_sign_payload(felt, ProofKind::DeployToken)
+                            .await?
+                    }
+                    ChainKind::Aptos => {
+                        self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::DeployToken)
                             .await?
                     }
                     other => {
@@ -2842,6 +2937,17 @@ impl OmniConnector {
                 .starknet_init_transfer(token, amount, fee, native_fee, recipient, message)
                 .await
                 .map(|tx_hash| format!("{tx_hash:#066x}")),
+            InitTransferArgs::AptosInitTransfer {
+                token,
+                amount,
+                recipient,
+                fee,
+                native_fee,
+                message,
+            } => {
+                self.aptos_init_transfer(token, amount, fee, native_fee, recipient, message)
+                    .await
+            }
         }
     }
 
@@ -2904,6 +3010,10 @@ impl OmniConnector {
                                 ))
                             })?;
                         self.build_strk_mpc_sign_payload(felt, ProofKind::InitTransfer)
+                            .await?
+                    }
+                    ChainKind::Aptos => {
+                        self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::InitTransfer)
                             .await?
                     }
                     other => {
@@ -2989,6 +3099,16 @@ impl OmniConnector {
                 .starknet_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
                 .await
                 .map(|hash| format!("{hash:#066x}")),
+            FinTransferArgs::AptosFinTransfer { event } => {
+                self.aptos_fin_transfer_with_event(event).await
+            }
+            FinTransferArgs::AptosFinTransferWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => {
+                self.aptos_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
+                    .await
+            }
         }
     }
 
@@ -3031,6 +3151,10 @@ impl OmniConnector {
                                 ))
                             })?;
                         self.build_strk_mpc_sign_payload(felt, ProofKind::FinTransfer)
+                            .await?
+                    }
+                    ChainKind::Aptos => {
+                        self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::FinTransfer)
                             .await?
                     }
                     other => {
@@ -3080,6 +3204,7 @@ impl OmniConnector {
             ChainKind::Sol => self.svm_is_transfer_finalised(ChainKind::Sol, nonce).await,
             ChainKind::Fogo => self.svm_is_transfer_finalised(ChainKind::Fogo, nonce).await,
             ChainKind::Strk => self.starknet_is_transfer_finalised(nonce).await,
+            ChainKind::Aptos => self.aptos_is_transfer_finalised(nonce).await,
             ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
                 "is_transfer_finalised is not supported for UTXO chains".to_string(),
             )),
@@ -3221,7 +3346,8 @@ impl OmniConnector {
             | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
-            | ChainKind::Strk => {
+            | ChainKind::Strk
+            | ChainKind::Aptos => {
                 return Err(BridgeSdkError::ConfigError(format!(
                     "EVM bridge client is not available for {chain_kind:?}"
                 )));
@@ -3368,6 +3494,93 @@ impl OmniConnector {
         Ok(client.get_transfer_event(tx_hash).await?)
     }
 
+    pub fn aptos_bridge_client(&self) -> Result<&AptosBridgeClient> {
+        self.aptos_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Aptos bridge client is not configured".to_string(),
+            ))
+    }
+
+    pub async fn aptos_log_metadata(&self, token: String) -> Result<String> {
+        let token = aptos_bridge_client::parse_account_address(&token)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+        Ok(self.aptos_bridge_client()?.log_metadata(token).await?)
+    }
+
+    pub async fn aptos_deploy_token_with_event(&self, event: OmniBridgeEvent) -> Result<String> {
+        Ok(self.aptos_bridge_client()?.deploy_token(event).await?)
+    }
+
+    pub async fn aptos_deploy_token_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
+            .await?;
+        self.aptos_deploy_token_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn aptos_init_transfer(
+        &self,
+        token: String,
+        amount: u128,
+        fee: u128,
+        native_fee: u128,
+        recipient: String,
+        message: String,
+    ) -> Result<String> {
+        let token = aptos_bridge_client::parse_account_address(&token)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+        Ok(self
+            .aptos_bridge_client()?
+            .init_transfer(
+                token,
+                amount,
+                fee,
+                native_fee,
+                recipient,
+                message.into_bytes(),
+            )
+            .await?)
+    }
+
+    pub async fn aptos_fin_transfer_with_event(&self, event: OmniBridgeEvent) -> Result<String> {
+        Ok(self.aptos_bridge_client()?.fin_transfer(event).await?)
+    }
+
+    pub async fn aptos_fin_transfer_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
+            .await?;
+        self.aptos_fin_transfer_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    pub async fn aptos_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        Ok(self
+            .aptos_bridge_client()?
+            .is_transfer_finalised(nonce)
+            .await?)
+    }
+
+    pub async fn aptos_get_transfer_event(&self, tx_hash: &str) -> Result<AptosInitTransferEvent> {
+        Ok(self
+            .aptos_bridge_client()?
+            .get_transfer_event(tx_hash)
+            .await?)
+    }
+
     pub fn wormhole_bridge_client(&self) -> Result<&WormholeBridgeClient> {
         self.wormhole_bridge_client
             .as_ref()
@@ -3406,7 +3619,8 @@ impl OmniConnector {
             | ChainKind::Abs
             | ChainKind::Sol
             | ChainKind::Fogo
-            | ChainKind::Strk => Err(BridgeSdkError::ConfigError(
+            | ChainKind::Strk
+            | ChainKind::Aptos => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
         }
@@ -3476,6 +3690,10 @@ impl OmniConnector {
                     ))
                 })?;
                 self.get_storage_deposit_actions_for_starknet_tx(felt).await
+            }
+            ChainKind::Aptos => {
+                self.get_storage_deposit_actions_for_aptos_tx(&tx_hash)
+                    .await
             }
             ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
                 Err(BridgeSdkError::ConfigError(
@@ -3629,6 +3847,60 @@ impl OmniConnector {
 
         self.get_storage_deposit_actions(
             ChainKind::Strk,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            transfer_event.native_fee,
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions_for_aptos_tx(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let transfer_event = self.aptos_get_transfer_event(tx_hash).await?;
+
+        let token_address =
+            OmniAddress::new_from_slice(ChainKind::Aptos, &transfer_event.token_address).map_err(
+                |_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse token address: 0x{}",
+                        hex::encode(transfer_event.token_address)
+                    ))
+                },
+            )?;
+
+        let mut recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let mut fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
+            })?;
+
+        self.apply_fast_transfer_override(
+            ChainKind::Aptos,
+            &token_address,
+            transfer_event.origin_nonce,
+            transfer_event.amount,
+            transfer_event.fee,
+            transfer_event.native_fee,
+            &transfer_event.message,
+            &mut recipient,
+            &mut fee_recipient,
+        )
+        .await?;
+
+        self.get_storage_deposit_actions(
+            ChainKind::Aptos,
             &recipient,
             &fee_recipient,
             &token_address,

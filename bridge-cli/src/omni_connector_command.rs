@@ -1,11 +1,12 @@
 use clap::Subcommand;
 use core::panic;
-use near_mpc_contract_interface::types::{EvmFinality, StarknetFinality};
+use near_mpc_contract_interface::types::{AptosFinality, EvmFinality, StarknetFinality};
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
 use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
+use aptos_bridge_client::AptosBridgeClientBuilder;
 use evm_bridge_client::EvmBridgeClientBuilder;
 use light_client::LightClientBuilder;
 use near_bridge_client::{
@@ -500,6 +501,41 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
+    #[clap(about = "Initialize a transfer on Aptos")]
+    AptosInitTransfer {
+        #[clap(
+            short,
+            long,
+            help = "Token (Fungible Asset metadata object) address on Aptos"
+        )]
+        token: String,
+        #[clap(short, long, help = "Amount to transfer")]
+        amount: u128,
+        #[clap(short, long, help = "Recipient address on the destination chain")]
+        recipient: OmniAddress,
+        #[clap(short, long, help = "Fee to charge for the transfer")]
+        fee: Option<u128>,
+        #[clap(short, long, help = "Native fee to charge for the transfer")]
+        native_fee: Option<u128>,
+        #[clap(short, long, help = "Additional message")]
+        message: Option<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(about = "Finalize a transfer on Aptos")]
+    AptosFinTransfer {
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the sign_transfer call on NEAR"
+        )]
+        tx_hash: String,
+        #[clap(long, help = "Sender ID of the sign_transfer call on NEAR")]
+        sender_id: Option<AccountId>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
     #[clap(about = "Initialize an SVM OmniBridge program (Solana or Fogo)")]
     SvmInitialize {
         #[clap(long, help = "SVM chain (sol or fogo)")]
@@ -980,6 +1016,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
+            ChainKind::Aptos => {
+                omni_connector(network, config_cli)
+                    .deploy_token(DeployTokenArgs::AptosDeployTokenWithTxHash {
+                        near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        sender_id: None,
+                    })
+                    .await
+                    .unwrap();
+            }
             ChainKind::Zcash | ChainKind::Btc => {
                 panic!("DeployToken is not supported for UTXO chains");
             }
@@ -1168,7 +1213,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Abs | ChainKind::Strk => {
+                ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
                     connector
                         .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
                             chain_kind: chain,
@@ -1316,6 +1361,47 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .fin_transfer(FinTransferArgs::StarknetFinTransferWithTxHash {
+                    near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    sender_id,
+                })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::AptosInitTransfer {
+            token,
+            amount,
+            recipient,
+            fee,
+            native_fee,
+            message,
+            config_cli,
+        } => {
+            let (fee, native_fee) = match (fee, native_fee) {
+                (Some(f), Some(nf)) => (f, nf),
+                (Some(f), None) => (f, 0),
+                (None, Some(nf)) => (0, nf),
+                _ => (0, 0),
+            };
+
+            omni_connector(network, config_cli)
+                .init_transfer(InitTransferArgs::AptosInitTransfer {
+                    token,
+                    amount,
+                    recipient: recipient.to_string(),
+                    fee,
+                    native_fee,
+                    message: message.unwrap_or_default(),
+                })
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::AptosFinTransfer {
+            tx_hash,
+            sender_id,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .fin_transfer(FinTransferArgs::AptosFinTransferWithTxHash {
                     near_tx_hash: CryptoHash::from_str(&tx_hash).expect("Invalid tx_hash"),
                     sender_id,
                 })
@@ -1480,7 +1566,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
-            ChainKind::Abs | ChainKind::Strk => {
+            ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
                 omni_connector(network, config_cli)
                     .bind_token(BindTokenArgs::BindTokenWithMpcProofTx {
                         chain_kind: chain,
@@ -2125,6 +2211,15 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let aptos_bridge_client = AptosBridgeClientBuilder::default()
+        .endpoint(combined_config.aptos_rpc)
+        .private_key(combined_config.aptos_private_key)
+        .account_address(combined_config.aptos_account_address)
+        .omni_bridge_address(combined_config.aptos_bridge_address)
+        .mpc_finality(Some(AptosFinality::Committed))
+        .build()
+        .unwrap();
+
     OmniConnectorBuilder::default()
         .network(Some(network.into()))
         .near_bridge_client(Some(near_bridge_client))
@@ -2138,6 +2233,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .solana_bridge_client(Some(solana_bridge_client))
         .fogo_bridge_client(Some(fogo_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
+        .aptos_bridge_client(Some(aptos_bridge_client))
         .wormhole_bridge_client(Some(wormhole_bridge_client))
         .btc_bridge_client(Some(btc_bridge_client))
         .zcash_bridge_client(Some(zcash_bridge_client))

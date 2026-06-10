@@ -27,6 +27,7 @@ solana-bridge-client = { path = "../bridge-sdk/bridge-clients/solana-bridge-clie
 wormhole-bridge-client = { path = "../bridge-sdk/bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../bridge-sdk/bridge-clients/utxo-bridge-client" }
 starknet-bridge-client = { path = "../bridge-sdk/bridge-clients/starknet-bridge-client" }
+aptos-bridge-client = { path = "../bridge-sdk/bridge-clients/aptos-bridge-client" }
 utxo-utils = { path = "../bridge-sdk/utxo-utils" }
 near-sdk.workspace = true
 near-mpc-contract-interface.workspace = true

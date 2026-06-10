@@ -433,7 +433,8 @@ impl EvmBridgeClient {
             | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
-            | ChainKind::Strk => Err(EvmBridgeClientError::InvalidArgument(format!(
+            | ChainKind::Strk
+            | ChainKind::Aptos => Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Expected evm chain but got {chain_kind:?}"
             ))),
         }
@@ -616,7 +617,8 @@ impl EvmBridgeClient {
             | OmniAddress::Fogo(_)
             | OmniAddress::Btc(_)
             | OmniAddress::Zcash(_)
-            | OmniAddress::Strk(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
+            | OmniAddress::Strk(_)
+            | OmniAddress::Aptos(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Unsupported address type in SignTransferEvent: {address:?}",
             ))),
         }
