@@ -161,15 +161,20 @@ pub struct DepositMsg {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct FinBtcTransferArgs {
-    pub deposit_msg: DepositMsg,
-    pub tx_bytes: Vec<u8>,
-    pub vout: usize,
+pub struct TxInclusionProof {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
     pub coinbase_tx_id: String,
     pub coinbase_merkle_proof: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct FinBtcTransferArgs {
+    pub deposit_msg: DepositMsg,
+    pub tx_bytes: Vec<u8>,
+    pub vout: usize,
+    pub proof: TxInclusionProof
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -606,13 +611,10 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        let (method_name, deposit) = if args.deposit_msg.safe_deposit.is_some() {
-            (
-                "safe_verify_deposit".to_string(),
-                BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
-            )
+        let deposit = if args.deposit_msg.safe_deposit.is_some() {
+            BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT
         } else {
-            ("verify_deposit".to_string(), BTC_VERIFY_DEPOSIT_DEPOSIT)
+            BTC_VERIFY_DEPOSIT_DEPOSIT
         };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -620,7 +622,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name,
+                method_name: "verify_deposit_v2".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_DEPOSIT_GAS,
                 deposit,
