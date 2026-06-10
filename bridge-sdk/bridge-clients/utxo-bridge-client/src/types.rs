@@ -20,6 +20,28 @@ pub struct TxProof {
     pub merkle_proof: Vec<String>,
     pub coinbase_tx_id: String,
     pub coinbase_merkle_proof: Vec<String>,
+    pub outputs: Vec<TxOutputView>,
+}
+
+/// Chain-agnostic view of a UTXO transparent output, sufficient for the
+/// fin-transfer / refund / vout-resolution flows. Bitcoin and Zcash have the
+/// same transparent-output shape (a satoshi value plus a `scriptPubKey`) but
+/// incompatible whole-transaction serializations, so carrying these alongside
+/// the proof lets downstream callers consume outputs without re-parsing the
+/// raw tx bytes.
+#[derive(Debug, Clone)]
+pub struct TxOutputView {
+    pub value_sat: u64,
+    pub script_pubkey: Vec<u8>,
+}
+
+/// Bundle of work already done for a deposit BTC tx. Produced by
+/// `resolve_deposit_vout` and threaded into a follow-up
+/// `build_fin_btc_transfer_args` / `btc_request_refund` to skip a second
+/// `extract_btc_proof` round-trip.
+#[derive(Debug)]
+pub struct PrefetchedTxData {
+    pub proof: TxProof,
 }
 
 pub struct UtxoBridgeTransactionData {

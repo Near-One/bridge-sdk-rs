@@ -35,6 +35,7 @@ orchard.workspace = true
 zcash_address.workspace = true
 ripemd.workspace = true
 sha2.workspace = true
+rand = "0.8"
 
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }

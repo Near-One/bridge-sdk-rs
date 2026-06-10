@@ -175,7 +175,12 @@ pub mod tests {
      *   Then calculate merkle proof. One can use merkle-patricia-tree.js to build and generate the proof for the tree.
      */
 
+    // These tests hit a public Ethereum mainnet RPC and are skipped by default
+    // because they're flaky in CI when the upstream node rate-limits or rejects requests.
+    // Run with `cargo test -p eth-proof -- --ignored` to execute them locally.
+
     #[tokio::test]
+    #[ignore = "requires live Ethereum mainnet RPC"]
     async fn generate_proof_pre_shapella() {
         let tx_hash =
             H256::from_str("0xc4a6c5cde1d243b26b013f805f71f6de91536f66c993abfee746f373203b68cc")
@@ -190,6 +195,7 @@ pub mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires live Ethereum mainnet RPC"]
     async fn generate_proof_post_shapella() {
         let tx_hash =
             H256::from_str("0xd6ae351d6946f98c4b63589e2154db668e703e8c09fbd4e5c6807b5d356453c3")
@@ -204,6 +210,7 @@ pub mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires live Ethereum mainnet RPC"]
     async fn generate_proof_post_dencun() {
         let tx_hash =
             H256::from_str("0x42639810a1238a76ca947b848f5b88a854ac36471d1c4f6a15631393790f89af")

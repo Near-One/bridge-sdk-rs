@@ -3,6 +3,7 @@ use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
+use omni_types::ChainKind;
 use sha2::{Digest, Sha256};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
@@ -120,6 +121,7 @@ pub struct WormholeSequence {
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct SolanaBridgeClient {
+    chain: Option<ChainKind>,
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
@@ -833,41 +835,44 @@ impl SolanaBridgeClient {
             COption::None => false,
         };
 
-        let instruction = Instruction::new_with_borsh(
-            *program_id,
-            &instruction_data,
-            vec![
-                AccountMeta::new(used_nonces, false),
-                AccountMeta::new(authority, false),
-                AccountMeta::new_readonly(recipient, false),
-                AccountMeta::new(solana_token, false),
-                if is_bridged_token {
-                    AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
-                } else {
-                    let (vault, _) = Pubkey::find_program_address(
-                        &[b"vault", solana_token.as_ref()],
-                        program_id,
-                    );
-                    AccountMeta::new(vault, false)
-                },
-                AccountMeta::new(token_account, false),
-                AccountMeta::new_readonly(config, false),
-                AccountMeta::new(wormhole_bridge, false),
-                AccountMeta::new(wormhole_fee_collector, false),
-                AccountMeta::new(wormhole_sequence, false),
-                AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
-                AccountMeta::new_readonly(sysvar::clock::ID, false),
-                AccountMeta::new_readonly(sysvar::rent::ID, false),
-                AccountMeta::new_readonly(*wormhole_core, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
-                AccountMeta::new_readonly(spl_associated_token_account::ID, false),
-                AccountMeta::new_readonly(program::ID, false),
-                AccountMeta::new_readonly(token_program_id, false),
-            ],
-        );
+        let mut accounts = vec![
+            AccountMeta::new(used_nonces, false),
+            AccountMeta::new(authority, false),
+            AccountMeta::new_readonly(recipient, false),
+            AccountMeta::new(solana_token, false),
+            if is_bridged_token {
+                AccountMeta::new(*program_id, false) // Vault is not present for non-native tokens
+            } else {
+                let (vault, _) =
+                    Pubkey::find_program_address(&[b"vault", solana_token.as_ref()], program_id);
+                AccountMeta::new(vault, false)
+            },
+            AccountMeta::new(token_account, false),
+            AccountMeta::new_readonly(config, false),
+            AccountMeta::new(wormhole_bridge, false),
+            AccountMeta::new(wormhole_fee_collector, false),
+            AccountMeta::new(wormhole_sequence, false),
+            AccountMeta::new(shim_message, false),
+            AccountMeta::new(keypair.pubkey(), true),
+            AccountMeta::new_readonly(sysvar::clock::ID, false),
+            AccountMeta::new_readonly(sysvar::rent::ID, false),
+            AccountMeta::new_readonly(*wormhole_core, false),
+            AccountMeta::new_readonly(program::ID, false),
+            AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
+            AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+            AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+            AccountMeta::new_readonly(program::ID, false),
+            AccountMeta::new_readonly(token_program_id, false),
+        ];
+
+        // Fogo runs the post-omni-bridge-#562 program where `config` is the
+        // first top-level account in `FinalizeTransfer`. Solana mainnet still
+        // runs the pre-#562 version. Drop this branch once Solana is upgraded.
+        if matches!(self.chain, Some(ChainKind::Fogo)) {
+            accounts.insert(0, AccountMeta::new(config, false));
+        }
+
+        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, accounts);
 
         self.send_and_confirm_transaction(vec![instruction], &[keypair])
             .await

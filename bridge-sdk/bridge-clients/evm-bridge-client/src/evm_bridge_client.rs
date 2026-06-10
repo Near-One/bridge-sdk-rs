@@ -8,6 +8,7 @@ use alloy::{
 };
 use error::Result;
 use ethereum_types::H256 as EthH256;
+use near_mpc_contract_interface::types::EvmFinality;
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
 use omni_types::{prover_args::EvmProof, ChainKind};
@@ -107,6 +108,7 @@ pub struct EvmBridgeClient {
     signer_address: Option<Address>,
     omni_bridge_address: Option<Address>,
     wormhole_core_address: Option<Address>,
+    mpc_finality: Option<EvmFinality>,
 }
 
 impl EvmBridgeClient {
@@ -138,6 +140,60 @@ impl EvmBridgeClient {
             })?;
 
         Ok(block.header.number)
+    }
+
+    /// Returns the configured MPC finality level for this chain.
+    pub fn mpc_finality(&self) -> Result<EvmFinality> {
+        self.mpc_finality.clone().ok_or_else(|| {
+            EvmBridgeClientError::ConfigError("MPC finality is not configured".to_string())
+        })
+    }
+
+    /// Verifies that `tx_hash` has reached the configured MPC finality level
+    /// and returns that finality so it can be embedded in the MPC sign payload.
+    pub async fn check_mpc_finality(&self, tx_hash: TxHash) -> Result<EvmFinality> {
+        let finality = self.mpc_finality()?;
+
+        let block_tag = match &finality {
+            EvmFinality::Latest => alloy::eips::BlockNumberOrTag::Latest,
+            EvmFinality::Safe => alloy::eips::BlockNumberOrTag::Safe,
+            EvmFinality::Finalized => alloy::eips::BlockNumberOrTag::Finalized,
+            _ => {
+                return Err(EvmBridgeClientError::ConfigError(
+                    "Unsupported EVM finality variant".to_string(),
+                ));
+            }
+        };
+
+        let tx_block_number = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await?
+            .ok_or(EvmBridgeClientError::MpcFinalityNotReached)?
+            .block_number
+            .ok_or_else(|| {
+                EvmBridgeClientError::BlockchainDataError(
+                    "Mined transaction receipt missing block number".to_string(),
+                )
+            })?;
+
+        let finalized_block = self
+            .provider
+            .get_block_by_number(block_tag)
+            .await?
+            .ok_or_else(|| {
+                EvmBridgeClientError::BlockchainDataError(
+                    "Block not found for the given finality tag".to_string(),
+                )
+            })?
+            .header
+            .number;
+
+        if tx_block_number > finalized_block {
+            return Err(EvmBridgeClientError::MpcFinalityNotReached);
+        }
+
+        Ok(finality)
     }
 
     /// Checks if the transfer is already finalised on EVM
@@ -374,6 +430,7 @@ impl EvmBridgeClient {
             }
             ChainKind::Near
             | ChainKind::Sol
+            | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk => Err(EvmBridgeClientError::InvalidArgument(format!(
@@ -556,6 +613,7 @@ impl EvmBridgeClient {
             | OmniAddress::Abs(addr) => Ok(Address::from_slice(&addr.0)),
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
+            | OmniAddress::Fogo(_)
             | OmniAddress::Btc(_)
             | OmniAddress::Zcash(_)
             | OmniAddress::Strk(_) => Err(EvmBridgeClientError::InvalidArgument(format!(

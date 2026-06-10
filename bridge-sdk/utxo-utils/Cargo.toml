@@ -1,6 +1,6 @@
 [package]
 name = "utxo-utils"
-version = "0.2.1"
+version = "0.4.1"
 edition = "2021"
 
 [dependencies]
@@ -14,3 +14,4 @@ zcash_address.workspace = true
 zcash_protocol.workspace = true
 k256 = "0.13.1"
 orchard.workspace = true
+rand = "0.8"

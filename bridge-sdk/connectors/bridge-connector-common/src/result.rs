@@ -39,6 +39,8 @@ pub enum BridgeSdkError {
     UtxoClientError(String),
     #[error("Error communicating with Utxo chain RPC: {0}")]
     UtxoRpcError(String),
+    #[error("Bridge indexer API error: {0}")]
+    BridgeIndexerError(String),
     #[error("Insufficient UTXO chain Gas Fee: {0}")]
     InsufficientUTXOGasFee(String),
     #[error("Insufficient UTXO balance to cover amount and fees")]
@@ -63,6 +65,8 @@ pub enum BridgeSdkError {
     StarknetRpcError(String),
     #[error("Error working with Starknet: {0}")]
     StarknetOtherError(String),
+    #[error("Transaction has not reached the required MPC finality")]
+    MpcFinalityNotReached,
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {
@@ -124,6 +128,7 @@ impl From<StarknetBridgeClientError> for BridgeSdkError {
             StarknetBridgeClientError::ConfigError(e) => Self::ConfigError(e),
             StarknetBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             StarknetBridgeClientError::TransactionError(e) => Self::StarknetOtherError(e),
+            StarknetBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }
@@ -144,6 +149,7 @@ impl From<EvmBridgeClientError> for BridgeSdkError {
             EvmBridgeClientError::EthProofError(e) => Self::EthProofError(e.to_string()),
             EvmBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             EvmBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            EvmBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }

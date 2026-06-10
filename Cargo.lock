@@ -1239,6 +1239,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "async-channel"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1770,7 +1780,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.45"
+version = "0.3.61"
 dependencies = [
  "alloy",
  "clap",
@@ -1800,7 +1810,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-connector-common"
-version = "0.3.1"
+version = "0.3.3"
 dependencies = [
  "alloy",
  "eth-proof",
@@ -2432,9 +2442,10 @@ dependencies = [
 
 [[package]]
 name = "crypto-utils"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crypto-shared 0.1.0 (git+https://github.com/near-one/mpc?rev=463172481597ee09b12020b72c61d6b01da7b167)",
+ "hex-literal",
  "k256",
  "near-crypto",
  "near-primitives",
@@ -2627,6 +2638,24 @@ name = "data-encoding"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
+
+[[package]]
+name = "deadpool"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0be2b1d1d6ec8d846f05e137292d0b89133caf95ef33695424c09568bdd39b1b"
+dependencies = [
+ "deadpool-runtime",
+ "lazy_static",
+ "num_cpus",
+ "tokio",
+]
+
+[[package]]
+name = "deadpool-runtime"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092966b41edc516079bdf31ec78a2e0588d1d0c08f78b91d8307215928642b2b"
 
 [[package]]
 name = "der"
@@ -3242,7 +3271,7 @@ dependencies = [
 
 [[package]]
 name = "evm-bridge-client"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "alloy",
  "borsh 1.6.1",
@@ -3252,6 +3281,7 @@ dependencies = [
  "hex",
  "near-crypto",
  "near-jsonrpc-client",
+ "near-mpc-contract-interface",
  "near-primitives",
  "near-rpc-client",
  "near-token",
@@ -3883,6 +3913,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hex-literal"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
+
+[[package]]
 name = "hex_lit"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3984,6 +4020,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "humantime"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4012,6 +4054,7 @@ dependencies = [
  "http 1.4.0",
  "http-body",
  "httparse",
+ "httpdate",
  "itoa",
  "pin-project-lite",
  "pin-utils",
@@ -4921,7 +4964,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.17"
+version = "0.2.26"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -4939,11 +4982,14 @@ dependencies = [
  "near-sdk",
  "near-token",
  "omni-types",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_with",
+ "tokio",
  "tracing",
  "utxo-utils",
+ "wiremock",
 ]
 
 [[package]]
@@ -5634,7 +5680,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.3.9"
+version = "0.4.0"
 dependencies = [
  "alloy",
  "bip0039",
@@ -5659,6 +5705,7 @@ dependencies = [
  "omni-types",
  "orchard 0.12.0",
  "pczt",
+ "rand 0.8.5",
  "ripemd 0.1.3",
  "serde_json",
  "sha2 0.10.9",
@@ -5681,7 +5728,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=ffbdc544c0d7f670942e8bf532c7e023c1c6bfec#ffbdc544c0d7f670942e8bf532c7e023c1c6bfec"
+source = "git+https://github.com/near-one/omni-bridge?rev=ba6d1d4470d8dbe2748280647430ebf06a3cc299#ba6d1d4470d8dbe2748280647430ebf06a3cc299"
 dependencies = [
  "alloy",
  "borsh 1.6.1",
@@ -7795,13 +7842,14 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
  "borsh 1.6.1",
  "derive_builder",
  "mpl-token-metadata",
+ "omni-types",
  "openssl-sys",
  "sha2 0.10.9",
  "solana-client",
@@ -10120,10 +10168,14 @@ dependencies = [
 
 [[package]]
 name = "starknet-bridge-client"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
+ "async-trait",
  "hex",
+ "near-mpc-contract-interface",
  "omni-types",
+ "reqwest",
+ "serde",
  "serde_json",
  "starknet",
  "thiserror 2.0.18",
@@ -11044,7 +11096,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.3"
+version = "0.2.6"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
@@ -11064,13 +11116,14 @@ dependencies = [
 
 [[package]]
 name = "utxo-utils"
-version = "0.2.1"
+version = "0.4.1"
 dependencies = [
  "bitcoin",
  "k256",
  "near-sdk",
  "omni-types",
  "orchard 0.12.0",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "serde_with",
@@ -11710,6 +11763,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a90e88e4667264a994d34e6d1ab2d26d398dcdca8b7f52bec8668957517fc7d8"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wiremock"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
+dependencies = [
+ "assert-json-diff",
+ "base64 0.22.1",
+ "deadpool",
+ "futures",
+ "http 1.4.0",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "log",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]
