@@ -180,11 +180,7 @@ pub struct FinBtcTransferArgs {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
     pub tx_id: String,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
-    pub coinbase_tx_id: String,
-    pub coinbase_merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof
 }
 
 #[serde_as]
@@ -194,9 +190,7 @@ pub struct BtcRequestRefundArgs {
     pub refund_address: String,
     pub tx_bytes: Vec<u8>,
     pub vout: usize,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub gas_fee: Option<u128>,
@@ -205,9 +199,7 @@ pub struct BtcRequestRefundArgs {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyRefundFinalizeArgs {
     pub tx_id: String,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
