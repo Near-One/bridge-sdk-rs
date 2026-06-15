@@ -1569,6 +1569,7 @@ impl OmniConnector {
             Some(rate) => rate,
             None => utxo_bridge_client.get_fee_rate().await?,
         };
+
         let gas_fee = get_gas_fee(
             chain,
             u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
