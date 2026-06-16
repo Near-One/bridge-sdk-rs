@@ -220,8 +220,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .collect();
 
         let coinbase_tx_id = transactions[0].to_string();
-        let coinbase_merkle_proof =
-            merkle_tools::merkle_proof_calculator(transactions, 0);
+        let coinbase_merkle_proof = merkle_tools::merkle_proof_calculator(transactions, 0);
         let coinbase_merkle_proof_str = coinbase_merkle_proof
             .iter()
             .map(std::string::ToString::to_string)

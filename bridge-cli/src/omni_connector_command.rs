@@ -840,6 +840,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Derive the deposit address via the UTXO connector contract view method instead of the bridge indexer service"
+        )]
+        from_contract: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1811,11 +1816,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             refund_address,
             fee,
+            from_contract,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, refund_address, fee)
+                .get_btc_address(
+                    chain.into(),
+                    &recipient_id,
+                    refund_address,
+                    fee,
+                    from_contract,
+                )
                 .await
                 .unwrap();
 
