@@ -953,6 +953,12 @@ impl NearBridgeClient {
         .await?;
         let parsed: DepositAddressResponse = serde_json::from_str(&body)?;
 
+        tracing::info!(
+            deposit_address = parsed.address,
+            deposit_msg = serde_json::to_string(deposit_msg).unwrap_or_default(),
+            "Fetched user deposit address"
+        );
+
         Ok(parsed.address)
     }
 
