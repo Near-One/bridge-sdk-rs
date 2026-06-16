@@ -32,7 +32,7 @@ use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO, TxInclusionProof
+    NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -647,7 +647,7 @@ impl OmniConnector {
 
         Ok(FinBtcTransferArgs {
             deposit_msg,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
             proof: TxInclusionProof {
                 tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -655,7 +655,7 @@ impl OmniConnector {
                 merkle_proof: proof_data.merkle_proof,
                 coinbase_tx_id: proof_data.coinbase_tx_id,
                 coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            }
+            },
         })
     }
 
@@ -708,7 +708,7 @@ impl OmniConnector {
                 merkle_proof: proof_data.merkle_proof,
                 coinbase_tx_id: proof_data.coinbase_tx_id,
                 coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            }
+            },
         };
 
         near_bridge_client
@@ -760,7 +760,7 @@ impl OmniConnector {
                 merkle_proof: proof_data.merkle_proof,
                 coinbase_tx_id: proof_data.coinbase_tx_id,
                 coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            }
+            },
         };
 
         near_bridge_client
@@ -831,7 +831,7 @@ impl OmniConnector {
         Ok(BtcRequestRefundArgs {
             deposit_msg,
             refund_address,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
             proof: TxInclusionProof {
                 tx_block_blockhash: proof_data.tx_block_blockhash,
@@ -903,7 +903,7 @@ impl OmniConnector {
                 merkle_proof: proof_data.merkle_proof,
                 coinbase_tx_id: proof_data.coinbase_tx_id,
                 coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            }
+            },
         };
 
         near_bridge_client

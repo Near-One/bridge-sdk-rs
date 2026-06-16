@@ -172,15 +172,17 @@ pub struct TxInclusionProof {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct FinBtcTransferArgs {
     pub deposit_msg: DepositMsg,
-    pub tx_bytes: Vec<u8>,
+    // The contract's `verify_deposit_v2` expects `tx_bytes` as a base64 string
+    // (`Base64VecU8`), not a JSON array of bytes.
+    pub tx_bytes: Base64VecU8,
     pub vout: usize,
-    pub proof: TxInclusionProof
+    pub proof: TxInclusionProof,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
     pub tx_id: String,
-    pub proof: TxInclusionProof
+    pub proof: TxInclusionProof,
 }
 
 #[serde_as]
@@ -188,7 +190,9 @@ pub struct BtcVerifyWithdrawArgs {
 pub struct BtcRequestRefundArgs {
     pub deposit_msg: DepositMsg,
     pub refund_address: String,
-    pub tx_bytes: Vec<u8>,
+    // The contract's `request_refund` expects `tx_bytes` as a base64 string
+    // (`Base64VecU8`), not a JSON array of bytes.
+    pub tx_bytes: Base64VecU8,
     pub vout: usize,
     pub proof: TxInclusionProof,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -199,7 +203,7 @@ pub struct BtcRequestRefundArgs {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyRefundFinalizeArgs {
     pub tx_id: String,
-    pub proof: TxInclusionProof
+    pub proof: TxInclusionProof,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
