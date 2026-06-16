@@ -5280,6 +5280,7 @@ dependencies = [
 name = "near-rpc-client"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "borsh 1.6.1",
  "hex",
  "lazy_static",

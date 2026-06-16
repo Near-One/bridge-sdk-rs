@@ -77,6 +77,42 @@ You can create a configuration file with your preferred settings. The CLI will l
 
 You can manually modify `bridge-cli/src/defaults.rs` file
 
+### Offline / hardware-wallet signing (NEAR)
+
+Any command that submits a NEAR transaction supports `--dry-run`. Instead of
+signing and broadcasting, the CLI builds the transaction (fetching the current
+nonce and a recent block hash) and prints it as a base64-encoded borsh payload,
+ready to be signed externally — e.g. on a hardware wallet — and submitted by you.
+
+`--dry-run` is only valid for NEAR commands; using it on a command that submits
+to another chain (EVM/SVM/Starknet, `btc-fin-transfer`, or `deploy-token` to a
+non-Near chain) exits with an error rather than broadcasting.
+
+In this mode **no private key is needed**; supply the signer account and the
+public key that will sign (the access key must exist on the account):
+
+```bash
+bridge-cli mainnet log-metadata \
+    --token near:wrap.near \
+    --near-signer omni-relayer.near \
+    --near-public-key ed25519:Hb... \
+    --dry-run
+```
+
+This prints a human-readable summary plus:
+
+```
+unsigned transaction (base64-encoded borsh):
+CQAAA...AAAA
+```
+
+Sign and submit the printed payload with your preferred tool, for example
+`near transaction sign-transaction <base64> ...` in
+[near-cli-rs](https://github.com/near/near-cli-rs). The block hash is only valid
+for ~24h, so sign and submit promptly.
+
+Equivalent env vars: `NEAR_PUBLIC_KEY`, `DRY_RUN=true`.
+
 ## Quick Start
 
 ### Example 1: Deploy an ERC20 Token to NEAR
@@ -233,8 +269,10 @@ bridge-cli mainnet btc-request-refund \
 #                         relying on the indexer lookup. These must match the
 #                         values used at deposit time; the contract recomputes
 #                         the deposit address from them and rejects mismatches.
-#   --dry-run           — print the `request_refund` call args as JSON without
-#                         submitting the NEAR transaction.
+#   --dry-run           — print the unsigned `request_refund` NEAR transaction
+#                         (base64 borsh) for offline/hardware-wallet signing
+#                         instead of submitting it. Requires --near-public-key.
+#                         See "Offline / hardware-wallet signing (NEAR)" above.
 #
 # Example with manual args (safe_deposit.msg path; `receiver_id` inside --msg
 # is the intents account the deposit was routed to):
