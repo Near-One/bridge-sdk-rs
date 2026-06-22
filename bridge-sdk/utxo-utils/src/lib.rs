@@ -1,4 +1,7 @@
 pub mod address;
+pub mod anchor_fill;
+
+pub use anchor_fill::choose_utxos_anchor_fill;
 
 use crate::address::UTXOAddress;
 use address::Network;
@@ -198,12 +201,13 @@ pub struct WithdrawSelectionParams {
     pub max_change_number: usize,
     pub passive_management_lower_limit: u32,
     pub passive_management_upper_limit: u32,
+    pub active_management_upper_limit: u32,
 }
 
 /// Splits `change` into `n` outputs each strictly less than `max_per_piece`
 /// and at least `min_change_amount`. Returns Err if no valid split exists
 /// within `max_change_number`.
-fn split_change(
+pub(crate) fn split_change(
     change: u128,
     min_change_amount: u128,
     max_per_piece: u128,
@@ -347,7 +351,7 @@ fn validate_and_repair(
 /// - HIGH zone (`pool_size > passive_upper`): require `input_num > change_num`.
 ///   No automatic adjustment — returns `Err` if violated.
 /// - Healthy zone: no-op.
-fn enforce_passive_management(
+pub(crate) fn enforce_passive_management(
     selection: UtxoSelection,
     pool_size: u32,
     params: &WithdrawSelectionParams,

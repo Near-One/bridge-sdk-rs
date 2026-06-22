@@ -35,7 +35,7 @@ use hypercore_bridge_client::{
 use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -54,6 +54,16 @@ use utxo_bridge_client::{
 };
 use utxo_utils::{get_gas_fee, UTXO};
 use wormhole_bridge_client::WormholeBridgeClient;
+
+/// Result of UTXO selection for a BTC/Zcash withdrawal — feed into
+/// [`OmniConnector::near_submit_prepared_btc_transfer`].
+#[derive(Clone)]
+pub struct BtcTransferSelection {
+    pub out_points: Vec<OutPoint>,
+    pub tx_outs: Vec<TxOut>,
+    pub chain_specific_data: Option<ChainSpecificData>,
+    pub gas_fee: u64,
+}
 
 #[allow(clippy::struct_field_names)]
 #[derive(Builder, Default)]
@@ -685,11 +695,15 @@ impl OmniConnector {
 
         Ok(FinBtcTransferArgs {
             deposit_msg,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         })
     }
 
@@ -736,9 +750,13 @@ impl OmniConnector {
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -784,9 +802,13 @@ impl OmniConnector {
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -857,11 +879,15 @@ impl OmniConnector {
         Ok(BtcRequestRefundArgs {
             deposit_msg,
             refund_address,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
             gas_fee,
         })
     }
@@ -919,9 +945,13 @@ impl OmniConnector {
 
         let args = BtcVerifyRefundFinalizeArgs {
             tx_id: btc_tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -929,44 +959,54 @@ impl OmniConnector {
             .await
     }
 
+    /// When `from_contract` is `true`, the deposit address is derived by calling
+    /// the `get_user_deposit_address` view method on the UTXO connector contract
+    /// directly. Otherwise it is fetched from the bridge indexer service.
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain, recipient_id, refund_address, fee)
+            .get_btc_address(chain, recipient_id, refund_address, fee, from_contract)
             .await
     }
 
     /// Fetch a BTC deposit address that mints nBTC directly to a NEAR account,
     /// bypassing the Omni Bridge wrapper.
+    ///
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_for_near_account(
         &self,
         chain: ChainKind,
         recipient_id: AccountId,
         refund_address: Option<String>,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address_for_near_account(chain, recipient_id, refund_address)
+            .get_btc_address_for_near_account(chain, recipient_id, refund_address, from_contract)
             .await
     }
 
     /// Fetch the BTC deposit address for an arbitrary `DepositMsg` (including
     /// custom `safe_deposit.msg`). Use this when neither `get_btc_address` nor
     /// `get_btc_address_for_near_account` covers the exact `DepositMsg` shape.
+    ///
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_from_deposit_msg(
         &self,
         chain: ChainKind,
         deposit_msg: &DepositMsg,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address_from_deposit_msg(chain, deposit_msg)
+            .get_btc_address_from_deposit_msg(chain, deposit_msg, from_contract)
             .await
     }
 
@@ -994,7 +1034,7 @@ impl OmniConnector {
                 refund_address,
                 fee,
             } => {
-                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
+                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee, false)
                     .await?
             }
             BtcDepositArgs::NearDirectDepositArgs {
@@ -1005,11 +1045,13 @@ impl OmniConnector {
                     chain,
                     recipient_id.clone(),
                     refund_address.clone(),
+                    false,
                 )
                 .await?
             }
             BtcDepositArgs::DepositMsg { msg } => {
-                self.get_btc_address_from_deposit_msg(chain, msg).await?
+                self.get_btc_address_from_deposit_msg(chain, msg, false)
+                    .await?
             }
         };
 
@@ -1232,8 +1274,10 @@ impl OmniConnector {
         target_btc_address: String,
         amount: u128,
         transaction_options: TransactionOptions,
+        memo: Option<String>,
     ) -> Result<CryptoHash> {
         let enable_orchard = self.get_orchard_mode(&target_btc_address, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let fee_rate = utxo_bridge_client.get_fee_rate().await?;
 
@@ -1334,6 +1378,7 @@ impl OmniConnector {
                 target_btc_address.clone(),
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -1354,30 +1399,66 @@ impl OmniConnector {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub async fn near_submit_btc_transfer(
+    pub async fn near_select_btc_utxos(
         &self,
         chain: ChainKind,
         recipient: String,
         amount: u128,
         fee_rate: Option<u64>,
-        transfer_id: omni_types::TransferId,
-        transaction_options: TransactionOptions,
         max_gas_fee: Option<u64>,
-    ) -> Result<CryptoHash> {
+        // Extra headroom (sat) to leave in the change output above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only honoured on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored when falling back to the random selector. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
+    ) -> Result<BtcTransferSelection> {
         let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
         let near_bridge_client = self.near_bridge_client()?;
         let fee = near_bridge_client.get_withdraw_fee(chain).await?;
         let (out_points, tx_outs, chain_specific_data, gas_fee) = self
             .extract_utxo(
                 chain,
-                recipient.clone(),
+                recipient,
                 amount.checked_sub(fee).ok_or_else(|| {
                     BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
                 })?,
                 enable_orchard,
                 fee_rate,
+                max_gas_fee,
+                change_reserve,
+                memo,
+                utxos,
             )
             .await?;
+
+        Ok(BtcTransferSelection {
+            out_points,
+            tx_outs,
+            chain_specific_data,
+            gas_fee,
+        })
+    }
+
+    pub async fn near_submit_prepared_btc_transfer(
+        &self,
+        recipient: String,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
+        selection: BtcTransferSelection,
+    ) -> Result<CryptoHash> {
+        let BtcTransferSelection {
+            out_points,
+            tx_outs,
+            chain_specific_data,
+            gas_fee,
+        } = selection;
 
         let max_gas_fee = if let Some(max_gas_fee) = max_gas_fee {
             if gas_fee > max_gas_fee {
@@ -1390,7 +1471,7 @@ impl OmniConnector {
             None
         };
 
-        near_bridge_client
+        self.near_bridge_client()?
             .submit_btc_transfer(
                 transfer_id,
                 TokenReceiverMessage::Withdraw {
@@ -1403,6 +1484,43 @@ impl OmniConnector {
                 transaction_options,
             )
             .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn near_submit_btc_transfer(
+        &self,
+        chain: ChainKind,
+        recipient: String,
+        amount: u128,
+        fee_rate: Option<u64>,
+        transfer_id: omni_types::TransferId,
+        transaction_options: TransactionOptions,
+        max_gas_fee: Option<u64>,
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
+    ) -> Result<CryptoHash> {
+        let selection = self
+            .near_select_btc_utxos(
+                chain,
+                recipient.clone(),
+                amount,
+                fee_rate,
+                max_gas_fee,
+                change_reserve,
+                memo,
+                utxos,
+            )
+            .await?;
+
+        self.near_submit_prepared_btc_transfer(
+            recipient,
+            transfer_id,
+            transaction_options,
+            max_gas_fee,
+            selection,
+        )
+        .await
     }
 
     /// Initiates an RBF (Replace-By-Fee) transaction to increase gas fee.
@@ -1511,6 +1629,7 @@ impl OmniConnector {
             Some(rate) => rate,
             None => utxo_bridge_client.get_fee_rate().await?,
         };
+
         let gas_fee = get_gas_fee(
             chain,
             u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
@@ -1548,6 +1667,7 @@ impl OmniConnector {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn near_submit_btc_transfer_with_tx_hash(
         &self,
         chain: ChainKind,
@@ -1555,6 +1675,9 @@ impl OmniConnector {
         sender_id: Option<AccountId>,
         fee_rate: Option<u64>,
         transaction_options: TransactionOptions,
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<CryptoHash> {
         let near_bridge_client = self.near_bridge_client()?;
         let NearToBtcTransferInfo {
@@ -1574,6 +1697,9 @@ impl OmniConnector {
             transfer_id,
             transaction_options,
             max_gas_fee,
+            change_reserve,
+            memo,
+            utxos,
         )
         .await
     }
@@ -2020,7 +2146,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
 
         let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, &recipient, refund_address, fee)
+            .get_btc_address(chain_kind, &recipient, refund_address, fee, false)
             .await?;
         let tx_data = utxo_bridge_client
             .get_bridge_transaction_data(&tx_hash, &deposit_address)
@@ -3783,6 +3909,7 @@ impl OmniConnector {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn extract_utxo(
         &self,
         chain: ChainKind,
@@ -3790,6 +3917,21 @@ impl OmniConnector {
         amount: u128,
         enable_orchard: bool,
         fee_rate: Option<u64>,
+        // When `Some`, drives the anchor-fill selector to consume as many
+        // small UTXOs as the budget allows (1 target + at most 1 change
+        // output). When `None`, falls back to the random selector — picks
+        // the minimum inputs needed to cover `amount`, no consolidation.
+        max_gas_fee: Option<u64>,
+        // Extra headroom (sat) to leave in the change above
+        // `min_change_amount`, so a later RBF can bump the fee by up to
+        // `change_reserve` without driving change below the contract minimum.
+        // Only applied on the anchor-fill path (`max_gas_fee = Some(..)`);
+        // ignored by the random fallback. `None` ⇒ no reserve.
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
+        // pulling the full set from the NEAR connector.
+        utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -3799,19 +3941,42 @@ impl OmniConnector {
             None => utxo_bridge_client.get_fee_rate().await?,
         };
 
-        let utxos = near_bridge_client.get_utxos(chain).await?;
+        let utxos = match utxos {
+            Some(utxos) => utxos,
+            None => near_bridge_client.get_utxos(chain).await?,
+        };
         let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
         let params = near_bridge_client
             .get_withdraw_selection_params(chain)
             .await?;
 
-        let selection = utxo_utils::choose_utxos_random_no_payment(
-            amount,
-            utxos,
-            pool_size,
-            &params,
-            &mut rand::thread_rng(),
-        )
+        // Algorithm selection:
+        // - No budget (`max_gas_fee = None`) ⇒ always the random selector.
+        // - With a budget, only consolidate (anchor-fill) when the pool is
+        //   above the active-management upper limit (`pool_size >
+        //   active_management_upper_limit`); otherwise fall back to random.
+        let selection = match max_gas_fee {
+            Some(budget) if pool_size > params.active_management_upper_limit => {
+                utxo_utils::choose_utxos_anchor_fill(
+                    amount,
+                    utxos,
+                    pool_size,
+                    &params,
+                    chain,
+                    fee_rate,
+                    budget,
+                    enable_orchard,
+                    change_reserve.unwrap_or(0),
+                )
+            }
+            _ => utxo_utils::choose_utxos_random_no_payment(
+                amount,
+                utxos,
+                pool_size,
+                &params,
+                &mut rand::thread_rng(),
+            ),
+        }
         .map_err(|e| {
             tracing::warn!("UTXO selection failed: {e}");
             BridgeSdkError::InsufficientUTXOBalance
@@ -3887,6 +4052,7 @@ impl OmniConnector {
                 target_btc_address,
                 tx_outs,
                 selection.selected,
+                memo,
             )
             .await?;
 
@@ -3906,10 +4072,11 @@ impl OmniConnector {
         target_btc_address: String,
         tx_outs: Vec<TxOut>,
         selected_utxo: Vec<(String, UTXO)>,
+        memo: Option<String>,
     ) -> Result<(Option<ChainSpecificData>, Vec<TxOut>)> {
         if enable_orchard {
             let (orchard, expiry_height) = self
-                .get_orchard_raw(
+                .get_orchard_raw_with_memo(
                     target_btc_address.clone(),
                     tx_outs[0].clone().value.to_sat(),
                     utxo_utils::utxo_to_input_points(selected_utxo).map_err(|e| {
@@ -3918,6 +4085,7 @@ impl OmniConnector {
                         ))
                     })?,
                     tx_outs.get(1),
+                    memo,
                 )
                 .await?;
             let output = tx_outs[1..].to_vec();
@@ -3932,5 +4100,56 @@ impl OmniConnector {
         } else {
             Ok((None, tx_outs))
         }
+    }
+}
+
+fn validate_zcash_memo_usage(
+    chain: ChainKind,
+    enable_orchard: bool,
+    memo: Option<&str>,
+) -> Result<()> {
+    if memo.is_none() {
+        return Ok(());
+    }
+
+    if chain != ChainKind::Zcash {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo is only supported for Zcash transfers".to_string(),
+        ));
+    }
+
+    if !enable_orchard {
+        return Err(BridgeSdkError::InvalidArgument(
+            "memo requires a shielded Zcash recipient".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_absent_memo_for_btc() {
+        validate_zcash_memo_usage(ChainKind::Btc, false, None).unwrap();
+    }
+
+    #[test]
+    fn accepts_memo_for_shielded_zcash() {
+        validate_zcash_memo_usage(ChainKind::Zcash, true, Some("memo")).unwrap();
+    }
+
+    #[test]
+    fn rejects_memo_for_btc() {
+        let err = validate_zcash_memo_usage(ChainKind::Btc, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo is only supported for Zcash transfers"));
+    }
+
+    #[test]
+    fn rejects_memo_for_transparent_zcash() {
+        let err = validate_zcash_memo_usage(ChainKind::Zcash, false, Some("memo")).unwrap_err();
+        assert!(format!("{err:?}").contains("memo requires a shielded Zcash recipient"));
     }
 }

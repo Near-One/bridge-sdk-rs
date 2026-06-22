@@ -685,7 +685,7 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Submit BTC transfer on Near")]
+    #[clap(about = "Submit BTC/Zcash transfer on Near")]
     NearSubmitBtcTransfer {
         #[clap(short, long, help = "UTXO Chain (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
@@ -695,6 +695,18 @@ pub enum OmniConnectorSubCommand {
         sender_id: Option<AccountId>,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
+        #[clap(
+            long,
+            help = "Change reserve for RBF transactions",
+            default_value = "5000"
+        )]
+        change_reserve: Option<u128>,
+        #[clap(
+            short,
+            long,
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
+        )]
+        memo: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -730,11 +742,6 @@ pub enum OmniConnectorSubCommand {
             help = "Optional msg set as SafeDepositMsg.msg (only valid with direct recipient, i.e. without chain prefix)"
         )]
         msg: Option<String>,
-        #[clap(
-            long,
-            help = "Print the call args as JSON without submitting the transaction"
-        )]
-        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -823,11 +830,6 @@ pub enum OmniConnectorSubCommand {
         no_deposit_refund_address: bool,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
-        #[clap(
-            long,
-            help = "Print the call args as JSON without submitting the transaction"
-        )]
-        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -870,6 +872,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Derive the deposit address via the UTXO connector contract view method instead of the bridge indexer service"
+        )]
+        from_contract: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -908,6 +915,12 @@ pub(crate) enum InternalSubCommand {
         target_btc_address: String,
         #[clap(short, long, help = "Amount to transfer")]
         amount: u128,
+        #[clap(
+            short,
+            long,
+            help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
+        )]
+        memo: Option<String>,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -922,8 +935,49 @@ pub(crate) enum InternalSubCommand {
     },
 }
 
+/// `--dry-run` builds and prints an unsigned NEAR transaction; it is meaningless
+/// (and dangerous to silently ignore) for commands that broadcast to another
+/// chain. Reject those up front so a stray `--dry-run` never lets a non-NEAR
+/// transaction go out for real.
+fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
+    use OmniConnectorSubCommand as Cmd;
+
+    let submits_to_non_near = match cmd {
+        Cmd::EvmInitTransfer { config_cli, .. }
+        | Cmd::EvmFinTransfer { config_cli, .. }
+        | Cmd::StarknetInitTransfer { config_cli, .. }
+        | Cmd::StarknetFinTransfer { config_cli, .. }
+        | Cmd::SvmInitialize { config_cli, .. }
+        | Cmd::SvmInitTransfer { config_cli, .. }
+        | Cmd::SvmInitTransferSol { config_cli, .. }
+        | Cmd::SvmFinalizeTransfer { config_cli, .. }
+        | Cmd::SvmFinalizeTransferSol { config_cli, .. }
+        | Cmd::SvmSetAdmin { config_cli, .. }
+        | Cmd::SvmPause { config_cli, .. }
+        | Cmd::SvmUpdateMetadata { config_cli, .. }
+        | Cmd::BtcFinTransfer { config_cli, .. } => {
+            combined_config(config_cli.clone(), network).dry_run
+        }
+        // `deploy-token --chain Near` is a NEAR transaction; any other chain is not.
+        Cmd::DeployToken {
+            chain, config_cli, ..
+        } if *chain != ChainKind::Near => combined_config(config_cli.clone(), network).dry_run,
+        _ => false,
+    };
+
+    if submits_to_non_near {
+        eprintln!(
+            "error: --dry-run is only supported for NEAR transactions; this command \
+             submits to another chain and would broadcast for real"
+        );
+        std::process::exit(1);
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
+    ensure_dry_run_supported(&cmd, network);
+
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
@@ -1066,6 +1120,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            change_reserve,
+            memo,
             config_cli,
         } => {
             omni_connector(network, config_cli)
@@ -1075,6 +1131,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     sender_id,
                     fee_rate,
                     TransactionOptions::default(),
+                    change_reserve,
+                    memo,
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1616,7 +1675,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             refund_address,
             fee,
             msg,
-            dry_run,
             config_cli,
         } => {
             let connector = omni_connector(network, config_cli);
@@ -1646,37 +1704,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             )
             .await;
 
-            if dry_run {
-                let args = connector
-                    .build_fin_btc_transfer_args(
-                        chain.into(),
-                        btc_tx_hash,
-                        resolved_vout,
-                        deposit_args,
-                        prefetched,
-                    )
-                    .await
-                    .unwrap();
-                let method_name = if args.deposit_msg.safe_deposit.is_some() {
-                    "safe_verify_deposit"
-                } else {
-                    "verify_deposit"
-                };
-                println!("method: {method_name}");
-                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
-            } else {
-                connector
-                    .fin_transfer(FinTransferArgs::NearFinTransferBTC {
-                        chain_kind: chain.into(),
-                        btc_tx_hash,
-                        vout: resolved_vout,
-                        btc_deposit_args: deposit_args,
-                        prefetched,
-                        transaction_options: TransactionOptions::default(),
-                    })
-                    .await
-                    .unwrap();
-            }
+            // `--dry-run` (if set) is honored at the NEAR client: the verify_deposit
+            // transaction is printed as an unsigned payload instead of broadcast.
+            connector
+                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
+                    chain_kind: chain.into(),
+                    btc_tx_hash,
+                    vout: resolved_vout,
+                    btc_deposit_args: deposit_args,
+                    prefetched,
+                    transaction_options: TransactionOptions::default(),
+                })
+                .await
+                .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             chain,
@@ -1738,7 +1778,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             msg,
             no_deposit_refund_address,
             gas_fee,
-            dry_run,
             config_cli,
         } => {
             let chain_kind: ChainKind = chain.into();
@@ -1795,34 +1834,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     )
                 });
 
-            if dry_run {
-                let args = connector
-                    .build_btc_request_refund_args(
-                        &btc_tx_hash,
-                        resolved_vout,
-                        btc_deposit_args,
-                        final_refund_address,
-                        gas_fee,
-                        prefetched,
-                    )
-                    .await
-                    .unwrap();
-                println!("method: request_refund");
-                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
-            } else {
-                connector
-                    .btc_request_refund(
-                        btc_tx_hash,
-                        resolved_vout,
-                        btc_deposit_args,
-                        final_refund_address,
-                        gas_fee,
-                        prefetched,
-                        TransactionOptions::default(),
-                    )
-                    .await
-                    .unwrap();
-            }
+            // `--dry-run` (if set) is honored at the NEAR client: the request_refund
+            // transaction is printed as an unsigned payload instead of broadcast.
+            connector
+                .btc_request_refund(
+                    btc_tx_hash,
+                    resolved_vout,
+                    btc_deposit_args,
+                    final_refund_address,
+                    gas_fee,
+                    prefetched,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyRefundFinalize {
             btc_tx_hash,
@@ -1856,11 +1881,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             refund_address,
             fee,
+            from_contract,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, refund_address, fee)
+                .get_btc_address(
+                    chain.into(),
+                    &recipient_id,
+                    refund_address,
+                    fee,
+                    from_contract,
+                )
                 .await
                 .unwrap();
 
@@ -1889,6 +1921,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 chain,
                 target_btc_address,
                 amount,
+                memo,
                 config_cli,
             } => {
                 let tx_hash = omni_connector(network, config_cli)
@@ -1897,6 +1930,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         target_btc_address,
                         amount,
                         TransactionOptions::default(),
+                        memo,
                     )
                     .await
                     .unwrap();
@@ -1956,6 +1990,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .near_signer
                 .map(|account| account.parse().unwrap()),
         )
+        .signer_public_key(combined_config.near_public_key)
+        .dry_run(combined_config.dry_run)
         .omni_bridge_id(
             combined_config
                 .near_token_locker_id

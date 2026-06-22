@@ -65,12 +65,12 @@ crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-sha
 near-mpc-contract-interface = "0.0.1"
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
-pczt = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
-zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "8df665a5050004dc48177630e1630901ffce2d01", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "8df665a5050004dc48177630e1630901ffce2d01", features = ["transparent-inputs"] }
+zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "8df665a5050004dc48177630e1630901ffce2d01" }
+pczt = { git = "https://github.com/Near-One/librustzcash", rev = "8df665a5050004dc48177630e1630901ffce2d01", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
+zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "8df665a5050004dc48177630e1630901ffce2d01" }
+orchard = { git = "https://github.com/Near-One/orchard", rev = "dc5a778e31166658085d13580e541364d56a6547", default-features = false }
 bip0039 = "0.12.0"
 zcash_keys = "0.12.0"
 ripemd = "0.1.3"
