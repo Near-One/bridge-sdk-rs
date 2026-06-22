@@ -551,8 +551,6 @@ pub enum OmniConnectorSubCommand {
         amount: u128,
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
-        #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u64>,
         #[command(flatten)]
@@ -1425,29 +1423,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             amount,
             recipient,
-            fee,
             native_fee,
             config_cli,
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
-                (Some(f), Some(nf)) => (f, nf, None),
-                (Some(f), None) => (f, 0, None),
-                (None, Some(nf)) => (0, nf, None),
-                _ => match resolve_svm_fees(
+            // The on-chain `init_transfer_sol` instruction requires `fee == 0`
+            // (the bridge service fee is rolled into `native_fee`, which is
+            // debited together with `amount` from the user's SOL balance).
+            let native_fee = match native_fee {
+                Some(nf) => nf,
+                None => match resolve_svm_fees(
                     chain,
                     &combined_config,
-                    &format!(
-                        "{}:So11111111111111111111111111111111111111112",
-                        chain.prefix()
-                    ),
+                    &format!("{}:11111111111111111111111111111111", chain.prefix()),
                     amount,
                     &recipient,
                 )
                 .await
                 {
-                    Ok(values) => values,
+                    Ok((_, nf, _)) => nf,
                     Err(e) => {
                         eprintln!("{e}");
                         return;
@@ -1460,7 +1455,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain_kind: chain.into(),
                     amount,
                     recipient,
-                    fee,
+                    fee: 0,
                     native_fee,
                     message: String::new(),
                 })
