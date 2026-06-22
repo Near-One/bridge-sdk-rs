@@ -170,7 +170,7 @@ bridge-cli testnet near-sign-transfer \
 bridge-cli testnet solana-finalize-transfer \
     --tx-hash 8xPxz... \
     --sender-id alice.near \
-    --solana-token So11111111111111111111111111111111111111112
+    --solana-token 11111111111111111111111111111111
 ```
 
 ### Example 4: Transfer BTC from Bitcoin to NEAR
