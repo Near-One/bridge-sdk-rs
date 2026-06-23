@@ -5817,7 +5817,7 @@ dependencies = [
 [[package]]
 name = "omni-types"
 version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=97fe9fb9a079e5a3b5ad688be70c06191a61e7fa#97fe9fb9a079e5a3b5ad688be70c06191a61e7fa"
+source = "git+https://github.com/near-one/omni-bridge?rev=18596e64e5638faabae8ffd6838f4942c8164699#18596e64e5638faabae8ffd6838f4942c8164699"
 dependencies = [
  "alloy",
  "borsh 1.6.1",
@@ -5841,7 +5841,7 @@ dependencies = [
 [[package]]
 name = "omni-utils"
 version = "0.1.0"
-source = "git+https://github.com/near-one/omni-utils?rev=f9bc3ea4a72e97f02660b8f1c0b2f79a9fbde3a4#f9bc3ea4a72e97f02660b8f1c0b2f79a9fbde3a4"
+source = "git+https://github.com/near-one/omni-utils?rev=66df1fbae3e6b23c3c29eca0392b666fbefc6659#66df1fbae3e6b23c3c29eca0392b666fbefc6659"
 dependencies = [
  "near-sdk",
  "omni-utils-derive",
@@ -5852,7 +5852,7 @@ dependencies = [
 [[package]]
 name = "omni-utils-derive"
 version = "0.1.0"
-source = "git+https://github.com/near-one/omni-utils?rev=f9bc3ea4a72e97f02660b8f1c0b2f79a9fbde3a4#f9bc3ea4a72e97f02660b8f1c0b2f79a9fbde3a4"
+source = "git+https://github.com/near-one/omni-utils?rev=66df1fbae3e6b23c3c29eca0392b666fbefc6659#66df1fbae3e6b23c3c29eca0392b666fbefc6659"
 dependencies = [
  "proc-macro2",
  "quote",
