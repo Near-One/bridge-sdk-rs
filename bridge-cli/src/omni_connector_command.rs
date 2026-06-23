@@ -293,6 +293,24 @@ async fn resolve_svm_fees(
     Ok((fee, native_fee, gas_fee))
 }
 
+/// Message injected into a NEAR `init_transfer` when `--transfer-to-hypercore`
+/// is set.
+///
+/// The NEAR omni-bridge parses this string as a `DestinationChainMsg` and keeps
+/// only the decoded `DestHexMsg` bytes in the signed `TransferMessagePayload`
+/// (`omni-bridge/src/lib.rs`: `DestinationChainMsg::from_json(..).destination_msg()`);
+/// anything that doesn't parse to `{"DestHexMsg":"<hex>"}` decodes to empty.
+/// On HyperEVM, `OmniBridge.finTransfer` then dispatches purely on
+/// `payload.message.length`: empty → 2-arg `mint` (plain HyperEVM ERC20),
+/// non-empty → 3-arg `mint` on `HlBridgeToken`, which `_update`s the supply to
+/// the system address so HyperCore credits the recipient's spot balance.
+///
+/// The byte *content* is ignored by the 3-arg `mint` — only its non-emptiness
+/// matters. The bytes `636F7265` decode to ASCII `"core"`: a human-readable
+/// marker for indexers/logs, and byte-identical to `@omni-bridge/sdk`'s
+/// `HYPERLIQUID_MESSAGE` so both SDKs emit the same `DestHexMsg` payload.
+const HYPERCORE_DEST_MESSAGE: &str = r#"{"DestHexMsg":"636F7265"}"#;
+
 #[derive(Subcommand, Debug)]
 pub enum OmniConnectorSubCommand {
     #[clap(about = "Log metadata for a token")]
@@ -379,6 +397,12 @@ pub enum OmniConnectorSubCommand {
             help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)"
         )]
         message: Option<String>,
+        #[clap(
+            long,
+            conflicts_with = "message",
+            help = "Deliver to a HyperCore (Hyperliquid L1) spot balance. Only valid with an hlevm:0x... recipient; auto-sets the message that routes the supply to the recipient's Core spot balance. Mutually exclusive with --message."
+        )]
+        transfer_to_hypercore: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1145,8 +1169,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             native_fee,
             message,
+            transfer_to_hypercore,
             config_cli,
         } => {
+            if transfer_to_hypercore && recipient.get_chain() != ChainKind::HyperEvm {
+                eprintln!(
+                    "--transfer-to-hypercore requires an hlevm:0x... recipient, got {recipient}"
+                );
+                return;
+            }
+
             let combined_config = combined_config(config_cli.clone(), network);
 
             let (_, native_fee, gas_fee) = match (fee, native_fee) {
@@ -1176,7 +1208,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             };
 
             let mut message = message.unwrap_or_default();
-            if message.is_empty()
+            if transfer_to_hypercore {
+                message = HYPERCORE_DEST_MESSAGE.to_string();
+            } else if message.is_empty()
                 && matches!(recipient.get_chain(), ChainKind::Btc | ChainKind::Zcash)
             {
                 if let Some(gas_fee) = gas_fee {
