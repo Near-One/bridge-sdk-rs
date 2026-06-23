@@ -19,7 +19,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
-zebra-chain = "2.0.0"
+zcash_primitives.workspace = true
+zcash_protocol.workspace = true
+zcash_encoding.workspace = true
 
 [lib]
 path = "src/utxo_bridge_client.rs"

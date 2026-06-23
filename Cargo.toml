@@ -15,6 +15,7 @@ members = [
     "bridge-sdk/utxo-utils",
     "bridge-sdk/light-client"
 ]
+exclude = ["vendor/bip32"]
 
 [workspace.dependencies]
 sha3 = "0.10.8"
@@ -41,7 +42,11 @@ near-jsonrpc-client = "0.20.0"
 near-jsonrpc-primitives = "0.34.2"
 near-primitives = "0.34.2"
 near-crypto = "0.34.2"
-near-sdk = "5.24.1"
+# near-sdk 5.28.1 hard-errors at compile time unless built in a recognized context
+# (cargo-near / wasm / unit-testing / non-contract-usage). This workspace consumes
+# near-sdk as a plain library, so enable `non-contract-usage` (the sanctioned feature
+# for that; pulls near-crypto / near-primitives-core interop). Not a source patch.
+near-sdk = { version = "5.28.1", features = ["non-contract-usage"] }
 derive_builder = "0.20.0"
 clap = { version = "4.5", features = ["derive"] }
 dotenv = { version = "0.15" }
@@ -50,7 +55,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "8c2886043e366bafa810ca3e757f301b8c0df4fc" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "97fe9fb9a079e5a3b5ad688be70c06191a61e7fa" }
 starknet = "0.17.0"
 serde_with = { version = "3.12.0", features = ["schemars_0_8"] }
 solana-sdk = "2.0.13"
@@ -67,19 +72,40 @@ bcs = "0.1"
 ed25519-dalek = "2"
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
-pczt = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
-zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "e6a9772c71c928c7b507c6b18e2ae0adea5c325b" }
-orchard = { git = "https://github.com/Near-One/orchard", rev = "a43977f07e6fdadff214bb081a481756a28b41fc", default-features = false }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", features = ["transparent-inputs"] }
+zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
+pczt = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
+zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
+zcash_encoding = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
+orchard = { version = "0.12", default-features = false }
 bip0039 = "0.12.0"
-zcash_keys = "0.12.0"
+# Pulled from the fork (not crates.io 0.12.0) so it shares the fork's stable-RustCrypto
+# zcash_primitives instead of dragging in a second, RC-pinned crates.io copy.
+zcash_keys = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
 ripemd = "0.1.3"
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"
 rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464"
+
+# The librustzcash fork (rev 40adcfba) declares `orchard = "0.12"` from crates.io,
+# but orchard 0.11..0.13 are all yanked on crates.io (only 0.14 is live). Redirect
+# to the Near-One orchard fork at 0.12.0, which carries the `core2 -> corez` fix so
+# it actually resolves. (Drop once librustzcash bumps to orchard 0.14.)
+[patch.crates-io.orchard]
+git = "https://github.com/Near-One/orchard"
+rev = "872a2192238f4085ce4c8dd2f0222bd6ce26fba7"
+
+# zcash (via zcash_transparent/zcash_keys) pins bip32 =0.6.0-pre.1, which exact-pins
+# the RustCrypto *pre-release* digest-0.11 chain (sha2 =0.11.0-pre.4, hmac, ripemd) and
+# clashes with near-sdk 5.28.1's stable sha2 0.11. There is no stable bip32 0.6.0, and
+# a [patch] can only be applied at the workspace root, so we vendor bip32 0.6.0-pre.1
+# verbatim with its RustCrypto deps moved to the released stable versions. Combined with
+# the librustzcash 40adcfba bump (crypto-common/block-buffer now stable), the whole
+# digest-0.11 stack unifies on stable. Drop once bip32 ships a stable 0.6.0.
+[patch.crates-io.bip32]
+path = "vendor/bip32"
 
 # The profile that 'dist' will build with
 [profile.dist]
