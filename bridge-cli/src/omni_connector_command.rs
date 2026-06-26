@@ -792,6 +792,37 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(
+        about = "Execute a previously requested refund, sending the deposit back to the refund address (Bitcoin/Zcash)"
+    )]
+    BtcExecuteRefund {
+        #[clap(short, long, help = "Chain the deposit was made on (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(
+            long,
+            help = "Refund request key in the form `<tx_id>@<vout>`. Mutually exclusive with --btc-tx-hash/--vout."
+        )]
+        utxo_storage_key: Option<String>,
+        #[clap(
+            short,
+            long,
+            help = "Deposit tx hash; combined with --vout to form the refund request key. Ignored if --utxo-storage-key is given."
+        )]
+        btc_tx_hash: Option<String>,
+        #[clap(
+            short,
+            long,
+            help = "Index of the deposit output; combined with --btc-tx-hash to form the refund request key."
+        )]
+        vout: Option<usize>,
+        #[clap(
+            long,
+            help = "Transparent refund: send the deposit back to a transparent address with no Orchard bundle. For Zcash this overrides the default of auto-generating a shielded Orchard bundle; on Bitcoin refunds are always transparent."
+        )]
+        transparent: bool,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Finalize Transfer from Near on Bitcoin")]
     BtcFinTransfer {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -1781,6 +1812,53 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             omni_connector(network, config_cli)
                 .btc_verify_refund_finalize(btc_tx_hash, TransactionOptions::default())
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::BtcExecuteRefund {
+            chain,
+            utxo_storage_key,
+            btc_tx_hash,
+            vout,
+            transparent,
+            config_cli,
+        } => {
+            let chain_kind: ChainKind = chain.into();
+            let utxo_storage_key = match utxo_storage_key {
+                Some(key) => key,
+                None => {
+                    let tx_id = btc_tx_hash.expect(
+                        "Provide either --utxo-storage-key or both --btc-tx-hash and --vout",
+                    );
+                    let vout = vout.expect(
+                        "Provide either --utxo-storage-key or both --btc-tx-hash and --vout",
+                    );
+                    format!("{tx_id}@{vout}")
+                }
+            };
+
+            let connector = omni_connector(network, config_cli);
+
+            // Zcash defaults to a shielded refund (auto-generated Orchard bundle);
+            // `--transparent` and Bitcoin refunds carry no bundle.
+            let chain_specific_data = if transparent || chain_kind != ChainKind::Zcash {
+                None
+            } else {
+                Some(
+                    connector
+                        .build_refund_chain_specific_data(&utxo_storage_key)
+                        .await
+                        .unwrap(),
+                )
+            };
+
+            connector
+                .btc_execute_refund(
+                    chain_kind,
+                    utxo_storage_key,
+                    chain_specific_data,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

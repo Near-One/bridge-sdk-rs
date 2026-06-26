@@ -29,6 +29,7 @@ const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 const BTC_REQUEST_REFUND_GAS: u64 = 300_000_000_000_000;
+const BTC_EXECUTE_REFUND_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_REFUND_FINALIZE_GAS: u64 = 300_000_000_000_000;
 const SUBMIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
@@ -209,6 +210,23 @@ pub struct BtcVerifyRefundFinalizeArgs {
 pub struct ChainSpecificData {
     pub orchard_bundle_bytes: Base64VecU8,
     pub expiry_height: u32,
+}
+
+/// A pending refund request stored by the UTXO connector (`request_refund`),
+/// returned by the `get_refund_requests_paged` view. Mirrors the contract's
+/// `RefundRequest`; `execute_refund` consumes it to build the refund tx.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct RefundRequest {
+    /// The original deposit message, as the JSON string the contract stored.
+    pub deposit_msg_json: String,
+    pub utxo_storage_key: String,
+    pub tx_bytes: Base64VecU8,
+    pub vout: usize,
+    pub amount: u128,
+    pub refund_address: String,
+    pub gas_fee: u128,
+    pub created_at_sec: u32,
+    pub executed: bool,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -553,6 +571,38 @@ impl NearBridgeClient {
         Ok(btc_pending_info)
     }
 
+    /// Fetch a single pending refund request by its UTXO storage key
+    /// (`{tx_id}@{vout}`) from the UTXO connector (Bitcoin/Zcash).
+    pub async fn get_refund_request(
+        &self,
+        chain: ChainKind,
+        utxo_storage_key: &str,
+    ) -> Result<RefundRequest> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_refund_requests_paged".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        let refund_requests: HashMap<String, RefundRequest> = serde_json::from_slice(&response)?;
+
+        refund_requests
+            .get(utxo_storage_key)
+            .cloned()
+            .ok_or_else(|| {
+                BridgeSdkError::InvalidArgument(format!(
+                    "Refund request not found for key {utxo_storage_key}"
+                ))
+            })
+    }
+
     #[tracing::instrument(skip_all, name = "NEAR BTC RBF INCREASE GAS FEE")]
     pub async fn btc_rbf_increase_gas_fee(
         &self,
@@ -788,6 +838,82 @@ impl NearBridgeClient {
             ViewRequest {
                 contract_account_id: btc_connector,
                 method_name: "required_balance_for_request_refund".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<near_sdk::NearToken>(&response)?)
+    }
+
+    /// Execute a previously requested refund: send the deposit UTXO back to the
+    /// original `refund_address` via the MPC sign pipeline (Bitcoin/Zcash).
+    ///
+    /// Requires the request's timelock to have passed (bypassed for a privileged
+    /// caller). `chain_specific_data` is Zcash-only: `Some` with an Orchard bundle
+    /// for a shielded refund, `None` for a transparent one; it is ignored on Bitcoin.
+    #[tracing::instrument(skip_all, name = "NEAR BTC EXECUTE REFUND")]
+    pub async fn btc_execute_refund(
+        &self,
+        chain: ChainKind,
+        utxo_storage_key: String,
+        chain_specific_data: Option<ChainSpecificData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        // `execute_refund` is `#[payable]`: it stores a pending-verify entry and requires
+        // an attached deposit of at least `required_balance_for_execute_refund()` (NOT
+        // refunded — storage + anti-spam fee on this permissionless entrypoint). The amount
+        // is contract-defined and chain-dependent, so query it instead of hardcoding.
+        let deposit = self
+            .required_balance_for_execute_refund(chain)
+            .await?
+            .as_yoctonear();
+
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "execute_refund".to_string(),
+                args: serde_json::json!({
+                    "utxo_storage_key": utxo_storage_key,
+                    "chain_specific_data": chain_specific_data,
+                })
+                .to_string()
+                .into_bytes(),
+                gas: BTC_EXECUTE_REFUND_GAS,
+                deposit,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Execute Refund transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    /// Query the deposit the UTXO connector requires to be attached to an
+    /// `execute_refund` call (Bitcoin/Zcash).
+    pub async fn required_balance_for_execute_refund(
+        &self,
+        chain: ChainKind,
+    ) -> Result<near_sdk::NearToken> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "required_balance_for_execute_refund".to_string(),
                 args: serde_json::json!({}),
             },
         )

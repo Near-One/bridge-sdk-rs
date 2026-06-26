@@ -772,6 +772,7 @@ impl OmniConnector {
     /// transaction. Bitcoin only. The `prefetched` proof can be supplied by a
     /// prior `resolve_deposit_vout` / `resolve_deposit_from_tx` call to skip
     /// the redundant `extract_btc_proof`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_btc_request_refund_args(
         &self,
         chain: ChainKind,
@@ -872,6 +873,29 @@ impl OmniConnector {
 
         self.near_bridge_client()?
             .btc_request_refund(chain, args, transaction_options)
+            .await
+    }
+
+    /// Execute a previously requested refund: send the deposit UTXO back to the
+    /// original refund address via the MPC sign pipeline (Bitcoin/Zcash).
+    ///
+    /// `utxo_storage_key` is the refund request key (`{tx_id}@{vout}`).
+    /// `chain_specific_data` is Zcash-only (Orchard bundle for a shielded refund);
+    /// pass `None` for Bitcoin or a transparent Zcash refund.
+    pub async fn btc_execute_refund(
+        &self,
+        chain: ChainKind,
+        utxo_storage_key: String,
+        chain_specific_data: Option<ChainSpecificData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        self.near_bridge_client()?
+            .btc_execute_refund(
+                chain,
+                utxo_storage_key,
+                chain_specific_data,
+                transaction_options,
+            )
             .await
     }
 

@@ -3144,7 +3144,7 @@ dependencies = [
 [[package]]
 name = "equihash"
 version = "0.3.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "blake2b_simd",
  "corez",
@@ -3322,7 +3322,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "blake2b_simd",
 ]
@@ -5717,11 +5717,11 @@ dependencies = [
  "utxo-bridge-client",
  "utxo-utils",
  "wormhole-bridge-client",
- "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "zcash_keys",
- "zcash_primitives 0.28.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_primitives 0.28.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -6049,7 +6049,7 @@ dependencies = [
 [[package]]
 name = "pczt"
 version = "0.7.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -6068,10 +6068,10 @@ dependencies = [
  "serde",
  "serde_with",
  "zcash_note_encryption",
- "zcash_primitives 0.28.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_primitives 0.28.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "zcash_script",
- "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -11107,8 +11107,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -11987,14 +11987,14 @@ dependencies = [
 [[package]]
 name = "zcash_address"
 version = "0.12.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "bech32",
  "bs58 0.5.1",
  "corez",
- "f4jumble 0.1.1 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "f4jumble 0.1.1 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -12021,7 +12021,7 @@ dependencies = [
 [[package]]
 name = "zcash_encoding"
 version = "0.4.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "corez",
  "hex",
@@ -12112,13 +12112,13 @@ dependencies = [
 [[package]]
 name = "zcash_primitives"
 version = "0.28.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "blake2b_simd",
  "block-buffer 0.11.0-rc.3",
  "corez",
  "crypto-common 0.2.0-rc.1",
- "equihash 0.3.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "equihash 0.3.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "ff",
  "hex",
  "incrementalmerkletree",
@@ -12132,11 +12132,11 @@ dependencies = [
  "sapling-crypto",
  "secp256k1 0.29.1",
  "sha2 0.10.9",
- "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "zcash_note_encryption",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "zcash_script",
- "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_transparent 0.8.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -12165,7 +12165,7 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.9.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "corez",
  "document-features",
@@ -12174,7 +12174,7 @@ dependencies = [
  "incrementalmerkletree-testing",
  "memuse",
  "proptest",
- "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
 ]
 
 [[package]]
@@ -12255,7 +12255,7 @@ dependencies = [
 [[package]]
 name = "zcash_transparent"
 version = "0.8.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01#8df665a5050004dc48177630e1630901ffce2d01"
+source = "git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e#44e64121e6a89e13369861e21f07083507e95c1e"
 dependencies = [
  "bip32",
  "bs58 0.5.1",
@@ -12269,9 +12269,9 @@ dependencies = [
  "secp256k1 0.29.1",
  "sha2 0.10.9",
  "subtle",
- "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
- "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=8df665a5050004dc48177630e1630901ffce2d01)",
+ "zcash_address 0.12.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_encoding 0.4.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
+ "zcash_protocol 0.9.0 (git+https://github.com/Near-One/librustzcash?rev=44e64121e6a89e13369861e21f07083507e95c1e)",
  "zcash_script",
  "zcash_spec",
  "zip32",
