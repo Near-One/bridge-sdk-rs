@@ -41,7 +41,6 @@ const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
 const BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 0;
-const BTC_REQUEST_REFUND_DEPOSIT: u128 = 0;
 const BTC_VERIFY_REFUND_FINALIZE_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
@@ -746,6 +745,12 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let deposit = self
+            .required_balance_for_request_refund(chain)
+            .await?
+            .as_yoctonear();
+
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -755,7 +760,7 @@ impl NearBridgeClient {
                 method_name: "request_refund".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_REQUEST_REFUND_GAS,
-                deposit: BTC_REQUEST_REFUND_DEPOSIT,
+                deposit,
             },
             transaction_options.wait_until,
             transaction_options.wait_final_outcome_timeout_sec,
@@ -767,6 +772,28 @@ impl NearBridgeClient {
             "Sent BTC Request Refund transaction"
         );
         Ok(tx_hash)
+    }
+
+    /// Query the deposit the UTXO connector requires to be attached to a
+    /// `request_refund` call (Bitcoin/Zcash).
+    pub async fn required_balance_for_request_refund(
+        &self,
+        chain: ChainKind,
+    ) -> Result<near_sdk::NearToken> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "required_balance_for_request_refund".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<near_sdk::NearToken>(&response)?)
     }
 
     /// Verify that the refund BTC transaction has been confirmed (Bitcoin only).
