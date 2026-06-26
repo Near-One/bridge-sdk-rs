@@ -1708,8 +1708,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let chain_kind: ChainKind = chain.into();
-            if chain_kind != ChainKind::Btc {
-                panic!("btc-request-refund currently supports only --chain btc; got {chain:?}");
+            if chain_kind != ChainKind::Btc && chain_kind != ChainKind::Zcash {
+                panic!(
+                    "btc-request-refund currently supports only --chain btc/zcash; got {chain:?}"
+                );
             }
 
             let connector = omni_connector(network, config_cli);
