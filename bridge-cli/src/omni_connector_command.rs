@@ -739,15 +739,11 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Request a refund for a never-finalized BTC deposit (Bitcoin only)")]
+    #[clap(about = "Request a refund for a never-finalized UTXO chain deposit (Bitcoin/Zcash)")]
     BtcRequestRefund {
-        #[clap(
-            short,
-            long,
-            help = "Chain the deposit was made on. Only Bitcoin is currently supported; the flag exists for forward compatibility."
-        )]
+        #[clap(short, long, help = "Chain the deposit was made on (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
-        #[clap(short, long, help = "Bitcoin deposit tx hash")]
+        #[clap(short, long, help = "Bitcoin/Zcash deposit tx hash")]
         btc_tx_hash: String,
         #[clap(
             short,
@@ -1767,6 +1763,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             // transaction is printed as an unsigned payload instead of broadcast.
             connector
                 .btc_request_refund(
+                    chain_kind,
                     btc_tx_hash,
                     resolved_vout,
                     btc_deposit_args,
