@@ -785,9 +785,11 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Verify the refund BTC transaction is confirmed (Bitcoin only)")]
+    #[clap(about = "Verify the refund transaction is confirmed (Bitcoin/Zcash)")]
     BtcVerifyRefundFinalize {
-        #[clap(short, long, help = "Refund Bitcoin tx hash")]
+        #[clap(short, long, help = "Chain the refund was made on (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(short, long, help = "Refund Bitcoin/Zcash tx hash")]
         btc_tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -1807,11 +1809,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyRefundFinalize {
+            chain,
             btc_tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .btc_verify_refund_finalize(btc_tx_hash, TransactionOptions::default())
+                .btc_verify_refund_finalize(
+                    chain.into(),
+                    btc_tx_hash,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

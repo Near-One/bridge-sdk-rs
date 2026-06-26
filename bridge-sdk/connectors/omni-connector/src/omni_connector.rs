@@ -899,23 +899,24 @@ impl OmniConnector {
             .await
     }
 
-    /// Verify that the refund BTC transaction has been confirmed on Bitcoin. Bitcoin only.
+    /// Verify that the refund transaction has been confirmed on the UTXO chain (Bitcoin/Zcash).
     pub async fn btc_verify_refund_finalize(
         &self,
+        chain: ChainKind,
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
 
         let pending_info = near_bridge_client
-            .get_btc_pending_info(ChainKind::Btc, btc_tx_hash.clone())
+            .get_btc_pending_info(chain, btc_tx_hash.clone())
             .await?;
 
         self.ensure_sufficient_btc_confirmations(
-            ChainKind::Btc,
+            chain,
             proof_data.block_height,
             pending_info.actual_received_amount,
             false,
@@ -934,7 +935,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_refund_finalize(args, transaction_options)
+            .btc_verify_refund_finalize(chain, args, transaction_options)
             .await
     }
 

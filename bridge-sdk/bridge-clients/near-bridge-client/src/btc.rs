@@ -922,15 +922,16 @@ impl NearBridgeClient {
         Ok(serde_json::from_slice::<near_sdk::NearToken>(&response)?)
     }
 
-    /// Verify that the refund BTC transaction has been confirmed (Bitcoin only).
+    /// Verify that the refund transaction has been confirmed (Bitcoin/Zcash).
     #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY REFUND FINALIZE")]
     pub async fn btc_verify_refund_finalize(
         &self,
+        chain: ChainKind,
         args: BtcVerifyRefundFinalizeArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
