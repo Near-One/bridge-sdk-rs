@@ -4938,7 +4938,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.25"
+version = "0.2.27"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -5339,6 +5339,7 @@ dependencies = [
 name = "near-rpc-client"
 version = "0.2.0"
 dependencies = [
+ "base64 0.22.1",
  "borsh 1.6.1",
  "hex",
  "lazy_static",
@@ -5768,7 +5769,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -7849,7 +7850,7 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "base64 0.22.1",
  "bitvec",
@@ -11103,7 +11104,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.5"
+version = "0.2.7"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",

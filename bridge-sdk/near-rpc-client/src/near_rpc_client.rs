@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use crate::error::NearRpcError;
 use crate::light_client_proof::LightClientExecutionProof;
+use base64::Engine;
 use near_jsonrpc_client::errors::{
     JsonRpcError, JsonRpcServerError, JsonRpcServerResponseStatusError,
 };
@@ -31,9 +32,47 @@ pub struct ViewRequest {
     pub args: serde_json::Value,
 }
 
+/// Identity used to build a NEAR transaction.
+///
+/// `InMemory` holds a secret key: transactions are signed and broadcast as usual.
+/// `DryRun` holds only a public identity (account id + public key, e.g. of a
+/// hardware wallet). Transactions built with it are printed as an unsigned
+/// payload for external signing instead of being signed and broadcast.
+#[derive(Clone)]
+pub enum TxSigner {
+    InMemory(near_crypto::InMemorySigner),
+    DryRun {
+        account_id: AccountId,
+        public_key: near_crypto::PublicKey,
+    },
+}
+
+impl TxSigner {
+    #[must_use]
+    pub fn account_id(&self) -> AccountId {
+        match self {
+            Self::InMemory(signer) => signer.account_id.clone(),
+            Self::DryRun { account_id, .. } => account_id.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn public_key(&self) -> near_crypto::PublicKey {
+        match self {
+            Self::InMemory(signer) => signer.public_key.clone(),
+            Self::DryRun { public_key, .. } => public_key.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_dry_run(&self) -> bool {
+        matches!(self, Self::DryRun { .. })
+    }
+}
+
 #[derive(Clone)]
 pub struct ChangeRequest {
-    pub signer: near_crypto::InMemorySigner,
+    pub signer: TxSigner,
     pub nonce: Option<u64>,
     pub receiver_id: AccountId,
     pub method_name: String,
@@ -148,15 +187,30 @@ pub async fn change(
 ) -> Result<CryptoHash, NearRpcError> {
     let client = DEFAULT_CONNECTOR.connect(server_addr);
 
+    let signer_account_id = change_request.signer.account_id();
+    let signer_public_key = change_request.signer.public_key();
+
     let rpc_request = methods::query::RpcQueryRequest {
         block_reference: BlockReference::latest(),
-        request: near_primitives::views::QueryRequest::ViewAccessKey {
-            account_id: change_request.signer.account_id.clone(),
-            public_key: change_request.signer.public_key.clone(),
+        request: QueryRequest::ViewAccessKey {
+            account_id: signer_account_id.clone(),
+            public_key: signer_public_key.clone(),
         },
     };
 
-    let access_key_query_response = client.call(rpc_request).await?;
+    let access_key_query_response = client.call(rpc_request).await.map_err(|err| {
+        if let Some(near_jsonrpc_client::methods::query::RpcQueryError::UnknownAccessKey {
+            ..
+        }) = err.handler_error()
+        {
+            NearRpcError::UnknownAccessKey {
+                account_id: signer_account_id.to_string(),
+                public_key: signer_public_key.to_string(),
+            }
+        } else {
+            NearRpcError::from(err)
+        }
+    })?;
 
     let nonce = if let Some(nonce) = change_request.nonce {
         nonce
@@ -170,8 +224,8 @@ pub async fn change(
     };
 
     let transaction = Transaction::V0(TransactionV0 {
-        signer_id: change_request.signer.account_id.clone(),
-        public_key: change_request.signer.public_key.clone(),
+        signer_id: signer_account_id,
+        public_key: signer_public_key,
         nonce,
         receiver_id: change_request.receiver_id,
         block_hash: access_key_query_response.block_hash,
@@ -182,11 +236,62 @@ pub async fn change(
             deposit: NearToken::from_yoctonear(change_request.deposit),
         }))],
     });
-    let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-        signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(change_request.signer)),
+
+    match change_request.signer {
+        // Dry run: print the unsigned transaction for external signing (e.g. a
+        // hardware wallet) instead of signing and broadcasting it.
+        TxSigner::DryRun { .. } => print_unsigned_transaction(&transaction),
+        TxSigner::InMemory(signer) => {
+            let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+                signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(signer)),
+            };
+
+            Ok(client.call(request).await?)
+        }
+    }
+}
+
+/// Serializes the unsigned transaction (borsh + base64) and prints it together
+/// with a human-readable summary, so it can be signed offline. Returns the hash
+/// of the unsigned transaction (which equals the signed transaction hash, since
+/// the signature is not part of the hashed payload).
+fn print_unsigned_transaction(transaction: &Transaction) -> Result<CryptoHash, NearRpcError> {
+    let tx_bytes = borsh::to_vec(transaction).map_err(|_| NearRpcError::SerializationError)?;
+    let tx_hash = CryptoHash::hash_bytes(&tx_bytes);
+    let base64_tx = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
+
+    let (method_name, args, gas, deposit) = match transaction.actions().first() {
+        Some(Action::FunctionCall(action)) => (
+            action.method_name.as_str(),
+            String::from_utf8_lossy(&action.args).into_owned(),
+            action.gas.as_gas(),
+            action.deposit.as_yoctonear(),
+        ),
+        _ => ("<unknown>", String::new(), 0u64, 0u128),
     };
 
-    Ok(client.call(request).await?)
+    println!("========================================================================");
+    println!("DRY RUN — transaction was NOT signed or broadcast");
+    println!("========================================================================");
+    println!("signer:      {}", transaction.signer_id());
+    println!("public_key:  {}", transaction.public_key());
+    println!("nonce:       {}", transaction.nonce());
+    println!("receiver:    {}", transaction.receiver_id());
+    println!("block_hash:  {}", transaction.block_hash());
+    println!("method:      {method_name}");
+    println!("gas:         {gas}");
+    println!("deposit:     {deposit} yoctoNEAR");
+    println!("args:        {args}");
+    println!("tx_hash:     {tx_hash}");
+    println!();
+    println!("unsigned transaction (base64-encoded borsh):");
+    println!("{base64_tx}");
+    println!("------------------------------------------------------------------------");
+    println!("Nothing was broadcast. Sign this payload externally (e.g. hardware");
+    println!("wallet) and submit it. Ignore any \"Sent ...\" confirmation logged below.");
+    println!("========================================================================");
+
+    Ok(tx_hash)
 }
 
 /// Returns the result of the view call and waits for the desired outcome
@@ -199,12 +304,19 @@ pub async fn change_and_wait(
     wait_until: near_primitives::views::TxExecutionStatus,
     wait_final_outcome_timeout_sec: Option<u64>,
 ) -> Result<CryptoHash, NearRpcError> {
-    let tx_hash = change(server_addr, change_request.clone()).await?;
+    let is_dry_run = change_request.signer.is_dry_run();
+    let signer_account_id = change_request.signer.account_id();
+
+    let tx_hash = change(server_addr, change_request).await?;
+
+    if is_dry_run {
+        return Ok(tx_hash);
+    }
 
     wait_for_tx(
         server_addr,
         tx_hash,
-        change_request.signer.account_id,
+        signer_account_id,
         wait_until,
         wait_final_outcome_timeout_sec.unwrap_or(DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC),
     )

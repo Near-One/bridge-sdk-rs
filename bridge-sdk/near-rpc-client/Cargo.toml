@@ -15,6 +15,7 @@ near-primitives.workspace = true
 near-crypto.workspace = true
 near-token.workspace = true
 borsh.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

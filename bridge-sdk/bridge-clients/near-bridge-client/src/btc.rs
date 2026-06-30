@@ -161,21 +161,28 @@ pub struct DepositMsg {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct FinBtcTransferArgs {
-    pub deposit_msg: DepositMsg,
-    pub tx_bytes: Vec<u8>,
-    pub vout: usize,
+pub struct TxInclusionProof {
     pub tx_block_blockhash: String,
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
+    pub coinbase_tx_id: String,
+    pub coinbase_merkle_proof: Vec<String>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct FinBtcTransferArgs {
+    pub deposit_msg: DepositMsg,
+    // The contract's `verify_deposit_v2` expects `tx_bytes` as a base64 string
+    // (`Base64VecU8`), not a JSON array of bytes.
+    pub tx_bytes: Base64VecU8,
+    pub vout: usize,
+    pub proof: TxInclusionProof,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
     pub tx_id: String,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof,
 }
 
 #[serde_as]
@@ -183,11 +190,11 @@ pub struct BtcVerifyWithdrawArgs {
 pub struct BtcRequestRefundArgs {
     pub deposit_msg: DepositMsg,
     pub refund_address: String,
-    pub tx_bytes: Vec<u8>,
+    // The contract's `request_refund` expects `tx_bytes` as a base64 string
+    // (`Base64VecU8`), not a JSON array of bytes.
+    pub tx_bytes: Base64VecU8,
     pub vout: usize,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub gas_fee: Option<u128>,
@@ -196,9 +203,7 @@ pub struct BtcRequestRefundArgs {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyRefundFinalizeArgs {
     pub tx_id: String,
-    pub tx_block_blockhash: String,
-    pub tx_index: u64,
-    pub merkle_proof: Vec<String>,
+    pub proof: TxInclusionProof,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -602,13 +607,10 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        let (method_name, deposit) = if args.deposit_msg.safe_deposit.is_some() {
-            (
-                "safe_verify_deposit".to_string(),
-                BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT,
-            )
+        let deposit = if args.deposit_msg.safe_deposit.is_some() {
+            BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT
         } else {
-            ("verify_deposit".to_string(), BTC_VERIFY_DEPOSIT_DEPOSIT)
+            BTC_VERIFY_DEPOSIT_DEPOSIT
         };
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
@@ -616,7 +618,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name,
+                method_name: "verify_deposit_v2".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_DEPOSIT_GAS,
                 deposit,
@@ -651,7 +653,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_withdraw".to_string(),
+                method_name: "verify_withdraw_v2".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_WITHDRAW_GAS,
                 deposit: BTC_VERIFY_WITHDRAW_DEPOSIT,
@@ -717,7 +719,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_active_utxo_management".to_string(),
+                method_name: "verify_active_utxo_management_v2".to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS,
                 deposit: BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT,
@@ -872,37 +874,50 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// When `from_contract` is `true`, the deposit address is derived by calling
+    /// the `get_user_deposit_address` view method on the UTXO connector contract
+    /// directly. Otherwise it is fetched from the bridge indexer service.
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        from_contract: bool,
     ) -> Result<String> {
         let deposit_msg =
             self.get_deposit_msg_for_omni_bridge(recipient_id, refund_address, fee)?;
-        self.get_btc_address_from_deposit_msg(chain, &deposit_msg)
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg, from_contract)
             .await
     }
 
     /// Fetch the BTC deposit address for a `DepositMsg` that mints nBTC directly
     /// to a NEAR account (without the Omni Bridge wrapper).
+    ///
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_for_near_account(
         &self,
         chain: ChainKind,
         recipient_id: AccountId,
         refund_address: Option<String>,
+        from_contract: bool,
     ) -> Result<String> {
         let deposit_msg = self.get_deposit_msg_for_near_account(recipient_id, refund_address);
-        self.get_btc_address_from_deposit_msg(chain, &deposit_msg)
+        self.get_btc_address_from_deposit_msg(chain, &deposit_msg, from_contract)
             .await
     }
 
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_from_deposit_msg(
         &self,
         chain: ChainKind,
         deposit_msg: &DepositMsg,
+        from_contract: bool,
     ) -> Result<String> {
+        if from_contract {
+            return self.get_btc_address_from_contract(chain, deposit_msg).await;
+        }
+
         let api_url = self
             .bridge_indexer_api_url()?
             .join("api/v3/utxo/get_user_deposit_address")
@@ -951,7 +966,45 @@ impl NearBridgeClient {
         .await?;
         let parsed: DepositAddressResponse = serde_json::from_str(&body)?;
 
+        tracing::info!(
+            deposit_address = parsed.address,
+            deposit_msg = %serde_json::to_value(deposit_msg).unwrap_or_default(),
+            "Fetched user deposit address from indexer"
+        );
+
         Ok(parsed.address)
+    }
+
+    /// Derive the user deposit address by calling the `get_user_deposit_address`
+    /// view method on the UTXO connector contract directly, bypassing the bridge
+    /// indexer service.
+    async fn get_btc_address_from_contract(
+        &self,
+        chain: ChainKind,
+        deposit_msg: &DepositMsg,
+    ) -> Result<String> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_user_deposit_address".to_string(),
+                args: serde_json::json!({ "deposit_msg": deposit_msg }),
+            },
+        )
+        .await?;
+
+        let address: String = serde_json::from_slice(&response)?;
+
+        tracing::info!(
+            deposit_address = address,
+            deposit_msg = %serde_json::to_value(deposit_msg).unwrap_or_default(),
+            "Fetched user deposit address from contract"
+        );
+
+        Ok(address)
     }
 
     /// Look up the `DepositMsg` that was stored by the bridge indexer when a
@@ -1515,7 +1568,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         let result = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, false)
             .await
             .expect("get_btc_address should succeed");
 
@@ -1540,7 +1593,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, false)
             .await
             .expect("get_btc_address should succeed");
     }
@@ -1563,7 +1616,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Zcash, &near_recipient(), None, 0, false)
             .await
             .expect("get_btc_address should succeed");
     }
@@ -1585,7 +1638,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 4242, false)
             .await
             .expect("get_btc_address should succeed");
 
@@ -1608,7 +1661,7 @@ mod tests {
         // No mock mounted: a successful HTTP call would fail. We expect early validation.
         let client = test_client(Some(server.uri().parse().unwrap()));
         let err = client
-            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Eth, &near_recipient(), None, 0, false)
             .await
             .expect_err("Eth is not a UTXO chain");
 
@@ -1622,7 +1675,7 @@ mod tests {
     async fn get_btc_address_missing_api_url_returns_config_error() {
         let client = test_client(None);
         let err = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, false)
             .await
             .expect_err("missing api url should fail");
 
@@ -1643,7 +1696,7 @@ mod tests {
 
         let client = test_client(Some(server.uri().parse().unwrap()));
         let err = client
-            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0)
+            .get_btc_address(ChainKind::Btc, &near_recipient(), None, 0, false)
             .await
             .expect_err("500 status should fail");
 

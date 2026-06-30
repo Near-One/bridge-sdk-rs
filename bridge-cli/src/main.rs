@@ -17,6 +17,17 @@ struct CliConfig {
     near_signer: Option<String>,
     #[arg(long)]
     near_private_key: Option<String>,
+    #[arg(
+        long,
+        help = "NEAR signer public key; required with --dry-run for offline/hardware-wallet signing"
+    )]
+    near_public_key: Option<String>,
+    #[arg(
+        long,
+        help = "Build and print the unsigned NEAR transaction (base64 borsh) instead of signing and broadcasting it. Only valid for NEAR commands; errors on other chains"
+    )]
+    #[serde(default)]
+    dry_run: bool,
     #[arg(long)]
     near_token_locker_id: Option<String>,
     #[arg(long)]
@@ -174,6 +185,8 @@ impl CliConfig {
             near_rpc: self.near_rpc.or(other.near_rpc),
             near_signer: self.near_signer.or(other.near_signer),
             near_private_key: self.near_private_key.or(other.near_private_key),
+            near_public_key: self.near_public_key.or(other.near_public_key),
+            dry_run: self.dry_run || other.dry_run,
             near_token_locker_id: self.near_token_locker_id.or(other.near_token_locker_id),
             near_mpc_omni_prover_id: self
                 .near_mpc_omni_prover_id
@@ -297,6 +310,8 @@ fn env_config() -> CliConfig {
         near_rpc: env::var("NEAR_RPC").ok(),
         near_signer: env::var("NEAR_SIGNER").ok(),
         near_private_key: env::var("NEAR_PRIVATE_KEY").ok(),
+        near_public_key: env::var("NEAR_PUBLIC_KEY").ok(),
+        dry_run: env::var("DRY_RUN").is_ok_and(|s| s == "true"),
         near_token_locker_id: env::var("TOKEN_LOCKER_ID").ok(),
         near_mpc_omni_prover_id: env::var("MPC_OMNI_PROVER_ID").ok(),
         eth_light_client_id: env::var("ETH_LIGHT_CLIENT_ID").ok(),
@@ -402,6 +417,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_MAINNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_MAINNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
@@ -514,6 +531,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_TESTNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_TESTNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
@@ -627,6 +646,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_DEVNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_DEVNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),

@@ -213,8 +213,15 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "btc tx not found in block".to_string(),
             ))?;
 
-        let merkle_proof = merkle_tools::merkle_proof_calculator(transactions, tx_index);
+        let merkle_proof = merkle_tools::merkle_proof_calculator(transactions.clone(), tx_index);
         let merkle_proof_str = merkle_proof
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+
+        let coinbase_tx_id = transactions[0].to_string();
+        let coinbase_merkle_proof = merkle_tools::merkle_proof_calculator(transactions, 0);
+        let coinbase_merkle_proof_str = coinbase_merkle_proof
             .iter()
             .map(std::string::ToString::to_string)
             .collect();
@@ -227,6 +234,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 .try_into()
                 .expect("Error on convert usize into u64"),
             merkle_proof: merkle_proof_str,
+            coinbase_tx_id,
+            coinbase_merkle_proof: coinbase_merkle_proof_str,
             outputs,
         })
     }

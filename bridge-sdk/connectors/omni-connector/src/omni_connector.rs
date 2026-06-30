@@ -34,7 +34,7 @@ use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, VUTXO,
+    NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -672,11 +672,15 @@ impl OmniConnector {
 
         Ok(FinBtcTransferArgs {
             deposit_msg,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         })
     }
 
@@ -723,9 +727,13 @@ impl OmniConnector {
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -771,9 +779,13 @@ impl OmniConnector {
 
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -844,11 +856,15 @@ impl OmniConnector {
         Ok(BtcRequestRefundArgs {
             deposit_msg,
             refund_address,
-            tx_bytes: proof_data.tx_bytes,
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
             gas_fee,
         })
     }
@@ -906,9 +922,13 @@ impl OmniConnector {
 
         let args = BtcVerifyRefundFinalizeArgs {
             tx_id: btc_tx_hash,
-            tx_block_blockhash: proof_data.tx_block_blockhash,
-            tx_index: proof_data.tx_index,
-            merkle_proof: proof_data.merkle_proof,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
         };
 
         near_bridge_client
@@ -916,44 +936,54 @@ impl OmniConnector {
             .await
     }
 
+    /// When `from_contract` is `true`, the deposit address is derived by calling
+    /// the `get_user_deposit_address` view method on the UTXO connector contract
+    /// directly. Otherwise it is fetched from the bridge indexer service.
     pub async fn get_btc_address(
         &self,
         chain: ChainKind,
         recipient_id: &OmniAddress,
         refund_address: Option<String>,
         fee: u128,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address(chain, recipient_id, refund_address, fee)
+            .get_btc_address(chain, recipient_id, refund_address, fee, from_contract)
             .await
     }
 
     /// Fetch a BTC deposit address that mints nBTC directly to a NEAR account,
     /// bypassing the Omni Bridge wrapper.
+    ///
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_for_near_account(
         &self,
         chain: ChainKind,
         recipient_id: AccountId,
         refund_address: Option<String>,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address_for_near_account(chain, recipient_id, refund_address)
+            .get_btc_address_for_near_account(chain, recipient_id, refund_address, from_contract)
             .await
     }
 
     /// Fetch the BTC deposit address for an arbitrary `DepositMsg` (including
     /// custom `safe_deposit.msg`). Use this when neither `get_btc_address` nor
     /// `get_btc_address_for_near_account` covers the exact `DepositMsg` shape.
+    ///
+    /// See [`Self::get_btc_address`] for the meaning of `from_contract`.
     pub async fn get_btc_address_from_deposit_msg(
         &self,
         chain: ChainKind,
         deposit_msg: &DepositMsg,
+        from_contract: bool,
     ) -> Result<String> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client
-            .get_btc_address_from_deposit_msg(chain, deposit_msg)
+            .get_btc_address_from_deposit_msg(chain, deposit_msg, from_contract)
             .await
     }
 
@@ -981,7 +1011,7 @@ impl OmniConnector {
                 refund_address,
                 fee,
             } => {
-                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee)
+                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee, false)
                     .await?
             }
             BtcDepositArgs::NearDirectDepositArgs {
@@ -992,11 +1022,13 @@ impl OmniConnector {
                     chain,
                     recipient_id.clone(),
                     refund_address.clone(),
+                    false,
                 )
                 .await?
             }
             BtcDepositArgs::DepositMsg { msg } => {
-                self.get_btc_address_from_deposit_msg(chain, msg).await?
+                self.get_btc_address_from_deposit_msg(chain, msg, false)
+                    .await?
             }
         };
 
@@ -1574,6 +1606,7 @@ impl OmniConnector {
             Some(rate) => rate,
             None => utxo_bridge_client.get_fee_rate().await?,
         };
+
         let gas_fee = get_gas_fee(
             chain,
             u64::try_from(btc_pending_info.vutxos.len()).map_err(|e| {
@@ -2142,7 +2175,7 @@ impl OmniConnector {
         let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
 
         let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, &recipient, refund_address, fee)
+            .get_btc_address(chain_kind, &recipient, refund_address, fee, false)
             .await?;
         let tx_data = utxo_bridge_client
             .get_bridge_transaction_data(&tx_hash, &deposit_address)
