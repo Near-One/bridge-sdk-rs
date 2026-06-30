@@ -994,6 +994,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
+                ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
+                    omni_connector(network, config_cli)
+                        .deploy_token(DeployTokenArgs::NearDeployTokenWithMpcProof {
+                            chain_kind: source_chain,
+                            tx_hash,
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                }
                 _ => {
                     omni_connector(network, config_cli)
                         .deploy_token(DeployTokenArgs::NearDeployToken {

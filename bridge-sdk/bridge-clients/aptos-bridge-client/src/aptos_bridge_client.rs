@@ -339,6 +339,11 @@ impl AptosBridgeClient {
         self.get_event_log(tx_hash, "FinTransfer").await
     }
 
+    /// Raw `LogMetadata` log with metadata for MPC proof construction.
+    pub async fn get_log_metadata_log(&self, tx_hash: &str) -> Result<AptosEventLog> {
+        self.get_event_log(tx_hash, "LogMetadata").await
+    }
+
     async fn fetch_committed(&self, tx_hash: &str) -> Result<CommittedTransaction> {
         rest::get_transaction_by_hash(&self.http_client, &self.base_url, tx_hash)
             .await?

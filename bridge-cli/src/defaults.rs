@@ -146,7 +146,7 @@ pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
 pub const APTOS_RPC_TESTNET: &str = "https://fullnode.testnet.aptoslabs.com/v1";
 // TODO: set once the omni_bridge Move package is deployed to Aptos testnet.
 pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
-    "0x0000000000000000000000000000000000000000000000000000000000000000";
+    "0x904a7d620944eec42d5d46cf4fe12463f713c8a705d581c10a010672228f967c";
 
 pub const FOGO_RPC_TESTNET: &str = "https://testnet.fogo.io";
 // pub const FOGO_BRIDGE_ADDRESS_TESTNET: &str = "";

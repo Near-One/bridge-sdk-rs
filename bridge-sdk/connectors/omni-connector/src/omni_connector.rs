@@ -140,6 +140,11 @@ pub enum DeployTokenArgs {
         tx_hash: TxHash,
         transaction_options: TransactionOptions,
     },
+    NearDeployTokenWithMpcProof {
+        chain_kind: ChainKind,
+        tx_hash: String,
+        transaction_options: TransactionOptions,
+    },
     EvmDeployToken {
         chain_kind: ChainKind,
         event: OmniBridgeEvent,
@@ -1780,11 +1785,7 @@ impl OmniConnector {
             ProofKind::InitTransfer => evm_client.get_init_transfer_log(tx_hash).await?,
             ProofKind::DeployToken => evm_client.get_deploy_token_log(tx_hash).await?,
             ProofKind::FinTransfer => evm_client.get_fin_transfer_log(tx_hash).await?,
-            other => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Unsupported proof kind for Abstract MPC payload: {other:?}"
-                )));
-            }
+            ProofKind::LogMetadata => evm_client.get_log_metadata_log(tx_hash).await?,
         };
 
         let log_index = rpc_log.log_index.ok_or_else(|| {
@@ -1856,11 +1857,7 @@ impl OmniConnector {
             ProofKind::InitTransfer => strk_client.get_init_transfer_log(tx_hash).await?,
             ProofKind::DeployToken => strk_client.get_deploy_token_log(tx_hash).await?,
             ProofKind::FinTransfer => strk_client.get_fin_transfer_log(tx_hash).await?,
-            other => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Unsupported proof kind for Starknet MPC payload: {other:?}"
-                )));
-            }
+            ProofKind::LogMetadata => strk_client.get_log_metadata_log(tx_hash).await?,
         };
 
         let starknet_log = StarknetLog {
@@ -1909,11 +1906,7 @@ impl OmniConnector {
             ProofKind::InitTransfer => aptos_client.get_init_transfer_log(&tx_hash).await?,
             ProofKind::DeployToken => aptos_client.get_deploy_token_log(&tx_hash).await?,
             ProofKind::FinTransfer => aptos_client.get_fin_transfer_log(&tx_hash).await?,
-            other => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "Unsupported proof kind for Aptos MPC payload: {other:?}"
-                )));
-            }
+            ProofKind::LogMetadata => aptos_client.get_log_metadata_log(&tx_hash).await?,
         };
 
         let tx_id = {
@@ -2006,6 +1999,32 @@ impl OmniConnector {
         near_bridge_client
             .bind_token(
                 omni_types::locker_args::BindTokenArgs {
+                    chain_kind,
+                    prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
+                        BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
+                    })?,
+                },
+                transaction_options,
+            )
+            .await
+    }
+
+    pub async fn near_deploy_token_with_mpc_proof(
+        &self,
+        chain_kind: ChainKind,
+        sign_payload: Vec<u8>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let verify_proof_args = MpcVerifyProofArgs {
+            proof_kind: ProofKind::LogMetadata,
+            sign_payload,
+        };
+
+        near_bridge_client
+            .deploy_token(
+                omni_types::locker_args::DeployTokenArgs {
                     chain_kind,
                     prover_args: borsh::to_vec(&verify_proof_args).map_err(|_| {
                         BridgeSdkError::EthProofError("Failed to serialize proof".to_string())
@@ -2747,6 +2766,45 @@ impl OmniConnector {
                 .near_deploy_token_with_evm_proof(chain_kind, tx_hash, transaction_options)
                 .await
                 .map(|hash| hash.to_string()),
+            DeployTokenArgs::NearDeployTokenWithMpcProof {
+                chain_kind,
+                tx_hash,
+                transaction_options,
+            } => {
+                let sign_payload = match chain_kind {
+                    ChainKind::Abs => {
+                        let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
+                            BridgeSdkError::InvalidArgument(format!(
+                                "Failed to parse EVM tx hash: {tx_hash}"
+                            ))
+                        })?;
+                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::LogMetadata)
+                            .await?
+                    }
+                    ChainKind::Strk => {
+                        let felt =
+                            starknet::core::types::Felt::from_hex(&tx_hash).map_err(|_| {
+                                BridgeSdkError::InvalidArgument(format!(
+                                    "Failed to parse Starknet tx hash: {tx_hash}"
+                                ))
+                            })?;
+                        self.build_strk_mpc_sign_payload(felt, ProofKind::LogMetadata)
+                            .await?
+                    }
+                    ChainKind::Aptos => {
+                        self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::LogMetadata)
+                            .await?
+                    }
+                    other => {
+                        return Err(BridgeSdkError::InvalidArgument(format!(
+                            "MPC proof deploy_token is not supported for chain {other:?}"
+                        )));
+                    }
+                };
+                self.near_deploy_token_with_mpc_proof(chain_kind, sign_payload, transaction_options)
+                    .await
+                    .map(|hash| hash.to_string())
+            }
             DeployTokenArgs::EvmDeployToken {
                 chain_kind,
                 event,
