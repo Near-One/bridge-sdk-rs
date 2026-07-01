@@ -1787,6 +1787,7 @@ dependencies = [
  "clap",
  "dotenv",
  "evm-bridge-client",
+ "hypercore-bridge-client",
  "light-client",
  "near-bridge-client",
  "near-mpc-contract-interface",
@@ -1811,11 +1812,12 @@ dependencies = [
 
 [[package]]
 name = "bridge-connector-common"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "alloy",
  "eth-proof",
  "evm-bridge-client",
+ "hypercore-bridge-client",
  "near-rpc-client",
  "serde_json",
  "solana-bridge-client",
@@ -3289,7 +3291,7 @@ dependencies = [
 
 [[package]]
 name = "evm-bridge-client"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "alloy",
  "borsh 1.6.1",
@@ -4117,6 +4119,21 @@ dependencies = [
  "tower-service",
  "tracing",
  "windows-registry",
+]
+
+[[package]]
+name = "hypercore-bridge-client"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "hex",
+ "omni-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5691,6 +5708,7 @@ dependencies = [
  "eth-proof",
  "evm-bridge-client",
  "hex",
+ "hypercore-bridge-client",
  "light-client",
  "near-bridge-client",
  "near-contract-standards",

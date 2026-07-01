@@ -33,8 +33,16 @@ pub const POL_WORMHOLE_ADDRESS_MAINNET: &str = "0x7A4B5a56256163F07b2C80A7cA55aB
 
 pub const HYPEREVM_RPC_MAINNET: &str = "https://rpc.hyperliquid.xyz/evm";
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0xf353b40fC144d1c6c5BCdda712fa6De833016aF9";
 pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee704ab943b8B53aB3";
+
+pub const HYPERCORE_API_MAINNET: &str = "https://api.hyperliquid.xyz";
+// Match the Hyperliquid Python SDK convention (signing.py:250) which uses
+// 0x66eee (Arb-Sepolia) for the EIP-712 domain on both mainnet and testnet.
+// The signatureChainId only needs to be unique across chains to prevent
+// signature replay; both 0xa4b1 (Arbitrum) and 0x66eee work, but mirroring
+// the canonical SDK reduces interop surprises.
+pub const HYPERCORE_SIGNATURE_CHAIN_ID_MAINNET: &str = "0x66eee";
 
 pub const ABS_RPC_MAINNET: &str = "https://api.mainnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
@@ -107,8 +115,11 @@ pub const POL_WORMHOLE_ADDRESS_TESTNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3
 
 pub const HYPEREVM_RPC_TESTNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm";
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0xf353b40fC144d1c6c5BCdda712fa6De833016aF9";
 pub const HYPEREVM_WORMHOLE_ADDRESS_TESTNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
+pub const HYPERCORE_API_TESTNET: &str = "https://api.hyperliquid-testnet.xyz";
+pub const HYPERCORE_SIGNATURE_CHAIN_ID_TESTNET: &str = "0x66eee";
 
 pub const ABS_RPC_TESTNET: &str = "https://api.testnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
@@ -181,8 +192,11 @@ pub const POL_WORMHOLE_ADDRESS_DEVNET: &str = "0x6b9C8671cdDC8dEab9c719bB87cBd3e
 
 pub const HYPEREVM_RPC_DEVNET: &str = "https://rpc.hyperliquid-testnet.xyz/evm";
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
-    "0x0000000000000000000000000000000000000000";
+    "0xf353b40fC144d1c6c5BCdda712fa6De833016aF9";
 pub const HYPEREVM_WORMHOLE_ADDRESS_DEVNET: &str = "0xBB73cB66C26740F31d1FabDC6b7A46a038A300dd";
+
+pub const HYPERCORE_API_DEVNET: &str = HYPERCORE_API_TESTNET;
+pub const HYPERCORE_SIGNATURE_CHAIN_ID_DEVNET: &str = HYPERCORE_SIGNATURE_CHAIN_ID_TESTNET;
 
 pub const ABS_RPC_DEVNET: &str = "https://api.testnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =

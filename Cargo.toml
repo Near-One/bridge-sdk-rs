@@ -10,6 +10,7 @@ members = [
     "bridge-sdk/bridge-clients/wormhole-bridge-client",
     "bridge-sdk/bridge-clients/utxo-bridge-client",
     "bridge-sdk/bridge-clients/starknet-bridge-client",
+    "bridge-sdk/bridge-clients/hypercore-bridge-client",
     "bridge-sdk/crypto-utils",
     "bridge-sdk/utxo-utils",
     "bridge-sdk/light-client"
