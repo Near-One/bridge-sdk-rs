@@ -86,8 +86,16 @@ sol! {
     }
 }
 
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface HlBridgeToken {
+        event CoreReceived(address indexed sender, uint8 indexed action, uint256 amount, bytes data);
+    }
+}
+
 // Helper type for InitTransferFilter compatibility
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InitTransferFilter {
     pub sender: Address,
     pub token_address: Address,
@@ -97,6 +105,29 @@ pub struct InitTransferFilter {
     pub native_fee: u128,
     pub recipient: String,
     pub message: String,
+}
+
+/// Decoded `HlBridgeToken.CoreReceived` event. `sender` is the originating
+/// HyperCore user (passed through as `from`); `data` is the full
+/// `tag || abi.encoded payload` bytes.
+#[derive(Debug, Clone)]
+pub struct CoreReceivedFilter {
+    pub sender: Address,
+    pub action: u8,
+    pub amount: U256,
+    pub data: Bytes,
+}
+
+/// Pair of events emitted in the same HyperEVM tx when a HyperCore user
+/// triggers `ACTION_INIT_TRANSFER` on an HlBridgeToken:
+/// - `CoreReceived` carries the originating Core user (`sender`).
+/// - `InitTransfer` is emitted by `OmniBridge`, but its `sender` field is the
+///   HlBridgeToken contract address, not the Core user. Correlate the two to
+///   attribute the transfer back to the originating HyperCore account.
+#[derive(Debug, Clone)]
+pub struct CoreInitiatedTransfer {
+    pub init_transfer: InitTransferFilter,
+    pub core_received: CoreReceivedFilter,
 }
 
 /// Bridging NEAR-originated NEP-141 tokens to EVM and back
@@ -490,6 +521,79 @@ impl EvmBridgeClient {
     pub async fn get_init_transfer_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
         self.get_event_log(tx_hash, OmniBridge::InitTransfer::SIGNATURE)
             .await
+    }
+
+    /// Fetches the `HlBridgeToken.CoreReceived` log emitted by `hl_bridge_token`
+    /// in the receipt of `tx_hash`. Use this to verify that a HyperCore-originated
+    /// `sendToEvmWithData` action landed on HyperEVM as expected.
+    pub async fn get_core_received_log(
+        &self,
+        tx_hash: TxHash,
+        hl_bridge_token: Address,
+    ) -> Result<alloy::rpc::types::Log> {
+        let sig_hash =
+            alloy::primitives::keccak256(HlBridgeToken::CoreReceived::SIGNATURE.as_bytes());
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await?
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "Transaction receipt missing".to_string(),
+            ))?;
+
+        receipt
+            .inner
+            .into_logs()
+            .into_iter()
+            .find(|log| {
+                log.address() == hl_bridge_token
+                    && log
+                        .topics()
+                        .first()
+                        .is_some_and(|topic| topic.0 == sig_hash.0)
+            })
+            .ok_or(EvmBridgeClientError::BlockchainDataError(format!(
+                "CoreReceived log from {hl_bridge_token:?} missing in tx {tx_hash}"
+            )))
+    }
+
+    /// Correlates `InitTransfer` and `CoreReceived` in the same HyperEVM tx.
+    ///
+    /// `InitTransfer.sender` is the HlBridgeToken contract address (not the
+    /// HyperCore user) when the transfer was initiated via the
+    /// `ACTION_INIT_TRANSFER` callback. The originating Core user is recoverable
+    /// only from the `CoreReceived` log, which carries `sender == from`.
+    pub async fn parse_core_initiated_transfer(
+        &self,
+        tx_hash: TxHash,
+        hl_bridge_token: Address,
+    ) -> Result<CoreInitiatedTransfer> {
+        let init_transfer = self.get_transfer_event(tx_hash).await?;
+
+        let core_log = self.get_core_received_log(tx_hash, hl_bridge_token).await?;
+        let decoded =
+            HlBridgeToken::CoreReceived::decode_log(&core_log.into_inner()).map_err(|err| {
+                EvmBridgeClientError::BlockchainDataError(format!(
+                    "Failed to decode CoreReceived log: {err}"
+                ))
+            })?;
+
+        let HlBridgeToken::CoreReceived {
+            sender,
+            action,
+            amount,
+            data,
+        } = decoded.data;
+
+        Ok(CoreInitiatedTransfer {
+            init_transfer,
+            core_received: CoreReceivedFilter {
+                sender,
+                action,
+                amount,
+                data,
+            },
+        })
     }
 
     pub async fn get_deploy_token_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {

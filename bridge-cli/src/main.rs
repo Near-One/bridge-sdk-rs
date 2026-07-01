@@ -94,6 +94,11 @@ struct CliConfig {
     hyperevm_wormhole_address: Option<String>,
 
     #[arg(long)]
+    hypercore_api: Option<String>,
+    #[arg(long)]
+    hypercore_signature_chain_id: Option<String>,
+
+    #[arg(long)]
     abs_rpc: Option<String>,
     #[arg(long)]
     abs_private_key: Option<String>,
@@ -239,6 +244,11 @@ impl CliConfig {
                 .hyperevm_wormhole_address
                 .or(other.hyperevm_wormhole_address),
 
+            hypercore_api: self.hypercore_api.or(other.hypercore_api),
+            hypercore_signature_chain_id: self
+                .hypercore_signature_chain_id
+                .or(other.hypercore_signature_chain_id),
+
             abs_rpc: self.abs_rpc.or(other.abs_rpc),
             abs_private_key: self.abs_private_key.or(other.abs_private_key),
             abs_bridge_token_factory_address: self
@@ -348,6 +358,9 @@ fn env_config() -> CliConfig {
         hyperevm_bridge_token_factory_address: env::var("HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS")
             .ok(),
         hyperevm_wormhole_address: env::var("HYPEREVM_WORMHOLE_ADDRESS").ok(),
+
+        hypercore_api: env::var("HYPERCORE_API").ok(),
+        hypercore_signature_chain_id: env::var("HYPERCORE_SIGNATURE_CHAIN_ID").ok(),
 
         abs_rpc: env::var("ABS_RPC").ok(),
         abs_private_key: env::var("ABS_PRIVATE_KEY").ok(),
@@ -467,6 +480,11 @@ fn default_config(network: Network) -> CliConfig {
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_MAINNET.to_owned()),
 
+            hypercore_api: Some(defaults::HYPERCORE_API_MAINNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_MAINNET.to_owned(),
+            ),
+
             abs_rpc: Some(defaults::ABS_RPC_MAINNET.to_owned()),
             abs_private_key: None,
             abs_bridge_token_factory_address: Some(
@@ -580,6 +598,11 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+
+            hypercore_api: Some(defaults::HYPERCORE_API_TESTNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_TESTNET.to_owned(),
+            ),
 
             abs_rpc: Some(defaults::ABS_RPC_TESTNET.to_owned()),
             abs_private_key: None,
@@ -695,6 +718,11 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+
+            hypercore_api: Some(defaults::HYPERCORE_API_DEVNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_DEVNET.to_owned(),
+            ),
 
             abs_rpc: Some(defaults::ABS_RPC_DEVNET.to_owned()),
             abs_private_key: None,

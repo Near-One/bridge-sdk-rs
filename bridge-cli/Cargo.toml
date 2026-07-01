@@ -1,6 +1,6 @@
 [package]
 name = "bridge-cli"
-version = "0.3.64"
+version = "0.3.65"
 edition = "2021"
 repository = "https://github.com/Near-One/bridge-sdk-rs"
 rust-version = "1.88.0"
@@ -28,6 +28,7 @@ wormhole-bridge-client = { path = "../bridge-sdk/bridge-clients/wormhole-bridge-
 utxo-bridge-client = { path = "../bridge-sdk/bridge-clients/utxo-bridge-client" }
 starknet-bridge-client = { path = "../bridge-sdk/bridge-clients/starknet-bridge-client" }
 aptos-bridge-client = { path = "../bridge-sdk/bridge-clients/aptos-bridge-client" }
+hypercore-bridge-client = { path = "../bridge-sdk/bridge-clients/hypercore-bridge-client" }
 utxo-utils = { path = "../bridge-sdk/utxo-utils" }
 near-sdk.workspace = true
 near-mpc-contract-interface.workspace = true

@@ -5,6 +5,7 @@ use alloy::{
 use aptos_bridge_client::error::AptosBridgeClientError;
 use eth_proof::{EthClientError, EthProofError};
 use evm_bridge_client::error::EvmBridgeClientError;
+use hypercore_bridge_client::error::HyperCoreBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_client::client_error::ClientError;
@@ -72,6 +73,12 @@ pub enum BridgeSdkError {
     AptosOtherError(String),
     #[error("Transaction has not reached the required MPC finality")]
     MpcFinalityNotReached,
+    #[error("Error working with HyperCore: {0}")]
+    HyperCoreError(String),
+    #[error("Hyperliquid /exchange rejected the action: {0}")]
+    HyperCoreActionRejected(String),
+    #[error("Timed out waiting for CoreReceived log on HyperEVM")]
+    HyperCorePollTimeout,
 }
 
 impl From<SolanaBridgeClientError> for BridgeSdkError {
@@ -147,6 +154,22 @@ impl From<AptosBridgeClientError> for BridgeSdkError {
             AptosBridgeClientError::ConfigError(e) => Self::ConfigError(e),
             AptosBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             AptosBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
+        }
+    }
+}
+
+impl From<HyperCoreBridgeClientError> for BridgeSdkError {
+    fn from(error: HyperCoreBridgeClientError) -> Self {
+        match error {
+            HyperCoreBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            HyperCoreBridgeClientError::InvalidArgument(e)
+            | HyperCoreBridgeClientError::InvalidSignatureChainId(e) => Self::InvalidArgument(e),
+            HyperCoreBridgeClientError::Encoding(e)
+            | HyperCoreBridgeClientError::Signing(e)
+            | HyperCoreBridgeClientError::Http(e)
+            | HyperCoreBridgeClientError::Rpc(e) => Self::HyperCoreError(e),
+            HyperCoreBridgeClientError::ExchangeRejected(e) => Self::HyperCoreActionRejected(e),
+            HyperCoreBridgeClientError::PollTimeout => Self::HyperCorePollTimeout,
         }
     }
 }
