@@ -519,6 +519,43 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
+    /// Deploys a token on NEAR from a pre-built `DeployTokenArgs` (e.g. carrying an MPC
+    /// proof), using the standard deploy-token storage deposit.
+    pub async fn deploy_token(
+        &self,
+        args: DeployTokenArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let deposit = self.get_required_balance_for_deploy_token().await?;
+
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: omni_bridge_id,
+                method_name: "deploy_token".to_string(),
+                args: borsh::to_vec(&args)
+                    .map_err(|err| BridgeSdkError::UnknownError(err.to_string()))?,
+                gas: DEPLOY_TOKEN_GAS,
+                deposit,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent deploy token transaction"
+        );
+
+        Ok(tx_hash)
+    }
+
     /// Deploys a token on the target chain using the evm proof
     #[tracing::instrument(skip_all, name = "DEPLOY TOKEN")]
     pub async fn deploy_token_with_evm_proof(

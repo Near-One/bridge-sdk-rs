@@ -464,7 +464,8 @@ impl EvmBridgeClient {
             | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
-            | ChainKind::Strk => Err(EvmBridgeClientError::InvalidArgument(format!(
+            | ChainKind::Strk
+            | ChainKind::Aptos => Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Expected evm chain but got {chain_kind:?}"
             ))),
         }
@@ -605,6 +606,13 @@ impl EvmBridgeClient {
             .await
     }
 
+    pub async fn get_log_metadata_log(&self, tx_hash: TxHash) -> Result<alloy::rpc::types::Log> {
+        // `LogMetadata` is not declared in the `sol!` binding, so use the signature
+        // literal (the same one `get_proof_for_event` uses for `ProofKind::LogMetadata`).
+        self.get_event_log(tx_hash, "LogMetadata(address,string,string,uint8)")
+            .await
+    }
+
     async fn get_event_log(
         &self,
         tx_hash: TxHash,
@@ -720,7 +728,8 @@ impl EvmBridgeClient {
             | OmniAddress::Fogo(_)
             | OmniAddress::Btc(_)
             | OmniAddress::Zcash(_)
-            | OmniAddress::Strk(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
+            | OmniAddress::Strk(_)
+            | OmniAddress::Aptos(_) => Err(EvmBridgeClientError::InvalidArgument(format!(
                 "Unsupported address type in SignTransferEvent: {address:?}",
             ))),
         }

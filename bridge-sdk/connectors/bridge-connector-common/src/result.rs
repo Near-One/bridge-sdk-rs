@@ -2,6 +2,7 @@ use alloy::{
     providers::PendingTransactionError,
     transports::{RpcError, TransportErrorKind},
 };
+use aptos_bridge_client::error::AptosBridgeClientError;
 use eth_proof::{EthClientError, EthProofError};
 use evm_bridge_client::error::EvmBridgeClientError;
 use hypercore_bridge_client::error::HyperCoreBridgeClientError;
@@ -66,6 +67,10 @@ pub enum BridgeSdkError {
     StarknetRpcError(String),
     #[error("Error working with Starknet: {0}")]
     StarknetOtherError(String),
+    #[error("Error communicating with Aptos RPC: {0}")]
+    AptosRpcError(String),
+    #[error("Error working with Aptos: {0}")]
+    AptosOtherError(String),
     #[error("Transaction has not reached the required MPC finality")]
     MpcFinalityNotReached,
     #[error("Error working with HyperCore: {0}")]
@@ -136,6 +141,19 @@ impl From<StarknetBridgeClientError> for BridgeSdkError {
             StarknetBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             StarknetBridgeClientError::TransactionError(e) => Self::StarknetOtherError(e),
             StarknetBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
+        }
+    }
+}
+
+impl From<AptosBridgeClientError> for BridgeSdkError {
+    fn from(error: AptosBridgeClientError) -> Self {
+        match error {
+            AptosBridgeClientError::RestError(e) => Self::AptosRpcError(e),
+            AptosBridgeClientError::TransactionError(e) => Self::AptosOtherError(e),
+            AptosBridgeClientError::BlockchainDataError(e) => Self::AptosOtherError(e),
+            AptosBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            AptosBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            AptosBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }

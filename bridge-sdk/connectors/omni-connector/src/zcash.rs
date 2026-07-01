@@ -99,7 +99,7 @@ impl OmniConnector {
             );
 
             builder
-                .add_transparent_p2pkh_input(transparent_pubkey, utxo, coin)
+                .add_transparent_input(transparent_pubkey, utxo, coin)
                 .map_err(|err| {
                     BridgeSdkError::ZCashOrchardBundleError(format!(
                         "Failed to add transparent input for UTXO: {err}"
@@ -268,7 +268,7 @@ impl OmniConnector {
             .add_orchard_output::<zip317::FeeRule>(
                 Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient,
-                zcash_protocol::value::Zatoshis::const_from_u64(amount),
+                amount,
                 memo_bytes,
             )
             .map_err(|err| {

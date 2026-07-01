@@ -172,6 +172,15 @@ struct CliConfig {
     starknet_chain_id: Option<String>,
 
     #[arg(long)]
+    aptos_rpc: Option<String>,
+    #[arg(long)]
+    aptos_private_key: Option<String>,
+    #[arg(long)]
+    aptos_account_address: Option<String>,
+    #[arg(long)]
+    aptos_bridge_address: Option<String>,
+
+    #[arg(long)]
     config: Option<String>,
 }
 
@@ -296,6 +305,11 @@ impl CliConfig {
                 .or(other.starknet_bridge_address),
             starknet_chain_id: self.starknet_chain_id.or(other.starknet_chain_id),
 
+            aptos_rpc: self.aptos_rpc.or(other.aptos_rpc),
+            aptos_private_key: self.aptos_private_key.or(other.aptos_private_key),
+            aptos_account_address: self.aptos_account_address.or(other.aptos_account_address),
+            aptos_bridge_address: self.aptos_bridge_address.or(other.aptos_bridge_address),
+
             config: self.config.or(other.config),
         }
     }
@@ -399,6 +413,11 @@ fn env_config() -> CliConfig {
         starknet_account_address: env::var("STARKNET_ACCOUNT_ADDRESS").ok(),
         starknet_bridge_address: env::var("STARKNET_BRIDGE_ADDRESS").ok(),
         starknet_chain_id: env::var("STARKNET_CHAIN_ID").ok(),
+
+        aptos_rpc: env::var("APTOS_RPC").ok(),
+        aptos_private_key: env::var("APTOS_PRIVATE_KEY").ok(),
+        aptos_account_address: env::var("APTOS_ACCOUNT_ADDRESS").ok(),
+        aptos_bridge_address: env::var("APTOS_BRIDGE_ADDRESS").ok(),
 
         config: None,
     }
@@ -517,6 +536,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_MAINNET.to_owned()),
 
+            aptos_rpc: Some(defaults::APTOS_RPC_MAINNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
+
             config: None,
         },
         Network::Testnet => CliConfig {
@@ -630,6 +656,13 @@ fn default_config(network: Network) -> CliConfig {
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_TESTNET.to_owned()),
 
+            aptos_rpc: Some(defaults::APTOS_RPC_TESTNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
+
             config: None,
         },
         Network::Devnet => CliConfig {
@@ -742,6 +775,13 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_DEVNET.to_owned()),
+
+            aptos_rpc: Some(defaults::APTOS_RPC_DEVNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
 
             config: None,
         },

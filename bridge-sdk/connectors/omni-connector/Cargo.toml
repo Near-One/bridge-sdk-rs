@@ -1,6 +1,6 @@
 [package]
 name = "omni-connector"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 rust-version = "1.88.0"
 
@@ -47,6 +47,7 @@ solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
+aptos-bridge-client = { path = "../../bridge-clients/aptos-bridge-client" }
 hypercore-bridge-client = { path = "../../bridge-clients/hypercore-bridge-client" }
 starknet.workspace = true
 near-mpc-contract-interface.workspace = true
