@@ -139,7 +139,7 @@ pub const BTC_CONNECTOR_TESTNET: &str = "btc-connector.n-bridge.testnet";
 pub const BTC_TESTNET: &str = "nbtc.n-bridge.testnet";
 pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 
-pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
+pub const ZCASH_ENDPOINT_TESTNET: &str = "http://127.0.0.1:18232";
 pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
