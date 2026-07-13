@@ -816,12 +816,14 @@ impl OmniConnector {
             .await
     }
 
-    /// Build the args for a BTC refund request without submitting the
-    /// transaction. Bitcoin only. The `prefetched` proof can be supplied by a
+    /// Build the args for a UTXO-chain refund request without submitting the
+    /// transaction. The `prefetched` proof can be supplied by a
     /// prior `resolve_deposit_vout` / `resolve_deposit_from_tx` call to skip
     /// the redundant `extract_btc_proof`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_btc_request_refund_args(
         &self,
+        chain: ChainKind,
         btc_tx_hash: &str,
         vout: usize,
         deposit_args: BtcDepositArgs,
@@ -835,7 +837,7 @@ impl OmniConnector {
             Some(p) => p,
             None => {
                 let proof = self
-                    .utxo_bridge_client(ChainKind::Btc)?
+                    .utxo_bridge_client(chain)?
                     .extract_btc_proof(btc_tx_hash)
                     .await?;
                 PrefetchedTxData { proof }
@@ -851,7 +853,7 @@ impl OmniConnector {
         let deposit_amount = u128::from(deposit_output.value_sat);
 
         self.ensure_sufficient_btc_confirmations(
-            ChainKind::Btc,
+            chain,
             proof_data.block_height,
             deposit_amount,
             false,
@@ -892,10 +894,11 @@ impl OmniConnector {
         })
     }
 
-    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
+    /// Submit a refund request for a never-finalized UTXO-chain deposit.
     #[allow(clippy::too_many_arguments)]
     pub async fn btc_request_refund(
         &self,
+        chain: ChainKind,
         btc_tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
@@ -906,6 +909,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let args = self
             .build_btc_request_refund_args(
+                chain,
                 &btc_tx_hash,
                 vout,
                 deposit_args,
@@ -916,27 +920,28 @@ impl OmniConnector {
             .await?;
 
         self.near_bridge_client()?
-            .btc_request_refund(args, transaction_options)
+            .btc_request_refund(chain, args, transaction_options)
             .await
     }
 
-    /// Verify that the refund BTC transaction has been confirmed on Bitcoin. Bitcoin only.
+    /// Verify that the refund transaction has been confirmed on the UTXO chain.
     pub async fn btc_verify_refund_finalize(
         &self,
+        chain: ChainKind,
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
 
         let pending_info = near_bridge_client
-            .get_btc_pending_info(ChainKind::Btc, btc_tx_hash.clone())
+            .get_btc_pending_info(chain, btc_tx_hash.clone())
             .await?;
 
         self.ensure_sufficient_btc_confirmations(
-            ChainKind::Btc,
+            chain,
             proof_data.block_height,
             pending_info.actual_received_amount,
             false,
@@ -955,7 +960,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_refund_finalize(args, transaction_options)
+            .btc_verify_refund_finalize(chain, args, transaction_options)
             .await
     }
 

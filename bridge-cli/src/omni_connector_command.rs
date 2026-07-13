@@ -805,15 +805,11 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Request a refund for a never-finalized BTC deposit (Bitcoin only)")]
+    #[clap(about = "Request a refund for a never-finalized UTXO-chain deposit (Bitcoin/Zcash)")]
     BtcRequestRefund {
-        #[clap(
-            short,
-            long,
-            help = "Chain the deposit was made on. Only Bitcoin is currently supported; the flag exists for forward compatibility."
-        )]
+        #[clap(short, long, help = "Chain the deposit was made on (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
-        #[clap(short, long, help = "Bitcoin deposit tx hash")]
+        #[clap(short, long, help = "Bitcoin/Zcash deposit tx hash")]
         btc_tx_hash: String,
         #[clap(
             short,
@@ -855,9 +851,16 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Verify the refund BTC transaction is confirmed (Bitcoin only)")]
+    #[clap(about = "Verify the refund transaction is confirmed on the UTXO chain (Bitcoin/Zcash)")]
     BtcVerifyRefundFinalize {
-        #[clap(short, long, help = "Refund Bitcoin tx hash")]
+        #[clap(
+            short,
+            long,
+            help = "Chain the refund was made on (Bitcoin/Zcash)",
+            default_value = "btc"
+        )]
+        chain: UTXOChainArg,
+        #[clap(short, long, help = "Refund Bitcoin/Zcash tx hash")]
         btc_tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -1810,10 +1813,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             config_cli,
         } => {
             let chain_kind: ChainKind = chain.into();
-            if chain_kind != ChainKind::Btc {
-                panic!("btc-request-refund currently supports only --chain btc; got {chain:?}");
-            }
-
             let connector = omni_connector(network, config_cli);
 
             let manual = match recipient_id {
@@ -1867,6 +1866,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             // transaction is printed as an unsigned payload instead of broadcast.
             connector
                 .btc_request_refund(
+                    chain_kind,
                     btc_tx_hash,
                     resolved_vout,
                     btc_deposit_args,
@@ -1879,11 +1879,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyRefundFinalize {
+            chain,
             btc_tx_hash,
             config_cli,
         } => {
             omni_connector(network, config_cli)
-                .btc_verify_refund_finalize(btc_tx_hash, TransactionOptions::default())
+                .btc_verify_refund_finalize(
+                    chain.into(),
+                    btc_tx_hash,
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

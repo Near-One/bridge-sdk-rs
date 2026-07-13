@@ -736,15 +736,16 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Submit a refund request for a never-finalized BTC deposit (Bitcoin only).
+    /// Submit a refund request for a never-finalized UTXO-chain deposit.
     #[tracing::instrument(skip_all, name = "NEAR BTC REQUEST REFUND")]
     pub async fn btc_request_refund(
         &self,
+        chain: ChainKind,
         args: BtcRequestRefundArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
@@ -768,15 +769,16 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Verify that the refund BTC transaction has been confirmed (Bitcoin only).
+    /// Verify that the refund transaction has been confirmed on the UTXO chain.
     #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY REFUND FINALIZE")]
     pub async fn btc_verify_refund_finalize(
         &self,
+        chain: ChainKind,
         args: BtcVerifyRefundFinalizeArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(ChainKind::Btc)?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
             endpoint,
             ChangeRequest {
