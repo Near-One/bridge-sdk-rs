@@ -382,6 +382,19 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             ))
         })?;
 
+        if !response["error"].is_null() {
+            return Err(UtxoClientError::RpcError(format!(
+                "getrawtransaction failed for tx {tx_hash}: {}",
+                response["error"]
+            )));
+        }
+
+        if response["result"].is_null() {
+            return Err(UtxoClientError::RpcError(format!(
+                "Transaction {tx_hash} not found by the RPC node. Check that the tx hash and RPC endpoint match the expected network, the tx has been broadcast, and the node has txindex enabled."
+            )));
+        }
+
         serde_json::from_value(response["result"].clone()).map_err(|e| {
             UtxoClientError::RpcError(format!(
                 "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
