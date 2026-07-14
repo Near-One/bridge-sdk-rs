@@ -19,7 +19,7 @@ use omni_connector::{
     OmniConnector, OmniConnectorBuilder,
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
-use solana_bridge_client::SolanaBridgeClientBuilder;
+use solana_bridge_client::{SolanaBridgeClientBuilder, SvmSigner};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
 use starknet_bridge_client::StarknetBridgeClientBuilder;
@@ -129,6 +129,20 @@ fn evm_address_to_omni(chain: ChainKind, address: &str) -> Result<String, String
 }
 
 fn derive_svm_sender(chain: SvmChainArg, config: &CliConfig) -> Result<String, String> {
+    if config.dry_run {
+        let public_key = match chain {
+            SvmChainArg::Sol => config
+                .solana_public_key
+                .as_ref()
+                .ok_or("solana_public_key not set")?,
+            SvmChainArg::Fogo => config
+                .fogo_public_key
+                .as_ref()
+                .ok_or("fogo_public_key not set")?,
+        };
+        return Ok(format!("{}:{public_key}", chain.prefix()));
+    }
+
     let kp = match chain {
         SvmChainArg::Sol => config
             .solana_keypair
@@ -957,40 +971,137 @@ pub(crate) enum InternalSubCommand {
     },
 }
 
-/// `--dry-run` builds and prints an unsigned NEAR transaction; it is meaningless
-/// (and dangerous to silently ignore) for commands that broadcast to another
-/// chain. Reject those up front so a stray `--dry-run` never lets a non-NEAR
-/// transaction go out for real.
+/// `--dry-run` builds and prints an unsigned transaction instead of
+/// broadcasting. It is supported for NEAR commands and for SVM (Solana/Fogo)
+/// commands — the latter require the target chain's fee-payer public key.
+/// Commands submitting to any other chain are rejected up front so a stray
+/// `--dry-run` never lets a transaction go out for real.
 fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
     use OmniConnectorSubCommand as Cmd;
 
-    let submits_to_non_near = match cmd {
+    fn require_svm_public_key(chain: SvmChainArg, config_cli: &CliConfig, network: Network) {
+        let config = combined_config(config_cli.clone(), network);
+        if !config.dry_run {
+            return;
+        }
+        let (key, flag) = match chain {
+            SvmChainArg::Sol => (
+                &config.solana_public_key,
+                "--solana-public-key / SOLANA_PUBLIC_KEY",
+            ),
+            SvmChainArg::Fogo => (
+                &config.fogo_public_key,
+                "--fogo-public-key / FOGO_PUBLIC_KEY",
+            ),
+        };
+        if key.is_none() {
+            eprintln!(
+                "error: --dry-run for an SVM command requires the fee-payer public key ({flag})"
+            );
+            std::process::exit(1);
+        }
+    }
+
+    let submits_to_unsupported_chain = match cmd {
         Cmd::EvmInitTransfer { config_cli, .. }
         | Cmd::EvmFinTransfer { config_cli, .. }
         | Cmd::StarknetInitTransfer { config_cli, .. }
         | Cmd::StarknetFinTransfer { config_cli, .. }
+        // `initialize` needs the program keypair as a real signer; no dry-run.
         | Cmd::SvmInitialize { config_cli, .. }
-        | Cmd::SvmInitTransfer { config_cli, .. }
-        | Cmd::SvmInitTransferSol { config_cli, .. }
-        | Cmd::SvmFinalizeTransfer { config_cli, .. }
-        | Cmd::SvmFinalizeTransferSol { config_cli, .. }
-        | Cmd::SvmSetAdmin { config_cli, .. }
-        | Cmd::SvmPause { config_cli, .. }
-        | Cmd::SvmUpdateMetadata { config_cli, .. }
+        // Signs and POSTs a Hyperliquid action straight to the exchange API;
+        // never goes through a dry-run-aware client.
+        | Cmd::HyperCoreTransfer { config_cli, .. }
         | Cmd::BtcFinTransfer { config_cli, .. } => {
             combined_config(config_cli.clone(), network).dry_run
         }
-        // `deploy-token --chain Near` is a NEAR transaction; any other chain is not.
+        Cmd::SvmInitTransfer {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmInitTransferSol {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmFinalizeTransfer {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmFinalizeTransferSol {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmSetAdmin {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmPause {
+            chain, config_cli, ..
+        }
+        | Cmd::SvmUpdateMetadata {
+            chain, config_cli, ..
+        } => {
+            require_svm_public_key(*chain, config_cli, network);
+            false
+        }
+        // `deploy-token --chain Near` is a NEAR transaction; Sol/Fogo dry-run
+        // via the SVM path; any other chain would broadcast for real.
         Cmd::DeployToken {
             chain, config_cli, ..
-        } if *chain != ChainKind::Near => combined_config(config_cli.clone(), network).dry_run,
-        _ => false,
+        } => match chain {
+            ChainKind::Near => false,
+            ChainKind::Sol => {
+                require_svm_public_key(SvmChainArg::Sol, config_cli, network);
+                false
+            }
+            ChainKind::Fogo => {
+                require_svm_public_key(SvmChainArg::Fogo, config_cli, network);
+                false
+            }
+            _ => combined_config(config_cli.clone(), network).dry_run,
+        },
+        // `log-metadata` routes by token chain: NEAR and SVM support dry-run;
+        // EVM/Starknet tokens would broadcast for real.
+        Cmd::LogMetadata { token, config_cli } => match token.get_chain() {
+            ChainKind::Near => false,
+            ChainKind::Sol => {
+                require_svm_public_key(SvmChainArg::Sol, config_cli, network);
+                false
+            }
+            ChainKind::Fogo => {
+                require_svm_public_key(SvmChainArg::Fogo, config_cli, network);
+                false
+            }
+            _ => combined_config(config_cli.clone(), network).dry_run,
+        },
+        // Read-only — no transaction is broadcast.
+        Cmd::IsTransferFinalised { .. } | Cmd::SvmGetVersion { .. } | Cmd::GetBitcoinAddress { .. } => {
+            false
+        }
+        // NEAR transactions — the NEAR client honors --dry-run.
+        Cmd::NearStorageDeposit { .. }
+        | Cmd::NearSignTransfer { .. }
+        | Cmd::NearInitTransfer { .. }
+        | Cmd::NearFinTransfer { .. }
+        | Cmd::NearFastFinTransfer { .. }
+        | Cmd::NearFastFinTransferFromUtxo { .. }
+        | Cmd::BindToken { .. }
+        | Cmd::NearSignBTCTransaction { .. }
+        | Cmd::NearSubmitBtcTransfer { .. }
+        | Cmd::NearFinTransferBTC { .. }
+        | Cmd::BtcVerifyWithdraw { .. }
+        | Cmd::BtcRBFIncreaseGasFee { .. }
+        | Cmd::BtcCancelWithdraw { .. }
+        | Cmd::BtcVerifyActiveUtxoManagement { .. }
+        | Cmd::BtcRequestRefund { .. }
+        | Cmd::BtcVerifyRefundFinalize { .. }
+        | Cmd::ActiveUTXOManagement { .. } => false,
+        // `Internal` wraps hidden subcommands: `InitNearToBitcoinTransfer` (a
+        // NEAR transaction — dry-run honored by the NEAR client) and
+        // `SvmGetTokenVault` (read-only). Neither submits to an unsupported
+        // chain.
+        Cmd::Internal { .. } => false,
     };
 
-    if submits_to_non_near {
+    if submits_to_unsupported_chain {
         eprintln!(
-            "error: --dry-run is only supported for NEAR transactions; this command \
-             submits to another chain and would broadcast for real"
+            "error: --dry-run is not supported for this command's target chain; it \
+             would broadcast for real"
         );
         std::process::exit(1);
     }
@@ -2115,8 +2226,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     });
 
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
-        .chain(Some(ChainKind::Sol))
-        .client(Some(RpcClient::new(combined_config.solana_rpc.unwrap())))
+        .client(combined_config.solana_rpc.map(RpcClient::new))
         .program_id(
             combined_config
                 .solana_bridge_address
@@ -2137,18 +2247,16 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .solana_wormhole_post_message_shim_event_authority
                 .map(|addr| addr.parse().unwrap()),
         )
-        .keypair(
-            combined_config
-                .solana_keypair
-                .as_deref()
-                .map(extract_solana_keypair),
-        )
+        .signer(svm_signer_from_config(
+            combined_config.solana_keypair.as_deref(),
+            combined_config.solana_public_key.as_deref(),
+            combined_config.dry_run,
+        ))
         .build()
         .unwrap();
 
     let fogo_bridge_client = SolanaBridgeClientBuilder::default()
-        .chain(Some(ChainKind::Fogo))
-        .client(combined_config.fogo_rpc.map(|rpc| RpcClient::new(rpc)))
+        .client(combined_config.fogo_rpc.map(RpcClient::new))
         .program_id(
             combined_config
                 .fogo_bridge_address
@@ -2169,12 +2277,11 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .fogo_wormhole_post_message_shim_event_authority
                 .map(|addr| addr.parse().unwrap()),
         )
-        .keypair(
-            combined_config
-                .fogo_keypair
-                .as_deref()
-                .map(extract_solana_keypair),
-        )
+        .signer(svm_signer_from_config(
+            combined_config.fogo_keypair.as_deref(),
+            combined_config.fogo_public_key.as_deref(),
+            combined_config.dry_run,
+        ))
         .build()
         .unwrap();
 
@@ -2280,5 +2387,17 @@ fn extract_solana_keypair(keypair: &str) -> Keypair {
         Keypair::read_from_file(Path::new(&keypair)).unwrap()
     } else {
         Keypair::from_base58_string(keypair)
+    }
+}
+
+fn svm_signer_from_config(
+    keypair: Option<&str>,
+    public_key: Option<&str>,
+    dry_run: bool,
+) -> Option<SvmSigner> {
+    if dry_run {
+        public_key.map(|pk| SvmSigner::DryRun(pk.parse().expect("Invalid SVM public key")))
+    } else {
+        keypair.map(extract_solana_keypair).map(SvmSigner::Keypair)
     }
 }

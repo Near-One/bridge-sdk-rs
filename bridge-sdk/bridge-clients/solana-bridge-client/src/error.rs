@@ -12,6 +12,8 @@ pub enum SolanaBridgeClientError {
     InvalidArgument(String),
     #[error("Invalid event")]
     InvalidEvent,
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 }
 
 impl From<ClientError> for SolanaBridgeClientError {

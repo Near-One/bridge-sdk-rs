@@ -1,6 +1,6 @@
 [package]
 name = "solana-bridge-client"
-version = "0.2.10"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
@@ -20,6 +20,7 @@ spl-token-2022 = { workspace = true, features = ["no-entrypoint"] }
 spl-associated-token-account = { workspace = true, features = ["no-entrypoint"] }
 thiserror.workspace = true
 openssl-sys.workspace = true
+bincode.workspace = true
 
 [lib]
 path = "src/solana_bridge_client.rs"

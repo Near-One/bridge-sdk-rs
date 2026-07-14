@@ -3,7 +3,6 @@ use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
-use omni_types::ChainKind;
 use sha2::{Digest, Sha256};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
@@ -118,16 +117,44 @@ pub struct WormholeSequence {
     pub sequence: u64,
 }
 
+/// Transaction signer: a real keypair, or — for dry-run/offline-signing flows —
+/// only the signer's public key (no private key required).
+pub enum SvmSigner {
+    Keypair(Keypair),
+    DryRun(Pubkey),
+}
+
+impl SvmSigner {
+    pub fn pubkey(&self) -> Pubkey {
+        match self {
+            SvmSigner::Keypair(keypair) => keypair.pubkey(),
+            SvmSigner::DryRun(pubkey) => *pubkey,
+        }
+    }
+
+    pub fn keypair(&self) -> Result<&Keypair, SolanaBridgeClientError> {
+        match self {
+            SvmSigner::Keypair(keypair) => Ok(keypair),
+            SvmSigner::DryRun(_) => Err(SolanaBridgeClientError::ConfigError(
+                "Operation requires a keypair but the client is in dry-run mode".to_string(),
+            )),
+        }
+    }
+
+    pub const fn is_dry_run(&self) -> bool {
+        matches!(self, SvmSigner::DryRun(_))
+    }
+}
+
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct SolanaBridgeClient {
-    chain: Option<ChainKind>,
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
     wormhole_post_message_shim_program_id: Option<Pubkey>,
     wormhole_post_message_shim_event_authority: Option<Pubkey>,
-    keypair: Option<Keypair>,
+    signer: Option<SvmSigner>,
 }
 
 impl SolanaBridgeClient {
@@ -175,11 +202,8 @@ impl SolanaBridgeClient {
             ],
         );
 
-        self.send_and_confirm_transaction(
-            vec![instruction],
-            &[keypair, &wormhole_message, &program_keypair],
-        )
-        .await
+        self.send_and_confirm_transaction(vec![instruction], &[&wormhole_message, &program_keypair])
+            .await
     }
 
     pub async fn get_version(&self) -> Result<String, SolanaBridgeClientError> {
@@ -187,7 +211,7 @@ impl SolanaBridgeClient {
 
         let client = self.client()?;
         let program_id = self.program_id()?;
-        let fee_payer = self.keypair()?.pubkey();
+        let fee_payer = self.signer()?.pubkey();
 
         let instruction = Instruction {
             program_id: *program_id,
@@ -255,24 +279,31 @@ impl SolanaBridgeClient {
         Ok(version)
     }
 
-    pub async fn set_admin(&self, admin: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
+    pub fn build_set_admin_instruction(
+        &self,
+        admin: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
 
         let instruction_data = SetAdmin { admin };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
                 AccountMeta::new(config, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn set_admin(&self, admin: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_set_admin_instruction(admin, payer)?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
@@ -376,15 +407,15 @@ impl SolanaBridgeClient {
         ))
     }
 
-    pub async fn update_metadata(
+    pub fn build_update_metadata_instruction(
         &self,
         token: Pubkey,
         name: Option<String>,
         symbol: Option<String>,
         uri: Option<String>,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
@@ -397,7 +428,7 @@ impl SolanaBridgeClient {
 
         let instruction_data = UpdateMetadata { name, symbol, uri };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
@@ -407,39 +438,59 @@ impl SolanaBridgeClient {
                 AccountMeta::new(metadata, false),
                 AccountMeta::new_readonly(spl_token::ID, false),
                 AccountMeta::new_readonly(metadata_program_id, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn update_metadata(
+        &self,
+        token: Pubkey,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction =
+            self.build_update_metadata_instruction(token, name, symbol, uri, payer)?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn pause(&self) -> Result<Signature, SolanaBridgeClientError> {
+    pub fn build_pause_instruction(
+        &self,
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
 
         let instruction_data = Pause {};
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
                 AccountMeta::new(config, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn pause(&self) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_pause_instruction(payer)?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn log_metadata(&self, token: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
+    pub async fn build_log_metadata_instruction(
+        &self,
+        token: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
@@ -472,7 +523,7 @@ impl SolanaBridgeClient {
             override_symbol: String::new(),
         };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
@@ -485,7 +536,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new(wormhole_fee_collector, false),
                 AccountMeta::new(wormhole_sequence, false),
                 AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
@@ -496,19 +547,23 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(token_program_id, false),
                 AccountMeta::new_readonly(spl_associated_token_account::ID, false),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn log_metadata(&self, token: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_log_metadata_instruction(token, payer).await?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn deploy_token(
+    pub fn build_deploy_token_instruction(
         &self,
         data: DeployTokenData,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
@@ -542,7 +597,7 @@ impl SolanaBridgeClient {
 
         let instruction_data = DeployToken { data };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
@@ -554,7 +609,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new(wormhole_fee_collector, false),
                 AccountMeta::new(wormhole_sequence, false),
                 AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
@@ -565,13 +620,21 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(spl_token::ID, false),
                 AccountMeta::new_readonly(metadata_program_id, false),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn deploy_token(
+        &self,
+        data: DeployTokenData,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_deploy_token_instruction(data, payer)?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn init_transfer(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn build_init_transfer_instruction(
         &self,
         token: Pubkey,
         amount: u128,
@@ -579,10 +642,10 @@ impl SolanaBridgeClient {
         fee: u128,
         native_fee: u64,
         message: String,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
@@ -596,11 +659,7 @@ impl SolanaBridgeClient {
         }
 
         let (from_token_account, _) = Pubkey::find_program_address(
-            &[
-                keypair.pubkey().as_ref(),
-                token_program_id.as_ref(),
-                token.as_ref(),
-            ],
+            &[payer.as_ref(), token_program_id.as_ref(), token.as_ref()],
             &spl_associated_token_account::ID,
         );
 
@@ -626,7 +685,7 @@ impl SolanaBridgeClient {
             message,
         };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
@@ -641,13 +700,13 @@ impl SolanaBridgeClient {
                     AccountMeta::new(vault, false)
                 },
                 AccountMeta::new(sol_vault, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(config, false),
                 AccountMeta::new(wormhole_bridge, false),
                 AccountMeta::new(wormhole_fee_collector, false),
                 AccountMeta::new(wormhole_sequence, false),
                 AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
@@ -656,9 +715,25 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(token_program_id, false),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn init_transfer(
+        &self,
+        token: Pubkey,
+        amount: u128,
+        recipient: String,
+        fee: u128,
+        native_fee: u64,
+        message: String,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self
+            .build_init_transfer_instruction(
+                token, amount, recipient, fee, native_fee, message, payer,
+            )
+            .await?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
@@ -715,17 +790,17 @@ impl SolanaBridgeClient {
         }
     }
 
-    pub async fn init_transfer_sol(
+    pub fn build_init_transfer_sol_instruction(
         &self,
         amount: u128,
         recipient: String,
         fee: u128,
         native_fee: u64,
         message: String,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
@@ -747,18 +822,18 @@ impl SolanaBridgeClient {
             message,
         };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
                 AccountMeta::new(sol_vault, false),
-                AccountMeta::new_readonly(keypair.pubkey(), true),
+                AccountMeta::new_readonly(payer, true),
                 AccountMeta::new_readonly(config, false),
                 AccountMeta::new(wormhole_bridge, false),
                 AccountMeta::new(wormhole_fee_collector, false),
                 AccountMeta::new(wormhole_sequence, false),
                 AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
@@ -766,20 +841,33 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn init_transfer_sol(
+        &self,
+        amount: u128,
+        recipient: String,
+        fee: u128,
+        native_fee: u64,
+        message: String,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_init_transfer_sol_instruction(
+            amount, recipient, fee, native_fee, message, payer,
+        )?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn finalize_transfer(
+    pub async fn build_finalize_transfer_instruction(
         &self,
         data: FinalizeDepositData,
         solana_token: Pubkey,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
 
@@ -835,7 +923,7 @@ impl SolanaBridgeClient {
             COption::None => false,
         };
 
-        let mut accounts = vec![
+        let accounts = vec![
             AccountMeta::new(config, false),
             AccountMeta::new(used_nonces, false),
             AccountMeta::new(authority, false),
@@ -854,7 +942,7 @@ impl SolanaBridgeClient {
             AccountMeta::new(wormhole_fee_collector, false),
             AccountMeta::new(wormhole_sequence, false),
             AccountMeta::new(shim_message, false),
-            AccountMeta::new(keypair.pubkey(), true),
+            AccountMeta::new(payer, true),
             AccountMeta::new_readonly(sysvar::clock::ID, false),
             AccountMeta::new_readonly(sysvar::rent::ID, false),
             AccountMeta::new_readonly(*wormhole_core, false),
@@ -866,19 +954,33 @@ impl SolanaBridgeClient {
             AccountMeta::new_readonly(token_program_id, false),
         ];
 
-        let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, accounts);
+        Ok(Instruction::new_with_borsh(
+            *program_id,
+            &instruction_data,
+            accounts,
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn finalize_transfer(
+        &self,
+        data: FinalizeDepositData,
+        solana_token: Pubkey,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self
+            .build_finalize_transfer_instruction(data, solana_token, payer)
+            .await?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
-    pub async fn finalize_transfer_sol(
+    pub fn build_finalize_transfer_sol_instruction(
         &self,
         data: FinalizeDepositData,
-    ) -> Result<Signature, SolanaBridgeClientError> {
+        payer: Pubkey,
+    ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let wormhole_core = self.wormhole_core()?;
-        let keypair = self.keypair()?;
 
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
@@ -914,7 +1016,7 @@ impl SolanaBridgeClient {
             signature: data.signature,
         };
 
-        let instruction = Instruction::new_with_borsh(
+        Ok(Instruction::new_with_borsh(
             *program_id,
             &instruction_data,
             vec![
@@ -928,7 +1030,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new(wormhole_fee_collector, false),
                 AccountMeta::new(wormhole_sequence, false),
                 AccountMeta::new(shim_message, false),
-                AccountMeta::new(keypair.pubkey(), true),
+                AccountMeta::new(payer, true),
                 AccountMeta::new_readonly(sysvar::clock::ID, false),
                 AccountMeta::new_readonly(sysvar::rent::ID, false),
                 AccountMeta::new_readonly(*wormhole_core, false),
@@ -937,9 +1039,16 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(program::ID, false),
             ],
-        );
+        ))
+    }
 
-        self.send_and_confirm_transaction(vec![instruction], &[keypair])
+    pub async fn finalize_transfer_sol(
+        &self,
+        data: FinalizeDepositData,
+    ) -> Result<Signature, SolanaBridgeClientError> {
+        let payer = self.signer()?.pubkey();
+        let instruction = self.build_finalize_transfer_sol_instruction(data, payer)?;
+        self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
@@ -957,24 +1066,61 @@ impl SolanaBridgeClient {
         Ok((wormhole_bridge, wormhole_fee_collector, wormhole_sequence))
     }
 
+    /// Assembles the instructions into an unsigned transaction with a freshly
+    /// fetched blockhash. The transaction carries placeholder (all-zero)
+    /// signatures and must be signed and submitted within the blockhash
+    /// validity window (~60-90 seconds).
+    pub async fn build_unsigned_transaction(
+        &self,
+        instructions: Vec<Instruction>,
+        payer: Pubkey,
+    ) -> Result<Transaction, SolanaBridgeClientError> {
+        let client = self.client()?;
+        let recent_blockhash = client.get_latest_blockhash().await?;
+        Ok(Transaction::new_unsigned(
+            solana_sdk::message::Message::new_with_blockhash(
+                &instructions,
+                Some(&payer),
+                &recent_blockhash,
+            ),
+        ))
+    }
+
     async fn send_and_confirm_transaction(
         &self,
         instructions: Vec<Instruction>,
-        signers: &[&Keypair],
+        extra_signers: &[&Keypair],
     ) -> Result<Signature, SolanaBridgeClientError> {
-        let client = self.client()?;
+        match self.signer()? {
+            SvmSigner::DryRun(payer) => {
+                if !extra_signers.is_empty() {
+                    return Err(SolanaBridgeClientError::ConfigError(
+                        "Operation requires additional signers and cannot be dry-run".to_string(),
+                    ));
+                }
+                let payer = *payer;
+                let transaction = self.build_unsigned_transaction(instructions, payer).await?;
+                print_unsigned_transaction(&transaction)?;
+                Ok(Signature::default())
+            }
+            SvmSigner::Keypair(keypair) => {
+                let client = self.client()?;
+                let recent_blockhash = client.get_latest_blockhash().await?;
 
-        let recent_blockhash = client.get_latest_blockhash().await?;
+                let mut signers: Vec<&Keypair> = vec![keypair];
+                signers.extend_from_slice(extra_signers);
 
-        let transaction = Transaction::new_signed_with_payer(
-            &instructions,
-            Some(&signers[0].pubkey()),
-            signers,
-            recent_blockhash,
-        );
+                let transaction = Transaction::new_signed_with_payer(
+                    &instructions,
+                    Some(&keypair.pubkey()),
+                    &signers,
+                    recent_blockhash,
+                );
 
-        let signature = client.send_and_confirm_transaction(&transaction).await?;
-        Ok(signature)
+                let signature = client.send_and_confirm_transaction(&transaction).await?;
+                Ok(signature)
+            }
+        }
     }
 
     async fn get_token_owner(
@@ -1054,11 +1200,273 @@ impl SolanaBridgeClient {
             ))
     }
 
-    pub fn keypair(&self) -> Result<&Keypair, SolanaBridgeClientError> {
-        self.keypair
+    pub fn signer(&self) -> Result<&SvmSigner, SolanaBridgeClientError> {
+        self.signer
             .as_ref()
             .ok_or(SolanaBridgeClientError::ConfigError(
-                "Keypair not initialized".to_string(),
+                "Signer not initialized".to_string(),
             ))
+    }
+
+    pub fn keypair(&self) -> Result<&Keypair, SolanaBridgeClientError> {
+        self.signer()?.keypair()
+    }
+}
+
+/// Encodes a transaction as base64 bincode — the wire format `sendTransaction`
+/// accepts once the placeholder signatures are replaced with real ones.
+pub fn serialize_unsigned_transaction(
+    transaction: &Transaction,
+) -> Result<String, SolanaBridgeClientError> {
+    let bytes = bincode::serialize(transaction)
+        .map_err(|e| SolanaBridgeClientError::SerializationError(e.to_string()))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+fn print_unsigned_transaction(transaction: &Transaction) -> Result<(), SolanaBridgeClientError> {
+    let serialized = serialize_unsigned_transaction(transaction)?;
+    let message = &transaction.message;
+
+    println!();
+    println!("DRY RUN — transaction was NOT signed or broadcast");
+    println!(
+        "fee payer:        {}",
+        message
+            .account_keys
+            .first()
+            .map_or_else(String::new, ToString::to_string)
+    );
+    println!(
+        "recent blockhash: {} (expires in ~60-90 seconds)",
+        message.recent_blockhash
+    );
+    println!("required signers:");
+    for key in message
+        .account_keys
+        .iter()
+        .take(usize::from(message.header.num_required_signatures))
+    {
+        println!("  {key}");
+    }
+    for (index, instruction) in message.instructions.iter().enumerate() {
+        let program_id = message
+            .account_keys
+            .get(usize::from(instruction.program_id_index))
+            .map_or_else(String::new, ToString::to_string);
+        let name = instructions::instruction_name_from_data(&instruction.data).unwrap_or("unknown");
+        println!(
+            "instruction #{index}: {name} (program {program_id}, {} accounts, {} data bytes)",
+            instruction.accounts.len(),
+            instruction.data.len(),
+        );
+    }
+    println!("unsigned transaction (base64-encoded bincode):");
+    println!("{serialized}");
+    println!("Sign it offline and submit within the blockhash validity window.");
+    println!("Ignore any signature/confirmation logged below.");
+    println!();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn svm_signer_keypair_mode() {
+        let keypair = Keypair::new();
+        let expected = keypair.pubkey();
+        let signer = SvmSigner::Keypair(keypair);
+        assert_eq!(signer.pubkey(), expected);
+        assert!(!signer.is_dry_run());
+        assert!(signer.keypair().is_ok());
+    }
+
+    #[test]
+    fn svm_signer_dry_run_mode() {
+        let pubkey = Pubkey::new_unique();
+        let signer = SvmSigner::DryRun(pubkey);
+        assert_eq!(signer.pubkey(), pubkey);
+        assert!(signer.is_dry_run());
+        assert!(signer.keypair().is_err());
+    }
+
+    #[test]
+    fn unsigned_transaction_round_trips_through_base64_bincode() {
+        let payer = Pubkey::new_unique();
+        let instruction = Instruction {
+            program_id: Pubkey::new_unique(),
+            accounts: vec![AccountMeta::new(payer, true)],
+            data: vec![1, 2, 3],
+        };
+        let transaction =
+            Transaction::new_unsigned(solana_sdk::message::Message::new_with_blockhash(
+                &[instruction],
+                Some(&payer),
+                &solana_sdk::hash::Hash::default(),
+            ));
+
+        let encoded = serialize_unsigned_transaction(&transaction).unwrap();
+        let decoded: Transaction = bincode::deserialize(
+            &base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(decoded.message, transaction.message);
+        assert_eq!(
+            decoded.signatures.len(),
+            usize::from(transaction.message.header.num_required_signatures)
+        );
+        assert!(decoded
+            .signatures
+            .iter()
+            .all(|s| *s == Signature::default()));
+    }
+
+    #[test]
+    fn instruction_names_resolve_from_discriminators() {
+        assert_eq!(
+            instructions::instruction_name_from_data(&INIT_TRANSFER_DISCRIMINATOR),
+            Some("init_transfer")
+        );
+        assert_eq!(
+            instructions::instruction_name_from_data(&INIT_TRANSFER_SOL_DISCRIMINATOR),
+            Some("init_transfer_sol")
+        );
+        assert_eq!(instructions::instruction_name_from_data(&[0u8; 8]), None);
+        assert_eq!(instructions::instruction_name_from_data(&[1, 2]), None);
+    }
+
+    fn test_client() -> SolanaBridgeClient {
+        SolanaBridgeClientBuilder::default()
+            .client(None)
+            .program_id(Some(
+                "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
+                    .parse()
+                    .unwrap(),
+            ))
+            .wormhole_core(Some(
+                "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth"
+                    .parse()
+                    .unwrap(),
+            ))
+            .wormhole_post_message_shim_program_id(Some(Pubkey::new_unique()))
+            .wormhole_post_message_shim_event_authority(Some(Pubkey::new_unique()))
+            .signer(None)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn init_transfer_sol_builder_encodes_discriminator_and_payer() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+
+        let instruction = client
+            .build_init_transfer_sol_instruction(
+                1_000_000,
+                "eth:0x0000000000000000000000000000000000000001".to_string(),
+                0,
+                10,
+                String::new(),
+                payer,
+            )
+            .unwrap();
+
+        assert_eq!(instruction.program_id, *client.program_id().unwrap());
+        assert_eq!(instruction.data[..8], INIT_TRANSFER_SOL_DISCRIMINATOR);
+        assert_eq!(instruction.accounts.len(), 14);
+        // payer appears as the readonly signer (index 1) and the writable payer (index 7)
+        assert_eq!(instruction.accounts[1].pubkey, payer);
+        assert!(instruction.accounts[1].is_signer && !instruction.accounts[1].is_writable);
+        assert_eq!(instruction.accounts[7].pubkey, payer);
+        assert!(instruction.accounts[7].is_signer && instruction.accounts[7].is_writable);
+        // no other account is marked signer
+        let signer_count = instruction.accounts.iter().filter(|a| a.is_signer).count();
+        assert_eq!(signer_count, 2);
+    }
+
+    #[test]
+    fn set_admin_builder_encodes_admin_and_signer() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+        let admin = Pubkey::new_unique();
+
+        let instruction = client.build_set_admin_instruction(admin, payer).unwrap();
+
+        assert_eq!(
+            instructions::instruction_name_from_data(&instruction.data),
+            Some("set_admin")
+        );
+        assert_eq!(instruction.data.len(), 8 + 32);
+        assert_eq!(instruction.data[8..], admin.to_bytes());
+        assert_eq!(instruction.accounts.len(), 2);
+        assert_eq!(instruction.accounts[1].pubkey, payer);
+        assert!(instruction.accounts[1].is_signer);
+    }
+
+    #[test]
+    fn deploy_token_builder_resolves_name_and_needs_no_rpc() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+
+        let instruction = client
+            .build_deploy_token_instruction(
+                DeployTokenData {
+                    metadata: MetadataPayload {
+                        token: "wrap.testnet".to_string(),
+                        name: "Wrapped NEAR".to_string(),
+                        symbol: "wNEAR".to_string(),
+                        decimals: 24,
+                    },
+                    signature: [1u8; 65],
+                },
+                payer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            instructions::instruction_name_from_data(&instruction.data),
+            Some("deploy_token")
+        );
+        assert_eq!(instruction.accounts.len(), 18);
+        assert_eq!(instruction.accounts[8].pubkey, payer);
+        assert!(instruction.accounts[8].is_signer);
+    }
+
+    #[test]
+    fn finalize_transfer_sol_builder_encodes_recipient_account() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+        let recipient = Pubkey::new_unique();
+
+        let instruction = client
+            .build_finalize_transfer_sol_instruction(
+                FinalizeDepositData {
+                    payload: DepositPayload {
+                        destination_nonce: 7,
+                        transfer_id: TransferId {
+                            origin_chain: 1,
+                            origin_nonce: 42,
+                        },
+                        amount: 1_000,
+                        recipient,
+                        fee_recipient: None,
+                    },
+                    signature: [2u8; 65],
+                },
+                payer,
+            )
+            .unwrap();
+
+        assert_eq!(
+            instructions::instruction_name_from_data(&instruction.data),
+            Some("finalize_transfer_sol")
+        );
+        assert_eq!(instruction.accounts[3].pubkey, recipient);
+        assert_eq!(instruction.accounts[10].pubkey, payer);
+        assert!(instruction.accounts[10].is_signer);
     }
 }

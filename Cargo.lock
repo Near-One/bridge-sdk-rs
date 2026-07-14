@@ -1781,7 +1781,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.64"
+version = "0.3.65"
 dependencies = [
  "alloy",
  "clap",
@@ -5696,7 +5696,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.4.2"
+version = "0.4.3"
 dependencies = [
  "alloy",
  "bip0039",
@@ -7804,9 +7804,10 @@ dependencies = [
 
 [[package]]
 name = "solana-bridge-client"
-version = "0.2.10"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
+ "bincode",
  "bitvec",
  "borsh 1.6.1",
  "derive_builder",

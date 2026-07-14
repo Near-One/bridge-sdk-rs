@@ -9,6 +9,26 @@ fn get_instruction_identifier(instruction_name: &str) -> [u8; 8] {
     identifier.finalize()[..8].try_into().unwrap()
 }
 
+pub(crate) fn instruction_name_from_data(data: &[u8]) -> Option<&'static str> {
+    const KNOWN_INSTRUCTIONS: [&str; 10] = [
+        "initialize",
+        "init_transfer",
+        "init_transfer_sol",
+        "finalize_transfer",
+        "finalize_transfer_sol",
+        "deploy_token",
+        "log_metadata",
+        "update_metadata",
+        "pause",
+        "set_admin",
+    ];
+
+    let discriminator: [u8; 8] = data.get(..8)?.try_into().ok()?;
+    KNOWN_INSTRUCTIONS
+        .into_iter()
+        .find(|name| get_instruction_identifier(&format!("global:{name}")) == discriminator)
+}
+
 pub struct Initialize {
     pub admin: Pubkey,
     pub pausable_admin: Pubkey,
