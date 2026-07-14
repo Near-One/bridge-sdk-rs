@@ -785,7 +785,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Submit a refund request for a never-finalized UTXO chain deposit (Bitcoin/Zcash).
+    /// Submit a refund request for a never-finalized UTXO-chain deposit (Bitcoin/Zcash).
     #[tracing::instrument(skip_all, name = "NEAR BTC REQUEST REFUND")]
     pub async fn btc_request_refund(
         &self,
