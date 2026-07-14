@@ -19,9 +19,12 @@ use tokio::time;
 
 pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 500;
 
+// Total request timeout. Generous on purpose: UTXO-chain calls like
+// `request_refund` carry the raw deposit tx + merkle proof in `args`, and
+// uploading that payload to a slow (archival) RPC can far exceed 30s.
 static DEFAULT_CONNECTOR: LazyLock<JsonRpcClientConnector> = LazyLock::new(|| {
     JsonRpcClient::with(new_near_rpc_client(Some(std::time::Duration::from_secs(
-        30,
+        120,
     ))))
 });
 
@@ -87,7 +90,10 @@ fn new_near_rpc_client(timeout: Option<std::time::Duration>) -> reqwest::Client 
 
     let mut builder = reqwest::Client::builder().default_headers(headers);
     if let Some(timeout) = timeout {
-        builder = builder.timeout(timeout).connect_timeout(timeout);
+        // `timeout` bounds the whole request (upload + server processing);
+        // connecting should still fail fast when the host is unreachable.
+        let connect_timeout = std::cmp::min(timeout, std::time::Duration::from_secs(10));
+        builder = builder.timeout(timeout).connect_timeout(connect_timeout);
     }
     builder.build().unwrap()
 }
@@ -242,11 +248,29 @@ pub async fn change(
         // hardware wallet) instead of signing and broadcasting it.
         TxSigner::DryRun { .. } => print_unsigned_transaction(&transaction),
         TxSigner::InMemory(signer) => {
-            let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-                signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(signer)),
-            };
+            let signed_transaction = transaction.sign(&near_crypto::Signer::InMemory(signer));
+            let tx_hash = signed_transaction.get_hash();
 
-            Ok(client.call(request).await?)
+            tracing::info!(
+                tx_hash = tx_hash.to_string(),
+                "Broadcasting NEAR transaction"
+            );
+
+            // `send_tx` (unlike `broadcast_tx_async`) reports transaction-pool
+            // rejections — oversized transaction, not enough balance for the
+            // attached deposit, invalid nonce — back to the caller instead of
+            // silently dropping the transaction and leaving its status UNKNOWN
+            // forever. `Included` returns as soon as the transaction is
+            // accepted into a block; callers that need a stronger guarantee
+            // keep polling in `wait_for_tx`.
+            client
+                .call(methods::send_tx::RpcSendTransactionRequest {
+                    signed_transaction,
+                    wait_until: near_primitives::views::TxExecutionStatus::Included,
+                })
+                .await?;
+
+            Ok(tx_hash)
         }
     }
 }

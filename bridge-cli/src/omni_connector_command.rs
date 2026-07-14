@@ -203,7 +203,9 @@ struct ManualDepositInput {
 ///
 /// - When `manual` is `Some`, builds `BtcDepositArgs` from the supplied
 ///   recipient/fee/msg/refund and resolves `vout` either from the explicit
-///   value or by matching it against the derived deposit address.
+///   value or by matching it against the derived deposit address (fetched
+///   from the UTXO connector contract when `from_contract` is set, from the
+///   bridge indexer otherwise).
 /// - When `manual` is `None`, asks the bridge indexer (via
 ///   `resolve_deposit_from_tx`) which output is a tracked deposit address;
 ///   the recovered `DepositMsg` is wrapped as `BtcDepositArgs::DepositMsg`.
@@ -217,6 +219,7 @@ async fn resolve_btc_deposit(
     btc_tx_hash: &str,
     vout: Option<usize>,
     manual: Option<ManualDepositInput>,
+    from_contract: bool,
 ) -> (BtcDepositArgs, usize, Option<PrefetchedTxData>) {
     match manual {
         Some(ManualDepositInput {
@@ -250,7 +253,13 @@ async fn resolve_btc_deposit(
                 Some(v) => (v, None),
                 None => {
                     let (v, p) = connector
-                        .resolve_deposit_vout(chain, network, btc_tx_hash, &deposit_args)
+                        .resolve_deposit_vout(
+                            chain,
+                            network,
+                            btc_tx_hash,
+                            &deposit_args,
+                            from_contract,
+                        )
                         .await
                         .unwrap();
                     (v, Some(p))
@@ -848,6 +857,13 @@ pub enum OmniConnectorSubCommand {
         no_deposit_refund_address: bool,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
+        #[clap(
+            long,
+            help = "Derive the deposit address via the UTXO connector contract view method (true, default) or the bridge indexer service (false). Only used with --recipient-id; auto-discovery always asks the indexer.",
+            default_value_t = true,
+            action = clap::ArgAction::Set
+        )]
+        from_contract: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1764,6 +1780,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 &btc_tx_hash,
                 vout,
                 manual,
+                false,
             )
             .await;
 
@@ -1841,6 +1858,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             msg,
             no_deposit_refund_address,
             gas_fee,
+            from_contract,
             config_cli,
         } => {
             let chain_kind: ChainKind = chain.into();
@@ -1875,6 +1893,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 &btc_tx_hash,
                 vout,
                 manual,
+                from_contract,
             )
             .await;
 

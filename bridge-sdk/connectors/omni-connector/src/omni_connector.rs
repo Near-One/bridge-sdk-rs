@@ -1039,8 +1039,10 @@ impl OmniConnector {
     }
 
     /// Resolve the deposit `vout` by matching outputs of the BTC/Zcash tx
-    /// `tx_hash` against the deposit address derived from `deposit_args` via
-    /// the bridge indexer.
+    /// `tx_hash` against the deposit address derived from `deposit_args` —
+    /// via the `get_user_deposit_address` view call on the UTXO connector
+    /// contract when `from_contract` is `true`, via the bridge indexer
+    /// otherwise.
     ///
     /// Returns `InvalidArgument` if no output matches or if multiple outputs
     /// match (in which case the candidate vouts are listed in the message).
@@ -1055,6 +1057,7 @@ impl OmniConnector {
         network: Network,
         tx_hash: &str,
         deposit_args: &BtcDepositArgs,
+        from_contract: bool,
     ) -> Result<(usize, PrefetchedTxData)> {
         let expected_address = match deposit_args {
             BtcDepositArgs::OmniDepositArgs {
@@ -1062,8 +1065,14 @@ impl OmniConnector {
                 refund_address,
                 fee,
             } => {
-                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee, false)
-                    .await?
+                self.get_btc_address(
+                    chain,
+                    recipient_id,
+                    refund_address.clone(),
+                    *fee,
+                    from_contract,
+                )
+                .await?
             }
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
@@ -1073,12 +1082,12 @@ impl OmniConnector {
                     chain,
                     recipient_id.clone(),
                     refund_address.clone(),
-                    false,
+                    from_contract,
                 )
                 .await?
             }
             BtcDepositArgs::DepositMsg { msg } => {
-                self.get_btc_address_from_deposit_msg(chain, msg, false)
+                self.get_btc_address_from_deposit_msg(chain, msg, from_contract)
                     .await?
             }
         };
