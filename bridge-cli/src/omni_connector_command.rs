@@ -140,6 +140,9 @@ fn derive_svm_sender(chain: SvmChainArg, config: &CliConfig) -> Result<String, S
                 .as_ref()
                 .ok_or("fogo_public_key not set")?,
         };
+        let public_key: solana_sdk::pubkey::Pubkey = public_key
+            .parse()
+            .map_err(|e| format!("invalid SVM public key ({public_key}): {e}"))?;
         return Ok(format!("{}:{public_key}", chain.prefix()));
     }
 
@@ -1091,11 +1094,14 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::BtcRequestRefund { .. }
         | Cmd::BtcVerifyRefundFinalize { .. }
         | Cmd::ActiveUTXOManagement { .. } => false,
-        // `Internal` wraps hidden subcommands: `InitNearToBitcoinTransfer` (a
-        // NEAR transaction — dry-run honored by the NEAR client) and
-        // `SvmGetTokenVault` (read-only). Neither submits to an unsupported
-        // chain.
-        Cmd::Internal { .. } => false,
+        // `Internal` wraps hidden subcommands; classify each explicitly so a
+        // future addition must be triaged for dry-run safety here too.
+        Cmd::Internal { subcommand } => match subcommand {
+            // A NEAR transaction — dry-run honored by the NEAR client.
+            InternalSubCommand::InitNearToBitcoinTransfer { .. } => false,
+            // Read-only PDA derivation.
+            InternalSubCommand::SvmGetTokenVault { .. } => false,
+        },
     };
 
     if submits_to_unsupported_chain {
@@ -1613,8 +1619,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 {
                     Ok(values) => values,
                     Err(e) => {
-                        eprintln!("{e}");
-                        return;
+                        eprintln!("error: {e}");
+                        std::process::exit(1);
                     }
                 },
             };
@@ -1657,8 +1663,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 {
                     Ok((_, nf, _)) => nf,
                     Err(e) => {
-                        eprintln!("{e}");
-                        return;
+                        eprintln!("error: {e}");
+                        std::process::exit(1);
                     }
                 },
             };
@@ -2396,7 +2402,13 @@ fn svm_signer_from_config(
     dry_run: bool,
 ) -> Option<SvmSigner> {
     if dry_run {
-        public_key.map(|pk| SvmSigner::DryRun(pk.parse().expect("Invalid SVM public key")))
+        public_key.map(|pk| {
+            let pubkey = pk.parse().unwrap_or_else(|e| {
+                eprintln!("error: invalid SVM public key ({pk}): {e}");
+                std::process::exit(1);
+            });
+            SvmSigner::DryRun(pubkey)
+        })
     } else {
         keypair.map(extract_solana_keypair).map(SvmSigner::Keypair)
     }

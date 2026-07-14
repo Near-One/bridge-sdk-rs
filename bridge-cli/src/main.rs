@@ -24,7 +24,7 @@ struct CliConfig {
     near_public_key: Option<String>,
     #[arg(
         long,
-        help = "Build and print the unsigned NEAR transaction (base64 borsh) instead of signing and broadcasting it. Only valid for NEAR commands; errors on other chains"
+        help = "Build and print the unsigned transaction (base64) instead of signing and broadcasting it. Supported for NEAR and SVM (Solana/Fogo) commands; errors on commands that submit to other chains"
     )]
     #[serde(default)]
     dry_run: bool,

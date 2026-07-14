@@ -86,7 +86,9 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
                 Self::SolanaOtherError("Invalid event".to_string())
             }
             SolanaBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
-            SolanaBridgeClientError::SerializationError(e) => Self::SolanaOtherError(e),
+            SolanaBridgeClientError::SerializationError(e) => {
+                Self::SolanaOtherError(format!("Serialization error: {e}"))
+            }
         }
     }
 }
