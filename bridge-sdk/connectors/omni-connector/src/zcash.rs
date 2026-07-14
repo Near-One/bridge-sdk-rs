@@ -7,47 +7,147 @@ use bitcoin::hashes::Hash;
 use bitcoin::key::rand::rngs::OsRng;
 use near_bridge_client::btc::VUTXO;
 use omni_types::ChainKind;
+use orchard::circuit::OrchardCircuitVersion;
 use pczt::roles::{
     creator::Creator, io_finalizer::IoFinalizer, prover::Prover, tx_extractor::TransactionExtractor,
 };
 use sha2::Digest;
 use std::str::FromStr;
 use std::sync::OnceLock;
-use utxo_utils::address::UTXOAddress;
+use utxo_utils::address::{Network, UTXOAddress};
 use utxo_utils::InputPoint;
+use zcash_primitives::transaction::components::orchard::bundle_version_for_branch;
 use zcash_primitives::transaction::fees::zip317;
 use zcash_primitives::transaction::sighash::SignableInput;
 use zcash_primitives::transaction::txid::TxIdDigester;
-use zcash_primitives::transaction::{sighash_v5, Authorized, TransactionData};
-use zcash_protocol::consensus::BlockHeight;
+use zcash_primitives::transaction::{
+    sighash_v5, sighash_v6, Authorized, TransactionData, TxVersion,
+};
+use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::memo::{Memo, MemoBytes};
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::Bundle;
 
-static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
+static ORCHARD_PROVING_KEY_POST_NU6_2: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
+static ORCHARD_PROVING_KEY_POST_NU6_3: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
 
-fn orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    ORCHARD_PROVING_KEY.get_or_init(orchard::circuit::ProvingKey::build)
+static ORCHARD_VERIFYING_KEY_POST_NU6_2: OnceLock<orchard::circuit::VerifyingKey> = OnceLock::new();
+static ORCHARD_VERIFYING_KEY_POST_NU6_3: OnceLock<orchard::circuit::VerifyingKey> = OnceLock::new();
+
+/// Returns the cached Orchard proving key for the given circuit version.
+/// Key generation takes several seconds, so each version is built at most
+/// once per process.
+fn orchard_proving_key(
+    circuit_version: OrchardCircuitVersion,
+) -> Result<&'static orchard::circuit::ProvingKey> {
+    match circuit_version {
+        OrchardCircuitVersion::InsecurePreNu6_2 => Err(BridgeSdkError::ZCashOrchardBundleError(
+            "refusing to build proofs with the insecure pre-NU6.2 Orchard circuit".to_string(),
+        )),
+        OrchardCircuitVersion::FixedPostNu6_2 => Ok(ORCHARD_PROVING_KEY_POST_NU6_2
+            .get_or_init(|| orchard::circuit::ProvingKey::build(circuit_version))),
+        OrchardCircuitVersion::PostNu6_3 => Ok(ORCHARD_PROVING_KEY_POST_NU6_3
+            .get_or_init(|| orchard::circuit::ProvingKey::build(circuit_version))),
+    }
 }
 
-static ORCHARD_VERIFYING_KEY: OnceLock<orchard::circuit::VerifyingKey> = OnceLock::new();
+/// Returns the cached Orchard verifying key for the given circuit version.
+fn orchard_verifying_key(
+    circuit_version: OrchardCircuitVersion,
+) -> Result<&'static orchard::circuit::VerifyingKey> {
+    match circuit_version {
+        OrchardCircuitVersion::InsecurePreNu6_2 => Err(BridgeSdkError::ZCashOrchardBundleError(
+            "refusing to validate proofs against the insecure pre-NU6.2 Orchard circuit"
+                .to_string(),
+        )),
+        OrchardCircuitVersion::FixedPostNu6_2 => Ok(ORCHARD_VERIFYING_KEY_POST_NU6_2
+            .get_or_init(|| orchard::circuit::VerifyingKey::build(circuit_version))),
+        OrchardCircuitVersion::PostNu6_3 => Ok(ORCHARD_VERIFYING_KEY_POST_NU6_3
+            .get_or_init(|| orchard::circuit::VerifyingKey::build(circuit_version))),
+    }
+}
 
-fn orchard_verifying_key() -> &'static orchard::circuit::VerifyingKey {
-    ORCHARD_VERIFYING_KEY.get_or_init(orchard::circuit::VerifyingKey::build)
+/// The shielded pool a withdrawal output must enter, together with the
+/// transaction version that carries it, as mandated by the consensus branch
+/// at the target height.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShieldedPool {
+    /// The legacy Orchard pool, carried by V5 transactions (branches up to
+    /// Nu6.2).
+    Orchard,
+    /// The Ironwood pool, carried by V6 transactions (Nu6.3 onward). The
+    /// NU6.3 turnstile closes the legacy Orchard pool for cross-address
+    /// outputs, so shielded withdrawals must enter the Ironwood pool.
+    Ironwood,
+}
+
+impl ShieldedPool {
+    fn for_branch(branch_id: BranchId) -> Self {
+        match TxVersion::suggested_for_branch(branch_id) {
+            TxVersion::V6 => ShieldedPool::Ironwood,
+            _ => ShieldedPool::Orchard,
+        }
+    }
+
+    fn tx_version(self) -> TxVersion {
+        match self {
+            ShieldedPool::Orchard => TxVersion::V5,
+            ShieldedPool::Ironwood => TxVersion::V6,
+        }
+    }
+
+    fn value_pool(self) -> orchard::ValuePool {
+        match self {
+            ShieldedPool::Orchard => orchard::ValuePool::Orchard,
+            ShieldedPool::Ironwood => orchard::ValuePool::Ironwood,
+        }
+    }
+}
+
+/// Returns the shielded pool and the Orchard circuit version mandated by the
+/// consensus branch active at the given height (e.g. the legacy Orchard pool
+/// with the `FixedPostNu6_2` circuit on mainnet; the Ironwood pool with the
+/// `PostNu6_3` circuit on testnet after the NU6.3 activation at height
+/// 4,134,000).
+fn shielded_pool_and_circuit(
+    params: &zcash_protocol::consensus::Network,
+    height: BlockHeight,
+) -> Result<(ShieldedPool, OrchardCircuitVersion)> {
+    let branch_id = BranchId::for_height(params, height);
+    let pool = ShieldedPool::for_branch(branch_id);
+    let circuit_version = bundle_version_for_branch(branch_id, pool.value_pool())
+        .map(|bundle_version| bundle_version.circuit_version())
+        .ok_or_else(|| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Shielded pool {pool:?} is not active in consensus branch {branch_id:?}"
+            ))
+        })?;
+    Ok((pool, circuit_version))
+}
+
+fn to_block_height(height: u64) -> BlockHeight {
+    BlockHeight::from_u32(height.try_into().unwrap_or(u32::MAX))
 }
 
 impl OmniConnector {
+    /// Returns the Zcash consensus parameters matching the configured bridge
+    /// network. The activation heights (and thus the consensus branch ID used
+    /// in sighashes) differ between mainnet and testnet, e.g. NU6.3 is only
+    /// activated on testnet.
+    fn zcash_params(&self) -> Result<zcash_protocol::consensus::Network> {
+        Ok(match self.network()? {
+            Network::Mainnet => zcash_protocol::consensus::Network::MainNetwork,
+            Network::Testnet => zcash_protocol::consensus::Network::TestNetwork,
+        })
+    }
+
     async fn get_builder_with_transparent(
         &self,
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> Result<
-        zcash_primitives::transaction::builder::Builder<
-            '_,
-            zcash_protocol::consensus::TestNetwork,
-            (),
-        >,
+        zcash_primitives::transaction::builder::Builder<zcash_protocol::consensus::Network, ()>,
     > {
         let near_bridge_client = self.near_bridge_client().map_err(|err| {
             BridgeSdkError::ConfigError(format!("Near bridge client is not initialized: {err}"))
@@ -57,18 +157,35 @@ impl OmniConnector {
             .get_expiry_height_gap(ChainKind::Zcash)
             .await?;
 
-        //TODO!!!
-        let params = zcash_protocol::consensus::TestNetwork;
+        let params = self.zcash_params()?;
+        let target_height = to_block_height(current_height);
+        let (pool, _) = shielded_pool_and_circuit(&params, target_height)?;
 
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
-            BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX)),
-            expiry_delta,
+            target_height,
+            target_height + expiry_delta,
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard::Anchor::empty_tree()),
+                ironwood_anchor: Some(orchard::Anchor::empty_tree()),
+                // Unpadded: the withdrawal shape is public anyway (transparent
+                // inputs, public value balance), and a single-action bundle is
+                // what `utxo_utils::get_gas_fee` prices in (+1 ZIP-317 action).
+                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
             },
         );
+
+        // Pin the transaction version explicitly: V5 up to Nu6.2, V6 from
+        // NU6.3 onward (the Ironwood bundle only exists in the V6 format).
+        builder
+            .propose_version::<std::convert::Infallible>(pool.tx_version())
+            .map_err(|err| {
+                BridgeSdkError::ZCashOrchardBundleError(format!(
+                    "Failed to propose {:?} transaction version: {err:?}",
+                    pool.tx_version()
+                ))
+            })?;
 
         for input in &input_points {
             let pk_raw = near_bridge_client
@@ -99,7 +216,7 @@ impl OmniConnector {
             );
 
             builder
-                .add_transparent_input(transparent_pubkey, utxo, coin)
+                .add_transparent_p2pkh_input(transparent_pubkey, utxo, coin)
                 .map_err(|err| {
                     BridgeSdkError::ZCashOrchardBundleError(format!(
                         "Failed to add transparent input for UTXO: {err}"
@@ -150,21 +267,39 @@ impl OmniConnector {
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
     ) -> Result<()> {
-        let tx_orchard = auth_data.orchard_bundle().ok_or_else(|| {
-            BridgeSdkError::ZCashOrchardBundleError(
-                "Missing Orchard bundle in transaction".to_string(),
-            )
+        let (pool, circuit_version) =
+            shielded_pool_and_circuit(&self.zcash_params()?, to_block_height(current_height))?;
+
+        let tx_orchard = match pool {
+            ShieldedPool::Orchard => auth_data.orchard_bundle(),
+            ShieldedPool::Ironwood => auth_data.ironwood_bundle(),
+        }
+        .ok_or_else(|| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Missing {pool:?} bundle in transaction"
+            ))
         })?;
 
         let txid_parts = auth_data.digest(TxIdDigester);
 
-        let shielded_sig_commitment = sighash_v5::my_signature_hash(
-            auth_data,
-            self.get_transparent_bundle(current_height, input_points, tx_out_change)
-                .await?,
-            &SignableInput::Shielded,
-            &txid_parts,
-        );
+        let transparent_bundle = self
+            .get_transparent_bundle(current_height, input_points, tx_out_change)
+            .await?;
+
+        let shielded_sig_commitment = match pool {
+            ShieldedPool::Orchard => sighash_v5::my_signature_hash(
+                auth_data,
+                transparent_bundle,
+                &SignableInput::Shielded,
+                &txid_parts,
+            ),
+            ShieldedPool::Ironwood => sighash_v6::my_signature_hash_v6(
+                auth_data,
+                transparent_bundle,
+                &SignableInput::Shielded,
+                &txid_parts,
+            ),
+        };
 
         let sighash: [u8; 32] = shielded_sig_commitment
             .as_ref()
@@ -181,18 +316,22 @@ impl OmniConnector {
                 )
             })?;
 
-        tx_orchard
-            .verify_proof(orchard_verifying_key())
-            .map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!(
-                    "Orchard proof verification failed: {err}"
-                ))
-            })?;
+        let verifying_key = orchard_verifying_key(circuit_version)?;
 
-        let mut validator = orchard::bundle::BatchValidator::new();
-        validator.add_bundle(tx_orchard, sighash);
+        tx_orchard.verify_proof(verifying_key).map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Orchard proof verification failed: {err}"
+            ))
+        })?;
 
-        let is_valid = validator.validate(orchard_verifying_key(), OsRng);
+        let mut validator = orchard::bundle::BatchValidator::new(verifying_key);
+        validator.add_bundle(tx_orchard, sighash).map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Failed to add Orchard bundle to batch validator: {err:?}"
+            ))
+        })?;
+
+        let is_valid = validator.validate(OsRng);
         if !is_valid {
             return Err(BridgeSdkError::ZCashOrchardBundleError(
                 "Batch Orchard validation failed".to_string(),
@@ -264,18 +403,31 @@ impl OmniConnector {
             None => MemoBytes::empty(),
         };
 
-        builder
-            .add_orchard_output::<zip317::FeeRule>(
+        let (pool, circuit_version) =
+            shielded_pool_and_circuit(&self.zcash_params()?, to_block_height(current_height))?;
+
+        // From NU6.3 the legacy Orchard pool is closed for cross-address
+        // outputs (turnstile), so the withdrawal output goes to the Ironwood
+        // pool instead; the recipient address stays the same.
+        match pool {
+            ShieldedPool::Orchard => builder.add_orchard_output::<zip317::FeeRule>(
                 Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
                 recipient,
-                amount,
+                zcash_protocol::value::Zatoshis::const_from_u64(amount),
                 memo_bytes,
-            )
-            .map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!(
-                    "Error on add orchard output: {err:?}"
-                ))
-            })?;
+            ),
+            ShieldedPool::Ironwood => builder.add_ironwood_output::<zip317::FeeRule>(
+                Some(orchard::keys::OutgoingViewingKey::from([0u8; 32])),
+                recipient,
+                zcash_protocol::value::Zatoshis::const_from_u64(amount),
+                memo_bytes,
+            ),
+        }
+        .map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Error on add {pool:?} output: {err:?}"
+            ))
+        })?;
 
         let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
             .build_for_pczt(rng, &zip317::FeeRule::standard())
@@ -295,14 +447,24 @@ impl OmniConnector {
             ))
         })?;
 
-        let pczt = Prover::new(pczt)
-            .create_orchard_proof(orchard_proving_key())
-            .map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!(
-                    "Error on create orchard proof: {err:?}"
-                ))
-            })?
-            .finish();
+        let prover = Prover::new(pczt);
+        let pczt = match pool {
+            ShieldedPool::Orchard => prover
+                .create_orchard_proof(orchard_proving_key(circuit_version)?)
+                .map_err(|err| {
+                    BridgeSdkError::ZCashOrchardBundleError(format!(
+                        "Error on create orchard proof: {err:?}"
+                    ))
+                })?,
+            ShieldedPool::Ironwood => prover
+                .create_ironwood_proof(orchard_proving_key(circuit_version)?)
+                .map_err(|err| {
+                    BridgeSdkError::ZCashOrchardBundleError(format!(
+                        "Error on create ironwood proof: {err:?}"
+                    ))
+                })?,
+        }
+        .finish();
 
         let tx: zcash_primitives::transaction::Transaction =
             TransactionExtractor::new(pczt).extract().map_err(|err| {
@@ -311,9 +473,10 @@ impl OmniConnector {
                 ))
             })?;
 
-        if tx.version() != zcash_primitives::transaction::TxVersion::V5 {
+        if tx.version() != pool.tx_version() {
             return Err(BridgeSdkError::ZCashOrchardBundleError(format!(
-                "Invalid transaction version: expected V5, got {:?}",
+                "Invalid transaction version: expected {:?}, got {:?}",
+                pool.tx_version(),
                 tx.version()
             )));
         }
@@ -326,16 +489,30 @@ impl OmniConnector {
         }
 
         let auth_data = tx.into_data();
-        let tx_orchard = auth_data.orchard_bundle();
         let expiry_height = auth_data.expiry_height().into();
 
         self.validate_orchard(&auth_data, current_height, input_points, tx_out_change)
             .await?;
 
         let mut res = Vec::new();
-        zcash_primitives::transaction::components::orchard::write_v5_bundle(tx_orchard, &mut res)
-            .map_err(|err| {
-            BridgeSdkError::ZCashOrchardBundleError(format!("Error on write orchard bundle: {err}"))
+        match pool {
+            ShieldedPool::Orchard => {
+                zcash_primitives::transaction::components::orchard::write_v5_bundle(
+                    auth_data.orchard_bundle(),
+                    &mut res,
+                )
+            }
+            ShieldedPool::Ironwood => {
+                zcash_primitives::transaction::components::orchard::write_v6_bundle(
+                    auth_data.ironwood_bundle(),
+                    &mut res,
+                )
+            }
+        }
+        .map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Error on write {pool:?} bundle: {err}"
+            ))
         })?;
 
         Ok((res, expiry_height))
@@ -558,14 +735,45 @@ mod tests {
     #[test]
     fn test_orchard_keys_init() {
         // Initialize proving key (this is expensive, ~few seconds)
-        let _pk = orchard_proving_key();
+        let _pk = orchard_proving_key(OrchardCircuitVersion::PostNu6_3).unwrap();
 
         // Initialize verifying key
-        let _vk = orchard_verifying_key();
+        let _vk = orchard_verifying_key(OrchardCircuitVersion::PostNu6_3).unwrap();
 
         // Keys should be cached after first access
-        assert!(ORCHARD_PROVING_KEY.get().is_some());
-        assert!(ORCHARD_VERIFYING_KEY.get().is_some());
+        assert!(ORCHARD_PROVING_KEY_POST_NU6_3.get().is_some());
+        assert!(ORCHARD_VERIFYING_KEY_POST_NU6_3.get().is_some());
+
+        // The insecure historical circuit must never be used.
+        assert!(orchard_proving_key(OrchardCircuitVersion::InsecurePreNu6_2).is_err());
+        assert!(orchard_verifying_key(OrchardCircuitVersion::InsecurePreNu6_2).is_err());
+    }
+
+    /// The consensus branch (and thus the target shielded pool, transaction
+    /// version and Orchard circuit version) must follow the configured
+    /// network: NU6.3 is activated on testnet at height 4,134,000 but is not
+    /// scheduled on mainnet.
+    #[test]
+    fn test_shielded_pool_and_circuit_by_network() {
+        use zcash_protocol::consensus::Network;
+
+        assert_eq!(
+            shielded_pool_and_circuit(&Network::MainNetwork, BlockHeight::from_u32(4_200_000))
+                .unwrap(),
+            (ShieldedPool::Orchard, OrchardCircuitVersion::FixedPostNu6_2)
+        );
+        assert_eq!(
+            shielded_pool_and_circuit(&Network::TestNetwork, BlockHeight::from_u32(4_133_999))
+                .unwrap(),
+            (ShieldedPool::Orchard, OrchardCircuitVersion::FixedPostNu6_2)
+        );
+        assert_eq!(
+            shielded_pool_and_circuit(&Network::TestNetwork, BlockHeight::from_u32(4_134_000))
+                .unwrap(),
+            (ShieldedPool::Ironwood, OrchardCircuitVersion::PostNu6_3)
+        );
+        assert_eq!(ShieldedPool::Orchard.tx_version(), TxVersion::V5);
+        assert_eq!(ShieldedPool::Ironwood.tx_version(), TxVersion::V6);
     }
 
     #[test]

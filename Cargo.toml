@@ -73,38 +73,34 @@ bcs = "0.1"
 ed25519-dalek = "2"
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
-zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", features = ["transparent-inputs"] }
-zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
-pczt = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
-zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
-zcash_encoding = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
-orchard = { version = "0.12", default-features = false }
-bip0039 = "0.12.0"
-# Pulled from the fork (not crates.io 0.12.0) so it shares the fork's stable-RustCrypto
-# zcash_primitives instead of dragging in a second, RC-pinned crates.io copy.
-zcash_keys = { git = "https://github.com/Near-One/librustzcash", rev = "40adcfba40361c4c5ca140475d6a4201748215db" }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", features = ["transparent-inputs"] }
+zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1" }
+pczt = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
+zcash_address = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1" }
+zcash_encoding = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1" }
+orchard = { version = "0.15.0-pre.2", default-features = false }
 ripemd = "0.1.3"
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/solana-labs/curve25519-dalek.git"
 rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464"
 
-# The librustzcash fork (rev 40adcfba) declares `orchard = "0.12"` from crates.io,
-# but orchard 0.11..0.13 are all yanked on crates.io (only 0.14 is live). Redirect
-# to the Near-One orchard fork at 0.12.0, which carries the `core2 -> corez` fix so
-# it actually resolves. (Drop once librustzcash bumps to orchard 0.14.)
+# librustzcash builds against an unreleased orchard revision via its own
+# [patch.crates-io]; Cargo patches do not propagate from git dependencies,
+# so mirror it here. Drop once a published orchard release carries
+# `Builder::bundle_type()`.
 [patch.crates-io.orchard]
-git = "https://github.com/Near-One/orchard"
-rev = "872a2192238f4085ce4c8dd2f0222bd6ce26fba7"
+git = "https://github.com/zcash/orchard"
+rev = "475ef0ff77d45aebff93cb039d639250d82518a3"
 
-# zcash (via zcash_transparent/zcash_keys) pins bip32 =0.6.0-pre.1, which exact-pins
-# the RustCrypto *pre-release* digest-0.11 chain (sha2 =0.11.0-pre.4, hmac, ripemd) and
+# zcash (via zcash_transparent) pins bip32 =0.6.0-pre.1, which exact-pins the
+# RustCrypto *pre-release* digest-0.11 chain (sha2 =0.11.0-pre.4, hmac, ripemd) and
 # clashes with near-sdk 5.28.1's stable sha2 0.11. There is no stable bip32 0.6.0, and
 # a [patch] can only be applied at the workspace root, so we vendor bip32 0.6.0-pre.1
 # verbatim with its RustCrypto deps moved to the released stable versions. Combined with
-# the librustzcash 40adcfba bump (crypto-common/block-buffer now stable), the whole
-# digest-0.11 stack unifies on stable. Drop once bip32 ships a stable 0.6.0.
+# the librustzcash stable-crypto bump (crypto-common/block-buffer released versions),
+# the whole digest-0.11 stack unifies on stable. Drop once bip32 ships a stable 0.6.0.
 [patch.crates-io.bip32]
 path = "vendor/bip32"
 

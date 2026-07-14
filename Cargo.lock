@@ -1472,20 +1472,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bip0039"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "568b6890865156d9043af490d4c4081c385dd68ea10acd6ca15733d511e6b51c"
-dependencies = [
- "hmac 0.12.1",
- "pbkdf2 0.12.2",
- "rand 0.8.5",
- "sha2 0.10.9",
- "unicode-normalization",
- "zeroize",
-]
-
-[[package]]
 name = "bip32"
 version = "0.6.0-pre.1"
 dependencies = [
@@ -2310,15 +2296,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
-name = "core2"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239fa3ae9b63c2dc74bd3fa852d4792b8b305ae64eeede946265b6af62f1fff3"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "corez"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3137,11 +3114,11 @@ dependencies = [
 
 [[package]]
 name = "equihash"
-version = "0.2.2"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.3.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
  "blake2b_simd",
- "core2",
+ "corez",
 ]
 
 [[package]]
@@ -3171,7 +3148,7 @@ dependencies = [
  "digest 0.10.7",
  "hex",
  "hmac 0.12.1",
- "pbkdf2 0.11.0",
+ "pbkdf2",
  "rand 0.8.5",
  "scrypt",
  "serde",
@@ -3307,7 +3284,7 @@ dependencies = [
 [[package]]
 name = "f4jumble"
 version = "0.1.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
  "blake2b_simd",
 ]
@@ -3743,9 +3720,9 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45824ce0dd12e91ec0c68ebae2a7ed8ae19b70946624c849add59f1d1a62a143"
+checksum = "fb2a697cad929f706b7987fe804ad57d43622cd37463ba7e4d662a926fdcfea3"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -4016,9 +3993,9 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.10"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3944cf8cf766b40e2a1a333ee5e9b563f854d5fa49d6a8ca2764e97c6eddb214"
+checksum = "818356c5132c1fede50f837ca96afbe78ff42413047f4abb886217845e1b6c8c"
 dependencies = [
  "typenum",
 ]
@@ -5119,9 +5096,9 @@ dependencies = [
 
 [[package]]
 name = "near-global-contracts"
-version = "0.2.1"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ca26382a7315d4da1fc2fb50d19b46a5a942d5f24d262efea9d84db2080027"
+checksum = "3380812ba34540085abe428d13d8152eec8b50f6953934f4bd4025c9ec6ea536"
 dependencies = [
  "borsh 1.6.1",
  "cfg_eval",
@@ -5129,7 +5106,7 @@ dependencies = [
  "hex",
  "near-account-id 2.6.0",
  "near-crypto-hash",
- "near-primitives-core 0.36.0",
+ "near-primitives-core 0.37.0",
  "near-sdk-env",
  "serde",
  "serde_with",
@@ -5353,6 +5330,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-primitives-core"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb4ca8694b859cf7c7d894e756bbd46bf09b0bc5f243494ed7698eee1bc799a7"
+dependencies = [
+ "arbitrary",
+ "base64 0.21.7",
+ "borsh 1.6.1",
+ "bs58 0.4.0",
+ "derive_more",
+ "enum-map",
+ "near-account-id 2.6.0",
+ "near-gas",
+ "near-schema-checker-lib 0.37.0",
+ "near-token",
+ "num-rational 0.3.2",
+ "serde",
+ "serde_repr",
+ "serde_with",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "near-rpc-client"
 version = "0.2.0"
 dependencies = [
@@ -5384,6 +5385,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37ad456b1bd9876772d6c0b557d100d518d60dd13e359daca8e0293828e29a05"
 
 [[package]]
+name = "near-schema-checker-core"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "396465c4d441ad832b49f485cda5f5072f13696b1c46c9277d49b4937fb0eeee"
+
+[[package]]
 name = "near-schema-checker-lib"
 version = "0.34.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5404,6 +5411,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "near-schema-checker-lib"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4dff8ead107faf2f5744d1f126ecc3a3bde129c3e36902ad4020464beac0651"
+dependencies = [
+ "near-schema-checker-core 0.37.0",
+ "near-schema-checker-macro 0.37.0",
+]
+
+[[package]]
 name = "near-schema-checker-macro"
 version = "0.34.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5414,6 +5431,12 @@ name = "near-schema-checker-macro"
 version = "0.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "731a7b9cc155e291f149f2f6f8f88f5cab512b772aaf301f9defb4e4bceb1629"
+
+[[package]]
+name = "near-schema-checker-macro"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "732349f01e6f6e47edf921900d6a085b7ed3088464df21b312fec6ade44f8da2"
 
 [[package]]
 name = "near-sdk"
@@ -5445,9 +5468,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-core"
-version = "4.1.2"
+version = "4.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc7af84e939042e3d50c955410d7a57754b2ebfae7abe903d1bf7ab055e9e44"
+checksum = "e41a10fd85c23e4ae63adf6d9b224e852410176f804328b1b0a36d8497e97c80"
 dependencies = [
  "base64 0.22.1",
  "borsh 1.6.1",
@@ -5468,9 +5491,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-env"
-version = "0.1.1"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7bf5f7bf8c33257ead4e56fc325e018144e08b0bc98c8bd459abf77bf1b7c30"
+checksum = "73a159e55901b3a2fab682896ef8e037a3862d4677e762644be922696de28339"
 dependencies = [
  "near-sys",
  "ripemd 0.1.3",
@@ -5480,9 +5503,9 @@ dependencies = [
 
 [[package]]
 name = "near-sdk-macros"
-version = "5.28.2"
+version = "5.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5e7645606efa236615110699794b9262075695f2a79799c16c30f018ef166a9"
+checksum = "4ee1f96f9ea523a40bdb281d541c8d84a03d5a1de271fb2a42d274fb661e34fb"
 dependencies = [
  "Inflector",
  "darling 0.20.11",
@@ -5509,9 +5532,9 @@ checksum = "f35191f9d7a78d5cdca9788e648dce89ebbb74faef4abfa6992ed7f1fb300369"
 
 [[package]]
 name = "near-sys"
-version = "0.2.10"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7008ee53300e02ae61a5ea3898adba9aa4cf87df8c8db86ca08041225fe14c98"
+checksum = "48b26c10a43e1dccab24e80dd38c3bf73eab9c95da54fcce1144f2b58ef5b507"
 
 [[package]]
 name = "near-time"
@@ -5790,7 +5813,6 @@ version = "0.4.3"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
- "bip0039",
  "bitcoin",
  "borsh 1.6.1",
  "bridge-connector-common",
@@ -5827,7 +5849,6 @@ dependencies = [
  "utxo-utils",
  "wormhole-bridge-client",
  "zcash_address",
- "zcash_keys",
  "zcash_primitives",
  "zcash_protocol",
  "zcash_transparent",
@@ -5952,8 +5973,8 @@ dependencies = [
 
 [[package]]
 name = "orchard"
-version = "0.12.0"
-source = "git+https://github.com/Near-One/orchard?rev=872a2192238f4085ce4c8dd2f0222bd6ce26fba7#872a2192238f4085ce4c8dd2f0222bd6ce26fba7"
+version = "0.15.0-pre.2"
+source = "git+https://github.com/zcash/orchard?rev=475ef0ff77d45aebff93cb039d639250d82518a3#475ef0ff77d45aebff93cb039d639250d82518a3"
 dependencies = [
  "aes",
  "bitvec",
@@ -6065,17 +6086,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "password-hash"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
-dependencies = [
- "base64ct",
- "rand_core 0.6.4",
- "subtle",
-]
-
-[[package]]
 name = "pasta_curves"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6106,19 +6116,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "password-hash",
-]
-
-[[package]]
 name = "pczt"
-version = "0.5.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.7.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
  "blake2b_simd",
  "bls12_381",
@@ -7122,9 +7122,9 @@ dependencies = [
 
 [[package]]
 name = "sapling-crypto"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5433ab8c1cd52dfad3b903143e371d5bdd514ab7952f71414e6d66a5da8223cd"
+checksum = "2d70756ede56b5e4dd417979777bd87ddb83dfcbd0815dbf8175a9920537f8a0"
 dependencies = [
  "aes",
  "bellman",
@@ -7132,7 +7132,7 @@ dependencies = [
  "blake2b_simd",
  "blake2s_simd",
  "bls12_381",
- "core2",
+ "corez",
  "document-features",
  "ff",
  "fpe",
@@ -7224,7 +7224,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f9e24d2b632954ded8ab2ef9fea0a0c769ea56ea98bddbafbad22caeeadf45d"
 dependencies = [
  "hmac 0.12.1",
- "pbkdf2 0.11.0",
+ "pbkdf2",
  "salsa20",
  "sha2 0.10.9",
 ]
@@ -7304,15 +7304,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "secrecy"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
-dependencies = [
- "zeroize",
 ]
 
 [[package]]
@@ -9210,7 +9201,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36187af2324f079f65a675ec22b31c24919cb4ac22c79472e85d819db9bbbc15"
 dependencies = [
  "hmac 0.12.1",
- "pbkdf2 0.11.0",
+ "pbkdf2",
  "sha2 0.10.9",
 ]
 
@@ -10984,9 +10975,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.19.0"
+version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "ucd-trie"
@@ -11029,15 +11020,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unicode-normalization"
-version = "0.1.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
-dependencies = [
- "tinyvec",
-]
 
 [[package]]
 name = "unicode-segmentation"
@@ -11122,7 +11104,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "utxo-bridge-client"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "bitcoin",
  "bitcoincore-rpc",
@@ -11994,12 +11976,12 @@ dependencies = [
 
 [[package]]
 name = "zcash_address"
-version = "0.10.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.13.0-pre.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
  "bech32",
  "bs58 0.5.1",
- "core2",
+ "corez",
  "f4jumble",
  "zcash_encoding",
  "zcash_protocol",
@@ -12007,37 +11989,12 @@ dependencies = [
 
 [[package]]
 name = "zcash_encoding"
-version = "0.3.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.4.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
- "core2",
+ "corez",
  "hex",
  "nonempty",
-]
-
-[[package]]
-name = "zcash_keys"
-version = "0.12.0"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
-dependencies = [
- "bech32",
- "blake2b_simd",
- "bls12_381",
- "bs58 0.5.1",
- "core2",
- "document-features",
- "group",
- "memuse",
- "nonempty",
- "rand_core 0.6.4",
- "secrecy",
- "subtle",
- "tracing",
- "zcash_address",
- "zcash_encoding",
- "zcash_protocol",
- "zcash_transparent",
- "zip32",
 ]
 
 [[package]]
@@ -12055,18 +12012,13 @@ dependencies = [
 
 [[package]]
 name = "zcash_primitives"
-version = "0.26.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.29.0-pre.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
- "bip32",
  "blake2b_simd",
- "bs58 0.5.1",
- "core2",
+ "corez",
  "equihash",
  "ff",
- "fpe",
- "getset",
- "group",
  "hex",
  "incrementalmerkletree",
  "jubjub",
@@ -12074,31 +12026,24 @@ dependencies = [
  "nonempty",
  "orchard",
  "proptest",
- "rand 0.8.5",
  "rand_core 0.6.4",
  "redjubjub",
- "ripemd 0.1.3",
  "sapling-crypto",
  "secp256k1 0.29.1",
  "sha2 0.10.9",
- "subtle",
- "tracing",
- "zcash_address",
  "zcash_encoding",
  "zcash_note_encryption",
  "zcash_protocol",
  "zcash_script",
- "zcash_spec",
  "zcash_transparent",
- "zip32",
 ]
 
 [[package]]
 name = "zcash_protocol"
-version = "0.7.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.10.0-pre.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
- "core2",
+ "corez",
  "document-features",
  "hex",
  "incrementalmerkletree",
@@ -12110,9 +12055,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_script"
-version = "0.4.3"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6ef9d04e0434a80b62ad06c5a610557be358ef60a98afa5dbc8ecaf19ad72e7"
+checksum = "2f872800287d118be71bdf6fe8c869c6a6ff6fb0a5762f68fb2af54c97edf0f2"
 dependencies = [
  "bip32",
  "bitflags",
@@ -12136,16 +12081,16 @@ dependencies = [
 
 [[package]]
 name = "zcash_transparent"
-version = "0.6.1"
-source = "git+https://github.com/Near-One/librustzcash?rev=40adcfba40361c4c5ca140475d6a4201748215db#40adcfba40361c4c5ca140475d6a4201748215db"
+version = "0.9.0-pre.0"
+source = "git+https://github.com/Near-One/librustzcash?rev=3dbb28e2254b309e3097a7995aa6dcf5a6d459c1#3dbb28e2254b309e3097a7995aa6dcf5a6d459c1"
 dependencies = [
  "bip32",
- "blake2b_simd",
  "bs58 0.5.1",
- "core2",
+ "corez",
  "document-features",
  "getset",
  "hex",
+ "nonempty",
  "proptest",
  "ripemd 0.1.3",
  "secp256k1 0.29.1",
