@@ -73,8 +73,8 @@ solana-program-option = "3.1.0"
 solana-commitment-config = "3.1.1"
 bs58 = "0.5"
 spl-token = "9.0.0"
-spl-token-2022 = { version = "11.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
+spl-token-2022-interface = "3.1.1"
+spl-associated-token-account-interface = "2.0.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 near-mpc-contract-interface = "0.0.1"
 openssl-sys = { version = "*", features = ["vendored"] }

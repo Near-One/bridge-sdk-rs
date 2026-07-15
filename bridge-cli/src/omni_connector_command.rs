@@ -2248,11 +2248,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .solana_wormhole_post_message_shim_program_id
                 .map(|addr| addr.parse().unwrap()),
         )
-        .wormhole_post_message_shim_event_authority(
-            combined_config
-                .solana_wormhole_post_message_shim_event_authority
-                .map(|addr| addr.parse().unwrap()),
-        )
         .signer(svm_signer_from_config(
             combined_config.solana_keypair.as_deref(),
             combined_config.solana_public_key.as_deref(),
@@ -2276,11 +2271,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .wormhole_post_message_shim_program_id(
             combined_config
                 .fogo_wormhole_post_message_shim_program_id
-                .map(|addr| addr.parse().unwrap()),
-        )
-        .wormhole_post_message_shim_event_authority(
-            combined_config
-                .fogo_wormhole_post_message_shim_event_authority
                 .map(|addr| addr.parse().unwrap()),
         )
         .signer(svm_signer_from_config(

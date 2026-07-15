@@ -114,8 +114,6 @@ struct CliConfig {
     #[arg(long)]
     solana_wormhole_post_message_shim_program_id: Option<String>,
     #[arg(long)]
-    solana_wormhole_post_message_shim_event_authority: Option<String>,
-    #[arg(long)]
     solana_keypair: Option<String>,
     #[arg(
         long,
@@ -131,8 +129,6 @@ struct CliConfig {
     fogo_wormhole_address: Option<String>,
     #[arg(long)]
     fogo_wormhole_post_message_shim_program_id: Option<String>,
-    #[arg(long)]
-    fogo_wormhole_post_message_shim_event_authority: Option<String>,
     #[arg(long)]
     fogo_keypair: Option<String>,
     #[arg(
@@ -264,9 +260,6 @@ impl CliConfig {
             solana_wormhole_post_message_shim_program_id: self
                 .solana_wormhole_post_message_shim_program_id
                 .or(other.solana_wormhole_post_message_shim_program_id),
-            solana_wormhole_post_message_shim_event_authority: self
-                .solana_wormhole_post_message_shim_event_authority
-                .or(other.solana_wormhole_post_message_shim_event_authority),
             solana_keypair: self.solana_keypair.or(other.solana_keypair),
             solana_public_key: self.solana_public_key.or(other.solana_public_key),
 
@@ -276,9 +269,6 @@ impl CliConfig {
             fogo_wormhole_post_message_shim_program_id: self
                 .fogo_wormhole_post_message_shim_program_id
                 .or(other.fogo_wormhole_post_message_shim_program_id),
-            fogo_wormhole_post_message_shim_event_authority: self
-                .fogo_wormhole_post_message_shim_event_authority
-                .or(other.fogo_wormhole_post_message_shim_event_authority),
             fogo_keypair: self.fogo_keypair.or(other.fogo_keypair),
             fogo_public_key: self.fogo_public_key.or(other.fogo_public_key),
 
@@ -371,10 +361,6 @@ fn env_config() -> CliConfig {
             "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
         )
         .ok(),
-        solana_wormhole_post_message_shim_event_authority: env::var(
-            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
-        )
-        .ok(),
         solana_keypair: env::var("SOLANA_KEYPAIR").ok(),
         solana_public_key: env::var("SOLANA_PUBLIC_KEY").ok(),
 
@@ -383,10 +369,6 @@ fn env_config() -> CliConfig {
         fogo_wormhole_address: env::var("FOGO_WORMHOLE_ADDRESS").ok(),
         fogo_wormhole_post_message_shim_program_id: env::var(
             "FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
-        )
-        .ok(),
-        fogo_wormhole_post_message_shim_event_authority: env::var(
-            "FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
         )
         .ok(),
         fogo_keypair: env::var("FOGO_KEYPAIR").ok(),
@@ -492,9 +474,6 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
-            ),
             solana_keypair: None,
             solana_public_key: None,
 
@@ -503,9 +482,6 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_MAINNET.to_owned()),
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
-            ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
             ),
             fogo_keypair: None,
             fogo_public_key: None,
@@ -606,9 +582,6 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
-            ),
             solana_keypair: None,
             solana_public_key: None,
 
@@ -618,9 +591,6 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_TESTNET.to_owned()),
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
-            ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
             ),
             fogo_keypair: None,
             fogo_public_key: None,
@@ -721,9 +691,6 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
-            ),
             solana_keypair: None,
             solana_public_key: None,
 
@@ -733,9 +700,6 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_address: Some(defaults::FOGO_WORMHOLE_ADDRESS_DEVNET.to_owned()),
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
-            ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
             ),
             fogo_keypair: None,
             fogo_public_key: None,

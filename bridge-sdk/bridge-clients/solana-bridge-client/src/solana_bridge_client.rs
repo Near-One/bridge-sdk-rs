@@ -181,7 +181,6 @@ pub struct SolanaBridgeClient {
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
     wormhole_post_message_shim_program_id: Option<Pubkey>,
-    wormhole_post_message_shim_event_authority: Option<Pubkey>,
     signer: Option<SvmSigner>,
 }
 
@@ -545,7 +544,7 @@ impl SolanaBridgeClient {
             &metadata_program_id,
         );
 
-        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022_interface::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
                 "Not a Solana token program: {token_program_id}"
             )));
@@ -555,8 +554,10 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -584,10 +585,13 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(token_program_id, false),
-                AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+                AccountMeta::new_readonly(
+                    spl_associated_token_account_interface::program::ID,
+                    false,
+                ),
             ],
         ))
     }
@@ -634,8 +638,10 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -659,7 +665,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(spl_token::ID, false),
                 AccountMeta::new_readonly(metadata_program_id, false),
@@ -704,7 +710,7 @@ impl SolanaBridgeClient {
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
 
-        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022_interface::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
                 "Not a Solana token program: {token_program_id}"
             )));
@@ -712,15 +718,17 @@ impl SolanaBridgeClient {
 
         let (from_token_account, _) = Pubkey::find_program_address(
             &[payer.as_ref(), token_program_id.as_ref(), token.as_ref()],
-            &spl_associated_token_account::ID,
+            &spl_associated_token_account_interface::program::ID,
         );
 
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -759,7 +767,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(token_program_id, false),
             ],
         ))
@@ -865,8 +873,10 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -895,7 +905,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
             ],
         ))
     }
@@ -948,7 +958,7 @@ impl SolanaBridgeClient {
         let recipient = data.payload.recipient;
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
 
-        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022_interface::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
                 "Not a Solana token program: {token_program_id}"
             )));
@@ -960,15 +970,17 @@ impl SolanaBridgeClient {
                 token_program_id.as_ref(),
                 solana_token.as_ref(),
             ],
-            &spl_associated_token_account::ID,
+            &spl_associated_token_account_interface::program::ID,
         );
 
         let (wormhole_bridge, wormhole_fee_collector, wormhole_sequence) =
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -1007,8 +1019,8 @@ impl SolanaBridgeClient {
             AccountMeta::new_readonly(*wormhole_core, false),
             AccountMeta::new_readonly(program::ID, false),
             AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-            AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
-            AccountMeta::new_readonly(spl_associated_token_account::ID, false),
+            AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
+            AccountMeta::new_readonly(spl_associated_token_account_interface::program::ID, false),
             AccountMeta::new_readonly(program::ID, false),
             AccountMeta::new_readonly(token_program_id, false),
         ];
@@ -1066,8 +1078,10 @@ impl SolanaBridgeClient {
             self.get_wormhole_accounts()?;
 
         let wormhole_post_message_shim_program_id = self.wormhole_post_message_shim_program_id()?;
-        let wormhole_post_message_shim_event_authority =
-            self.wormhole_post_message_shim_event_authority()?;
+        let (wormhole_post_message_shim_event_authority, _) = Pubkey::find_program_address(
+            &[b"__event_authority"],
+            wormhole_post_message_shim_program_id,
+        );
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
 
@@ -1101,7 +1115,7 @@ impl SolanaBridgeClient {
                 AccountMeta::new_readonly(*wormhole_core, false),
                 AccountMeta::new_readonly(program::ID, false),
                 AccountMeta::new_readonly(*wormhole_post_message_shim_program_id, false),
-                AccountMeta::new_readonly(*wormhole_post_message_shim_event_authority, false),
+                AccountMeta::new_readonly(wormhole_post_message_shim_event_authority, false),
                 AccountMeta::new_readonly(program::ID, false),
             ],
         ))
@@ -1236,7 +1250,7 @@ impl SolanaBridgeClient {
         // Same allowlist as the sync builder cores, but with the legacy
         // "Not a Solana token" message — CLI output parity. Do not dedup
         // into the cores' check without preserving both messages.
-        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022_interface::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
                 "Not a Solana token: {token}"
             )));
@@ -1304,16 +1318,6 @@ impl SolanaBridgeClient {
                 "Wormhole Post Message Shim Program ID not initialized".to_string(),
             ),
         )
-    }
-
-    pub fn wormhole_post_message_shim_event_authority(
-        &self,
-    ) -> Result<&Pubkey, SolanaBridgeClientError> {
-        self.wormhole_post_message_shim_event_authority
-            .as_ref()
-            .ok_or(SolanaBridgeClientError::ConfigError(
-                "Wormhole Post Message Shim Event Authority not initialized".to_string(),
-            ))
     }
 
     pub fn signer(&self) -> Result<&SvmSigner, SolanaBridgeClientError> {
@@ -1471,7 +1475,6 @@ mod tests {
                     .unwrap(),
             ))
             .wormhole_post_message_shim_program_id(Some(Pubkey::new_unique()))
-            .wormhole_post_message_shim_event_authority(Some(Pubkey::new_unique()))
             .signer(None)
             .build()
             .unwrap()
@@ -1619,7 +1622,7 @@ mod tests {
                 0,
                 5,
                 String::new(),
-                spl_token_2022::ID,
+                spl_token_2022_interface::ID,
                 false,
                 payer,
             )
@@ -1628,8 +1631,12 @@ mod tests {
         assert_eq!(native.accounts[3].pubkey, vault);
         // ATA is derived from the payer and the supplied token program
         let (ata, _) = Pubkey::find_program_address(
-            &[payer.as_ref(), spl_token_2022::ID.as_ref(), token.as_ref()],
-            &spl_associated_token_account::ID,
+            &[
+                payer.as_ref(),
+                spl_token_2022_interface::ID.as_ref(),
+                token.as_ref(),
+            ],
+            &spl_associated_token_account_interface::program::ID,
         );
         assert_eq!(native.accounts[2].pubkey, ata);
         assert_eq!(
