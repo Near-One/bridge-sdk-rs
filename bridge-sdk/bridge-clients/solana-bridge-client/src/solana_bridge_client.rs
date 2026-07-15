@@ -701,6 +701,7 @@ impl SolanaBridgeClient {
         message: String,
         token_program_id: Pubkey,
         is_bridged_token: bool,
+        sender: Pubkey,
         payer: Pubkey,
     ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
@@ -717,7 +718,7 @@ impl SolanaBridgeClient {
         }
 
         let (from_token_account, _) = Pubkey::find_program_address(
-            &[payer.as_ref(), token_program_id.as_ref(), token.as_ref()],
+            &[sender.as_ref(), token_program_id.as_ref(), token.as_ref()],
             &spl_associated_token_account_interface::program::ID,
         );
 
@@ -755,7 +756,7 @@ impl SolanaBridgeClient {
                     AccountMeta::new(vault, false)
                 },
                 AccountMeta::new(sol_vault, false),
-                AccountMeta::new(payer, true),
+                AccountMeta::new(sender, true),
                 AccountMeta::new_readonly(config, false),
                 AccountMeta::new(wormhole_bridge, false),
                 AccountMeta::new(wormhole_fee_collector, false),
@@ -783,7 +784,7 @@ impl SolanaBridgeClient {
         native_fee: u64,
         message: String,
     ) -> Result<Signature, SolanaBridgeClientError> {
-        let payer = self.signer()?.pubkey();
+        let signer_pubkey = self.signer()?.pubkey();
         let (token_program_id, is_bridged_token) = self.fetch_token_context(token).await?;
         let instruction = self.build_init_transfer_instruction(
             token,
@@ -794,7 +795,8 @@ impl SolanaBridgeClient {
             message,
             token_program_id,
             is_bridged_token,
-            payer,
+            signer_pubkey,
+            signer_pubkey,
         )?;
         self.send_and_confirm_transaction(vec![instruction], &[])
             .await
@@ -861,6 +863,7 @@ impl SolanaBridgeClient {
         fee: u128,
         native_fee: u64,
         message: String,
+        sender: Pubkey,
         payer: Pubkey,
     ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
@@ -893,7 +896,7 @@ impl SolanaBridgeClient {
             &instruction_data,
             vec![
                 AccountMeta::new(sol_vault, false),
-                AccountMeta::new_readonly(payer, true),
+                AccountMeta::new_readonly(sender, true),
                 AccountMeta::new_readonly(config, false),
                 AccountMeta::new(wormhole_bridge, false),
                 AccountMeta::new(wormhole_fee_collector, false),
@@ -919,9 +922,15 @@ impl SolanaBridgeClient {
         native_fee: u64,
         message: String,
     ) -> Result<Signature, SolanaBridgeClientError> {
-        let payer = self.signer()?.pubkey();
+        let signer_pubkey = self.signer()?.pubkey();
         let instruction = self.build_init_transfer_sol_instruction(
-            amount, recipient, fee, native_fee, message, payer,
+            amount,
+            recipient,
+            fee,
+            native_fee,
+            message,
+            signer_pubkey,
+            signer_pubkey,
         )?;
         self.send_and_confirm_transaction(vec![instruction], &[])
             .await
@@ -1481,8 +1490,9 @@ mod tests {
     }
 
     #[test]
-    fn init_transfer_sol_builder_encodes_discriminator_and_payer() {
+    fn init_transfer_sol_builder_encodes_discriminator_sender_and_payer() {
         let client = test_client();
+        let sender = Pubkey::new_unique();
         let payer = Pubkey::new_unique();
 
         let instruction = client
@@ -1492,6 +1502,7 @@ mod tests {
                 0,
                 10,
                 String::new(),
+                sender,
                 payer,
             )
             .unwrap();
@@ -1499,8 +1510,9 @@ mod tests {
         assert_eq!(instruction.program_id, *client.program_id().unwrap());
         assert_eq!(instruction.data[..8], INIT_TRANSFER_SOL_DISCRIMINATOR);
         assert_eq!(instruction.accounts.len(), 14);
-        // payer appears as the readonly signer (index 1) and the writable payer (index 7)
-        assert_eq!(instruction.accounts[1].pubkey, payer);
+        // sender is the readonly signer (index 1); payer is the writable
+        // Wormhole CPI payer (index 7) — distinct accounts for relayed txs
+        assert_eq!(instruction.accounts[1].pubkey, sender);
         assert!(instruction.accounts[1].is_signer && !instruction.accounts[1].is_writable);
         assert_eq!(instruction.accounts[7].pubkey, payer);
         assert!(instruction.accounts[7].is_signer && instruction.accounts[7].is_writable);
@@ -1594,6 +1606,7 @@ mod tests {
     #[test]
     fn init_transfer_builder_vault_branches() {
         let client = test_client();
+        let sender = Pubkey::new_unique();
         let payer = Pubkey::new_unique();
         let token = Pubkey::new_unique();
         let program_id = *client.program_id().unwrap();
@@ -1608,6 +1621,7 @@ mod tests {
                 String::new(),
                 spl_token::ID,
                 true,
+                sender,
                 payer,
             )
             .unwrap();
@@ -1624,15 +1638,21 @@ mod tests {
                 String::new(),
                 spl_token_2022_interface::ID,
                 false,
+                sender,
                 payer,
             )
             .unwrap();
         let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], &program_id);
         assert_eq!(native.accounts[3].pubkey, vault);
-        // ATA is derived from the payer and the supplied token program
+        // sender signs at index 5; payer is the distinct Wormhole CPI payer at index 11
+        assert_eq!(native.accounts[5].pubkey, sender);
+        assert!(native.accounts[5].is_signer && native.accounts[5].is_writable);
+        assert_eq!(native.accounts[11].pubkey, payer);
+        assert!(native.accounts[11].is_signer && native.accounts[11].is_writable);
+        // ATA is derived from the sender and the supplied token program
         let (ata, _) = Pubkey::find_program_address(
             &[
-                payer.as_ref(),
+                sender.as_ref(),
                 spl_token_2022_interface::ID.as_ref(),
                 token.as_ref(),
             ],
@@ -1655,6 +1675,7 @@ mod tests {
                 String::new(),
                 Pubkey::new_unique(),
                 false,
+                sender,
                 payer,
             )
             .is_err());

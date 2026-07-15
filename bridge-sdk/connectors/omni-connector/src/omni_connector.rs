@@ -2663,6 +2663,7 @@ impl OmniConnector {
         fee: u128,
         native_fee: u64,
         message: String,
+        sender: Pubkey,
         payer: Pubkey,
     ) -> Result<Instruction> {
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
@@ -2677,6 +2678,7 @@ impl OmniConnector {
             message,
             token_program_id,
             is_bridged_token,
+            sender,
             payer,
         )?)
     }
@@ -2690,6 +2692,7 @@ impl OmniConnector {
         fee: u128,
         native_fee: u64,
         message: String,
+        sender: Pubkey,
         payer: Pubkey,
     ) -> Result<Instruction> {
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
@@ -2699,6 +2702,7 @@ impl OmniConnector {
             fee,
             native_fee,
             message,
+            sender,
             payer,
         )?)
     }
