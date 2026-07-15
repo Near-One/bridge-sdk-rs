@@ -7,7 +7,7 @@ use evm_bridge_client::error::EvmBridgeClientError;
 use hypercore_bridge_client::error::HyperCoreBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
-use solana_client::client_error::ClientError;
+use solana_rpc_client_api::client_error::Error as ClientError;
 use starknet_bridge_client::error::StarknetBridgeClientError;
 use std::result;
 use utxo_bridge_client::{self, error::UtxoClientError};

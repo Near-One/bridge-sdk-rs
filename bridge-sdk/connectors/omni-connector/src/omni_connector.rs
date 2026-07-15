@@ -2666,17 +2666,19 @@ impl OmniConnector {
         payer: Pubkey,
     ) -> Result<Instruction> {
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
-        Ok(svm_bridge_client
-            .build_init_transfer_instruction(
-                token,
-                amount,
-                recipient.to_string(),
-                fee,
-                native_fee,
-                message,
-                payer,
-            )
-            .await?)
+        let (token_program_id, is_bridged_token) =
+            svm_bridge_client.fetch_token_context(token).await?;
+        Ok(svm_bridge_client.build_init_transfer_instruction(
+            token,
+            amount,
+            recipient.to_string(),
+            fee,
+            native_fee,
+            message,
+            token_program_id,
+            is_bridged_token,
+            payer,
+        )?)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2714,9 +2716,15 @@ impl OmniConnector {
         if svm_token == Pubkey::default() {
             Ok(svm_bridge_client.build_finalize_transfer_sol_instruction(payload, payer)?)
         } else {
-            Ok(svm_bridge_client
-                .build_finalize_transfer_instruction(payload, svm_token, payer)
-                .await?)
+            let (token_program_id, is_bridged_token) =
+                svm_bridge_client.fetch_token_context(svm_token).await?;
+            Ok(svm_bridge_client.build_finalize_transfer_instruction(
+                payload,
+                svm_token,
+                token_program_id,
+                is_bridged_token,
+                payer,
+            )?)
         }
     }
 
@@ -2782,9 +2790,8 @@ impl OmniConnector {
         payer: Pubkey,
     ) -> Result<Instruction> {
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
-        Ok(svm_bridge_client
-            .build_log_metadata_instruction(token, payer)
-            .await?)
+        let token_program_id = svm_bridge_client.fetch_token_program_id(token).await?;
+        Ok(svm_bridge_client.build_log_metadata_instruction(token, token_program_id, payer)?)
     }
 
     pub fn svm_build_update_metadata(

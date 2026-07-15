@@ -1,8 +1,8 @@
 [package]
 name = "bridge-connector-common"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.96.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -10,7 +10,7 @@ rust-version = "1.88.0"
 thiserror.workspace = true
 alloy.workspace = true
 serde_json.workspace = true
-solana-client.workspace = true
+solana-rpc-client-api.workspace = true
 eth-proof = { path = "../../eth-proof" }
 near-rpc-client = { path = "../../near-rpc-client" }
 solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }

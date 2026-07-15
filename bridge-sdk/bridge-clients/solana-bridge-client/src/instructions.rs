@@ -1,7 +1,7 @@
 use crate::{DeployTokenData, TransferId};
 use borsh::BorshSerialize;
 use sha2::{Digest, Sha256};
-use solana_sdk::pubkey::Pubkey;
+use solana_pubkey::Pubkey;
 
 fn get_instruction_identifier(instruction_name: &str) -> [u8; 8] {
     let mut identifier = Sha256::new();
@@ -9,6 +9,7 @@ fn get_instruction_identifier(instruction_name: &str) -> [u8; 8] {
     identifier.finalize()[..8].try_into().unwrap()
 }
 
+#[cfg(any(feature = "client", test))]
 pub(crate) fn instruction_name_from_data(data: &[u8]) -> Option<&'static str> {
     const KNOWN_INSTRUCTIONS: [&str; 10] = [
         "initialize",
@@ -29,6 +30,7 @@ pub(crate) fn instruction_name_from_data(data: &[u8]) -> Option<&'static str> {
         .find(|name| get_instruction_identifier(&format!("global:{name}")) == discriminator)
 }
 
+#[cfg(feature = "client")]
 pub struct Initialize {
     pub admin: Pubkey,
     pub pausable_admin: Pubkey,
@@ -36,6 +38,7 @@ pub struct Initialize {
     pub derived_near_bridge_address: [u8; 64],
 }
 
+#[cfg(feature = "client")]
 impl BorshSerialize for Initialize {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_all(&get_instruction_identifier("global:initialize"))?;

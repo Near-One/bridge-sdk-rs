@@ -54,14 +54,27 @@ near-contract-standards = "5.5"
 omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "ba6d1d4470d8dbe2748280647430ebf06a3cc299", features = ["abi", "__abi-generate"] }
 starknet = "0.17.0"
 serde_with = { version = "3.12.0", features = ["schemars_0_8"] }
-solana-sdk = "2.0.13"
-solana-client = "2.0.13"
-solana-system-interface = "1.0.0"
-solana-transaction-status-client-types = "2.3.6"
-spl-token = "7.0.0"
-spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
-spl-associated-token-account = { version = "6.0.0", features = ["no-entrypoint"] }
-mpl-token-metadata = "5.1.0"
+solana-sdk = "4.0.1"
+solana-rpc-client = "4.1.2"
+solana-rpc-client-api = "4.1.2"
+solana-system-interface = "3.2.0"
+solana-transaction-status-client-types = "4.1.2"
+solana-pubkey = { version = "4.2.0", features = ["curve25519", "sha2", "borsh"] }
+solana-instruction = { version = "3.4.0", features = ["borsh"] }
+solana-message = { version = "4.3.0", features = ["serde", "wincode", "blake3"] }
+solana-transaction = { version = "4.1.5", features = ["serde", "wincode", "verify"] }
+solana-hash = "4.5.0"
+solana-keypair = "3.1.2"
+solana-signer = "3.0.1"
+solana-signature = "3.4.1"
+solana-sdk-ids = "3.1.0"
+solana-program-pack = "3.1.0"
+solana-program-option = "3.1.0"
+solana-commitment-config = "3.1.1"
+bs58 = "0.5"
+spl-token = "9.0.0"
+spl-token-2022 = { version = "11.0.0", features = ["no-entrypoint"] }
+spl-associated-token-account = { version = "8.0.0", features = ["no-entrypoint"] }
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
 near-mpc-contract-interface = "0.0.1"
 openssl-sys = { version = "*", features = ["vendored"] }
@@ -75,10 +88,6 @@ orchard = { version = "0.15.0-pre.2", default-features = false }
 bip0039 = "0.12.0"
 zcash_keys = "0.12.0"
 ripemd = "0.1.3"
-
-[patch.crates-io.curve25519-dalek]
-git = "https://github.com/solana-labs/curve25519-dalek.git"
-rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464"
 
 # librustzcash (rev a4a6753) builds against an unreleased orchard revision via
 # its own [patch.crates-io]; Cargo patches do not propagate from git

@@ -1,53 +1,79 @@
 use base64::Engine;
+#[cfg(feature = "client")]
 use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
 use sha2::{Digest, Sha256};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
-use solana_sdk::{
-    bs58,
-    commitment_config::CommitmentConfig,
-    instruction::{AccountMeta, Instruction},
-    program_option::COption,
-    program_pack::Pack,
-    pubkey::Pubkey,
-    signature::{Keypair, Signature},
-    signer::Signer,
-    sysvar,
-    transaction::Transaction,
-};
+#[cfg(feature = "client")]
+use solana_commitment_config::CommitmentConfig;
+use solana_instruction::{AccountMeta, Instruction};
+use solana_keypair::Keypair;
+#[cfg(feature = "client")]
+use solana_program_option::COption;
+#[cfg(feature = "client")]
+use solana_program_pack::Pack;
+use solana_pubkey::Pubkey;
+#[cfg(feature = "client")]
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+#[cfg(feature = "client")]
+use solana_rpc_client_api::config::RpcTransactionConfig;
+use solana_sdk_ids::sysvar;
+#[cfg(any(feature = "client", test))]
+use solana_signature::Signature;
+use solana_signer::Signer;
 use solana_system_interface::program;
+use solana_transaction::Transaction;
+#[cfg(feature = "client")]
 use solana_transaction_status_client_types::{
     option_serializer::OptionSerializer, EncodedTransaction, UiMessage, UiTransactionEncoding,
 };
+#[cfg(feature = "client")]
 use spl_token::state::Mint;
 
+#[cfg(feature = "client")]
+use crate::instructions::Initialize;
 use crate::{
     error::SolanaBridgeClientError,
     instructions::{
         DeployToken, FinalizeTransfer, FinalizeTransferInstructionPayload, FinalizeTransferSol,
-        InitTransfer, InitTransferSol, Initialize, LogMetadata, Pause, SetAdmin,
+        InitTransfer, InitTransferSol, LogMetadata, Pause, SetAdmin,
     },
 };
 
 pub mod error;
 mod instructions;
 
+/// Metaplex Token Metadata program id. The mpl-token-metadata crate is not
+/// used because it has no stable release on the modern solana crate line
+/// (only 5.1.2-alpha.2); the id is all we need (PDA seeds).
+pub const MPL_TOKEN_METADATA_PROGRAM_ID: Pubkey =
+    Pubkey::from_str_const("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+
+#[cfg(any(feature = "client", test))]
 const DISCRIMINATOR_LEN: usize = 8;
+#[cfg(any(feature = "client", test))]
 const INIT_TRANSFER_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] = [174, 50, 134, 99, 122, 243, 243, 224];
+#[cfg(any(feature = "client", test))]
 const INIT_TRANSFER_SOL_DISCRIMINATOR: [u8; DISCRIMINATOR_LEN] =
     [124, 167, 164, 191, 81, 140, 108, 30];
+#[cfg(feature = "client")]
 const GET_VERSION_DISCRIMINATOR: [u8; 8] = [168, 85, 244, 45, 81, 56, 130, 50];
 
+#[cfg(feature = "client")]
 const INIT_TRANSFER_SENDER_INDEX: usize = 5;
+#[cfg(feature = "client")]
 const INIT_TRANSFER_TOKEN_INDEX: usize = 1;
+#[cfg(feature = "client")]
 const INIT_TRANSFER_EMITTER_INDEX: usize = 6;
+#[cfg(feature = "client")]
 const INIT_TRANSFER_SOL_SENDER_INDEX: usize = 1;
+#[cfg(feature = "client")]
 const INIT_TRANSFER_SOL_EMITTER_INDEX: usize = 2;
 
 const USED_NONCES_PER_ACCOUNT: u64 = 1024;
 
+#[cfg(feature = "client")]
 #[allow(
     clippy::cast_possible_truncation,
     clippy::as_conversions,
@@ -84,6 +110,7 @@ pub struct DepositPayload {
     pub fee_recipient: Option<String>,
 }
 
+#[cfg(feature = "client")]
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 struct InitTransferPayload {
     pub amount: u128,
@@ -149,6 +176,7 @@ impl SvmSigner {
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct SolanaBridgeClient {
+    #[cfg(feature = "client")]
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
@@ -158,6 +186,7 @@ pub struct SolanaBridgeClient {
 }
 
 impl SolanaBridgeClient {
+    #[cfg(feature = "client")]
     pub async fn initialize(
         &self,
         derived_near_bridge_address: [u8; 64],
@@ -206,8 +235,9 @@ impl SolanaBridgeClient {
             .await
     }
 
+    #[cfg(feature = "client")]
     pub async fn get_version(&self) -> Result<String, SolanaBridgeClientError> {
-        use solana_client::rpc_config::RpcSimulateTransactionConfig;
+        use solana_rpc_client_api::config::RpcSimulateTransactionConfig;
 
         let client = self.client()?;
         let program_id = self.program_id()?;
@@ -220,7 +250,7 @@ impl SolanaBridgeClient {
         };
 
         let recent_blockhash = client.get_latest_blockhash().await?;
-        let tx = Transaction::new_unsigned(solana_sdk::message::Message::new_with_blockhash(
+        let tx = Transaction::new_unsigned(solana_message::Message::new_with_blockhash(
             &[instruction],
             Some(&fee_payer),
             &recent_blockhash,
@@ -300,6 +330,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn set_admin(&self, admin: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
         let payer = self.signer()?.pubkey();
         let instruction = self.build_set_admin_instruction(admin, payer)?;
@@ -307,6 +338,7 @@ impl SolanaBridgeClient {
             .await
     }
 
+    #[cfg(feature = "client")]
     pub async fn get_transfer_event(
         &self,
         signature: &Signature,
@@ -420,7 +452,7 @@ impl SolanaBridgeClient {
         let (config, _) = Pubkey::find_program_address(&[b"config"], program_id);
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
 
-        let metadata_program_id: Pubkey = mpl_token_metadata::ID.to_bytes().into();
+        let metadata_program_id = MPL_TOKEN_METADATA_PROGRAM_ID;
         let (metadata, _) = Pubkey::find_program_address(
             &[b"metadata", metadata_program_id.as_ref(), token.as_ref()],
             &metadata_program_id,
@@ -443,6 +475,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn update_metadata(
         &self,
         token: Pubkey,
@@ -477,6 +510,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn pause(&self) -> Result<Signature, SolanaBridgeClientError> {
         let payer = self.signer()?.pubkey();
         let instruction = self.build_pause_instruction(payer)?;
@@ -484,9 +518,18 @@ impl SolanaBridgeClient {
             .await
     }
 
-    pub async fn build_log_metadata_instruction(
+    /// `token_program_id` is a consensus-critical input: it must be the
+    /// program that owns `token`'s mint account — get it from
+    /// `fetch_token_program_id` (requires the `client` feature) or an
+    /// equally trusted source. It is
+    /// validated against the SPL Token / Token-2022 program ids and passed as
+    /// the token-program account the bridge program invokes; a mismatched
+    /// value builds a valid-looking instruction that fails or misroutes
+    /// on chain.
+    pub fn build_log_metadata_instruction(
         &self,
         token: Pubkey,
+        token_program_id: Pubkey,
         payer: Pubkey,
     ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
@@ -496,16 +539,15 @@ impl SolanaBridgeClient {
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
         let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
 
-        let metadata_program_id: Pubkey = mpl_token_metadata::ID.to_bytes().into();
+        let metadata_program_id = MPL_TOKEN_METADATA_PROGRAM_ID;
         let (metadata, _) = Pubkey::find_program_address(
             &[b"metadata", metadata_program_id.as_ref(), token.as_ref()],
             &metadata_program_id,
         );
 
-        let token_program_id = self.get_mint_owner(token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
-                "Not a Solana token: {token}"
+                "Not a Solana token program: {token_program_id}"
             )));
         }
 
@@ -550,9 +592,11 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn log_metadata(&self, token: Pubkey) -> Result<Signature, SolanaBridgeClientError> {
         let payer = self.signer()?.pubkey();
-        let instruction = self.build_log_metadata_instruction(token, payer).await?;
+        let token_program_id = self.fetch_token_program_id(token).await?;
+        let instruction = self.build_log_metadata_instruction(token, token_program_id, payer)?;
         self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
@@ -580,7 +624,7 @@ impl SolanaBridgeClient {
         };
         let (mint, _) = Pubkey::find_program_address(&[b"wrapped_mint", &token], program_id);
 
-        let metadata_program_id: Pubkey = mpl_token_metadata::ID.to_bytes().into();
+        let metadata_program_id = MPL_TOKEN_METADATA_PROGRAM_ID;
         let (metadata, _) = Pubkey::find_program_address(
             &[b"metadata", metadata_program_id.as_ref(), mint.as_ref()],
             &metadata_program_id,
@@ -623,6 +667,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn deploy_token(
         &self,
         data: DeployTokenData,
@@ -633,8 +678,14 @@ impl SolanaBridgeClient {
             .await
     }
 
+    /// `token_program_id` and `is_bridged_token` are consensus-critical
+    /// inputs: they determine which token account and vault this instruction
+    /// moves funds into/out of. Get both from `fetch_token_context`
+    /// (requires the `client` feature) or an equally trusted source — a
+    /// wrong value builds a valid-looking instruction that targets the
+    /// wrong vault or token account.
     #[allow(clippy::too_many_arguments)]
-    pub async fn build_init_transfer_instruction(
+    pub fn build_init_transfer_instruction(
         &self,
         token: Pubkey,
         amount: u128,
@@ -642,6 +693,8 @@ impl SolanaBridgeClient {
         fee: u128,
         native_fee: u64,
         message: String,
+        token_program_id: Pubkey,
+        is_bridged_token: bool,
         payer: Pubkey,
     ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
@@ -651,10 +704,9 @@ impl SolanaBridgeClient {
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
         let (sol_vault, _) = Pubkey::find_program_address(&[b"sol_vault"], program_id);
 
-        let token_program_id = self.get_mint_owner(token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
-                "Not a Solana token: {token}"
+                "Not a Solana token program: {token_program_id}"
             )));
         }
 
@@ -671,11 +723,6 @@ impl SolanaBridgeClient {
             self.wormhole_post_message_shim_event_authority()?;
         let (shim_message, _) =
             Pubkey::find_program_address(&[config.as_ref()], wormhole_post_message_shim_program_id);
-
-        let is_bridged_token = match self.get_token_owner(token).await? {
-            COption::Some(owner) => owner == authority,
-            COption::None => false,
-        };
 
         let instruction_data = InitTransfer {
             amount,
@@ -718,6 +765,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn init_transfer(
         &self,
         token: Pubkey,
@@ -728,15 +776,23 @@ impl SolanaBridgeClient {
         message: String,
     ) -> Result<Signature, SolanaBridgeClientError> {
         let payer = self.signer()?.pubkey();
-        let instruction = self
-            .build_init_transfer_instruction(
-                token, amount, recipient, fee, native_fee, message, payer,
-            )
-            .await?;
+        let (token_program_id, is_bridged_token) = self.fetch_token_context(token).await?;
+        let instruction = self.build_init_transfer_instruction(
+            token,
+            amount,
+            recipient,
+            fee,
+            native_fee,
+            message,
+            token_program_id,
+            is_bridged_token,
+            payer,
+        )?;
         self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
 
+    #[cfg(feature = "client")]
     pub async fn is_transfer_finalised(&self, nonce: u64) -> Result<bool, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
         let (used_nonces, _) = Pubkey::find_program_address(
@@ -844,6 +900,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn init_transfer_sol(
         &self,
         amount: u128,
@@ -860,10 +917,18 @@ impl SolanaBridgeClient {
             .await
     }
 
-    pub async fn build_finalize_transfer_instruction(
+    /// `token_program_id` and `is_bridged_token` are consensus-critical
+    /// inputs: they determine which token account and vault this instruction
+    /// releases funds from. Get both from `fetch_token_context` (requires
+    /// the `client` feature) or an equally trusted source — a wrong value
+    /// builds a valid-looking instruction that targets the wrong vault or
+    /// token account.
+    pub fn build_finalize_transfer_instruction(
         &self,
         data: FinalizeDepositData,
         solana_token: Pubkey,
+        token_program_id: Pubkey,
+        is_bridged_token: bool,
         payer: Pubkey,
     ) -> Result<Instruction, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
@@ -883,10 +948,9 @@ impl SolanaBridgeClient {
         let recipient = data.payload.recipient;
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
 
-        let token_program_id = self.get_mint_owner(solana_token).await?;
         if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
             return Err(SolanaBridgeClientError::InvalidArgument(format!(
-                "Not a Solana token: {solana_token}"
+                "Not a Solana token program: {token_program_id}"
             )));
         }
 
@@ -916,11 +980,6 @@ impl SolanaBridgeClient {
                 fee_recipient: data.payload.fee_recipient,
             },
             signature: data.signature,
-        };
-
-        let is_bridged_token = match self.get_token_owner(solana_token).await? {
-            COption::Some(owner) => owner == authority,
-            COption::None => false,
         };
 
         let accounts = vec![
@@ -961,15 +1020,21 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn finalize_transfer(
         &self,
         data: FinalizeDepositData,
         solana_token: Pubkey,
     ) -> Result<Signature, SolanaBridgeClientError> {
         let payer = self.signer()?.pubkey();
-        let instruction = self
-            .build_finalize_transfer_instruction(data, solana_token, payer)
-            .await?;
+        let (token_program_id, is_bridged_token) = self.fetch_token_context(solana_token).await?;
+        let instruction = self.build_finalize_transfer_instruction(
+            data,
+            solana_token,
+            token_program_id,
+            is_bridged_token,
+            payer,
+        )?;
         self.send_and_confirm_transaction(vec![instruction], &[])
             .await
     }
@@ -1042,6 +1107,7 @@ impl SolanaBridgeClient {
         ))
     }
 
+    #[cfg(feature = "client")]
     pub async fn finalize_transfer_sol(
         &self,
         data: FinalizeDepositData,
@@ -1070,6 +1136,7 @@ impl SolanaBridgeClient {
     /// fetched blockhash. The transaction carries placeholder (all-zero)
     /// signatures and must be signed and submitted within the blockhash
     /// validity window (~60-90 seconds).
+    #[cfg(feature = "client")]
     pub async fn build_unsigned_transaction(
         &self,
         instructions: Vec<Instruction>,
@@ -1077,15 +1144,26 @@ impl SolanaBridgeClient {
     ) -> Result<Transaction, SolanaBridgeClientError> {
         let client = self.client()?;
         let recent_blockhash = client.get_latest_blockhash().await?;
-        Ok(Transaction::new_unsigned(
-            solana_sdk::message::Message::new_with_blockhash(
-                &instructions,
-                Some(&payer),
-                &recent_blockhash,
-            ),
+        Ok(self.build_unsigned_transaction_with_blockhash(instructions, payer, recent_blockhash))
+    }
+
+    /// Assembles an unsigned transaction from a caller-supplied blockhash —
+    /// fully offline, no RPC. See `build_unsigned_transaction` for the
+    /// RPC-fetching variant.
+    pub fn build_unsigned_transaction_with_blockhash(
+        &self,
+        instructions: Vec<Instruction>,
+        payer: Pubkey,
+        recent_blockhash: solana_hash::Hash,
+    ) -> Transaction {
+        Transaction::new_unsigned(solana_message::Message::new_with_blockhash(
+            &instructions,
+            Some(&payer),
+            &recent_blockhash,
         ))
     }
 
+    #[cfg(feature = "client")]
     async fn send_and_confirm_transaction(
         &self,
         instructions: Vec<Instruction>,
@@ -1123,6 +1201,7 @@ impl SolanaBridgeClient {
         }
     }
 
+    #[cfg(feature = "client")]
     async fn get_token_owner(
         &self,
         token: Pubkey,
@@ -1138,12 +1217,48 @@ impl SolanaBridgeClient {
         Ok(mint_data.mint_authority)
     }
 
+    #[cfg(feature = "client")]
     async fn get_mint_owner(&self, token: Pubkey) -> Result<Pubkey, SolanaBridgeClientError> {
         let client = self.client()?;
 
         let mint_account = client.get_account(&token).await?;
 
         Ok(mint_account.owner)
+    }
+
+    /// Resolves the on-chain token program that owns `token`'s mint account.
+    #[cfg(feature = "client")]
+    pub async fn fetch_token_program_id(
+        &self,
+        token: Pubkey,
+    ) -> Result<Pubkey, SolanaBridgeClientError> {
+        let token_program_id = self.get_mint_owner(token).await?;
+        // Same allowlist as the sync builder cores, but with the legacy
+        // "Not a Solana token" message — CLI output parity. Do not dedup
+        // into the cores' check without preserving both messages.
+        if token_program_id != spl_token::ID && token_program_id != spl_token_2022::ID {
+            return Err(SolanaBridgeClientError::InvalidArgument(format!(
+                "Not a Solana token: {token}"
+            )));
+        }
+        Ok(token_program_id)
+    }
+
+    /// Resolves the RPC-derived inputs the init/finalize builders need:
+    /// the token program id and whether the mint is a bridged (wrapped) token.
+    #[cfg(feature = "client")]
+    pub async fn fetch_token_context(
+        &self,
+        token: Pubkey,
+    ) -> Result<(Pubkey, bool), SolanaBridgeClientError> {
+        let token_program_id = self.fetch_token_program_id(token).await?;
+        let program_id = self.program_id()?;
+        let (authority, _) = Pubkey::find_program_address(&[b"authority"], program_id);
+        let is_bridged_token = match self.get_token_owner(token).await? {
+            COption::Some(owner) => owner == authority,
+            COption::None => false,
+        };
+        Ok((token_program_id, is_bridged_token))
     }
 
     pub fn get_token_vault(&self, token: Pubkey) -> Result<Pubkey, SolanaBridgeClientError> {
@@ -1156,6 +1271,7 @@ impl SolanaBridgeClient {
         Ok(vault)
     }
 
+    #[cfg(feature = "client")]
     pub fn client(&self) -> Result<&RpcClient, SolanaBridgeClientError> {
         self.client
             .as_ref()
@@ -1223,6 +1339,7 @@ pub fn serialize_unsigned_transaction(
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
+#[cfg(feature = "client")]
 fn print_unsigned_transaction(transaction: &Transaction) -> Result<(), SolanaBridgeClientError> {
     let serialized = serialize_unsigned_transaction(transaction)?;
     let message = &transaction.message;
@@ -1299,12 +1416,11 @@ mod tests {
             accounts: vec![AccountMeta::new(payer, true)],
             data: vec![1, 2, 3],
         };
-        let transaction =
-            Transaction::new_unsigned(solana_sdk::message::Message::new_with_blockhash(
-                &[instruction],
-                Some(&payer),
-                &solana_sdk::hash::Hash::default(),
-            ));
+        let transaction = Transaction::new_unsigned(solana_message::Message::new_with_blockhash(
+            &[instruction],
+            Some(&payer),
+            &solana_hash::Hash::default(),
+        ));
 
         let encoded = serialize_unsigned_transaction(&transaction).unwrap();
         let decoded: Transaction = bincode::deserialize(
@@ -1340,8 +1456,10 @@ mod tests {
     }
 
     fn test_client() -> SolanaBridgeClient {
-        SolanaBridgeClientBuilder::default()
-            .client(None)
+        let builder = SolanaBridgeClientBuilder::default();
+        #[cfg(feature = "client")]
+        let builder = builder.client(None);
+        builder
             .program_id(Some(
                 "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe"
                     .parse()
@@ -1468,5 +1586,140 @@ mod tests {
         assert_eq!(instruction.accounts[3].pubkey, recipient);
         assert_eq!(instruction.accounts[10].pubkey, payer);
         assert!(instruction.accounts[10].is_signer);
+    }
+
+    #[test]
+    fn init_transfer_builder_vault_branches() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+        let token = Pubkey::new_unique();
+        let program_id = *client.program_id().unwrap();
+
+        let bridged = client
+            .build_init_transfer_instruction(
+                token,
+                10,
+                "near:alice.near".to_string(),
+                0,
+                5,
+                String::new(),
+                spl_token::ID,
+                true,
+                payer,
+            )
+            .unwrap();
+        // bridged token: vault slot (index 3) holds the program id placeholder
+        assert_eq!(bridged.accounts[3].pubkey, program_id);
+
+        let native = client
+            .build_init_transfer_instruction(
+                token,
+                10,
+                "near:alice.near".to_string(),
+                0,
+                5,
+                String::new(),
+                spl_token_2022::ID,
+                false,
+                payer,
+            )
+            .unwrap();
+        let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], &program_id);
+        assert_eq!(native.accounts[3].pubkey, vault);
+        // ATA is derived from the payer and the supplied token program
+        let (ata, _) = Pubkey::find_program_address(
+            &[payer.as_ref(), spl_token_2022::ID.as_ref(), token.as_ref()],
+            &spl_associated_token_account::ID,
+        );
+        assert_eq!(native.accounts[2].pubkey, ata);
+        assert_eq!(
+            instructions::instruction_name_from_data(&native.data),
+            Some("init_transfer")
+        );
+
+        // invalid token program is rejected offline
+        assert!(client
+            .build_init_transfer_instruction(
+                token,
+                10,
+                "near:alice.near".to_string(),
+                0,
+                5,
+                String::new(),
+                Pubkey::new_unique(),
+                false,
+                payer,
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn finalize_transfer_builder_vault_branches() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+        let token = Pubkey::new_unique();
+        let program_id = *client.program_id().unwrap();
+        let data = || FinalizeDepositData {
+            payload: DepositPayload {
+                destination_nonce: 1,
+                transfer_id: TransferId {
+                    origin_chain: 1,
+                    origin_nonce: 2,
+                },
+                amount: 3,
+                recipient: Pubkey::new_unique(),
+                fee_recipient: None,
+            },
+            signature: [3u8; 65],
+        };
+
+        let bridged = client
+            .build_finalize_transfer_instruction(data(), token, spl_token::ID, true, payer)
+            .unwrap();
+        assert_eq!(bridged.accounts[5].pubkey, program_id);
+
+        let native = client
+            .build_finalize_transfer_instruction(data(), token, spl_token::ID, false, payer)
+            .unwrap();
+        let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], &program_id);
+        assert_eq!(native.accounts[5].pubkey, vault);
+        assert_eq!(
+            instructions::instruction_name_from_data(&native.data),
+            Some("finalize_transfer")
+        );
+    }
+
+    #[test]
+    fn log_metadata_and_admin_builders_encode() {
+        let client = test_client();
+        let payer = Pubkey::new_unique();
+        let token = Pubkey::new_unique();
+
+        let log = client
+            .build_log_metadata_instruction(token, spl_token::ID, payer)
+            .unwrap();
+        assert_eq!(
+            instructions::instruction_name_from_data(&log.data),
+            Some("log_metadata")
+        );
+        assert_eq!(log.accounts[9].pubkey, payer);
+        assert!(log.accounts[9].is_signer);
+
+        let pause = client.build_pause_instruction(payer).unwrap();
+        assert_eq!(
+            instructions::instruction_name_from_data(&pause.data),
+            Some("pause")
+        );
+        assert_eq!(pause.accounts[1].pubkey, payer);
+
+        let update = client
+            .build_update_metadata_instruction(token, Some("n".into()), None, None, payer)
+            .unwrap();
+        assert_eq!(
+            instructions::instruction_name_from_data(&update.data),
+            Some("update_metadata")
+        );
+        assert_eq!(update.accounts[6].pubkey, payer);
+        assert!(update.accounts[6].is_signer);
     }
 }

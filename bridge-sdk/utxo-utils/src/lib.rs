@@ -84,7 +84,7 @@ pub fn choose_utxos(
     utxos: HashMap<String, UTXO>,
 ) -> Result<(Vec<(String, UTXO)>, u128), String> {
     let mut utxo_list: Vec<(String, UTXO)> = utxos.into_iter().collect();
-    utxo_list.sort_by(|a, b| b.1.balance.cmp(&a.1.balance));
+    utxo_list.sort_by_key(|b| std::cmp::Reverse(b.1.balance));
 
     let mut selected = Vec::new();
     let mut utxos_balance = 0;
@@ -109,7 +109,7 @@ fn determine_optimal_n(
     max_input_num: usize,
 ) -> Result<usize, String> {
     let mut sorted_desc: Vec<&UTXO> = utxos.values().collect();
-    sorted_desc.sort_by(|a, b| b.balance.cmp(&a.balance));
+    sorted_desc.sort_by_key(|b| std::cmp::Reverse(b.balance));
 
     let mut sum: u128 = 0;
     let mut n: usize = 0;
@@ -555,7 +555,7 @@ pub fn choose_utxos_for_active_management(
     max_change_amount: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
     let mut utxo_list: Vec<(&String, &UTXO)> = utxos.iter().collect();
-    utxo_list.sort_by(|a, b| a.1.balance.cmp(&b.1.balance));
+    utxo_list.sort_by_key(|a| a.1.balance);
 
     let mut selected: Vec<(String, UTXO)> = Vec::new();
     let mut utxos_balance: u64 = 0;

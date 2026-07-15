@@ -17,7 +17,7 @@ reqwest.workspace = true
 tracing-subscriber.workspace = true
 tracing.workspace = true
 omni-types.workspace = true
-solana-client.workspace = true
+solana-rpc-client.workspace = true
 solana-sdk.workspace = true
 light-client.workspace = true
 omni-connector = { path = "../bridge-sdk/connectors/omni-connector" }

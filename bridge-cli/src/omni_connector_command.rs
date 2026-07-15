@@ -20,7 +20,7 @@ use omni_connector::{
 };
 use omni_types::{ChainKind, Fee, OmniAddress, TransferId};
 use solana_bridge_client::{SolanaBridgeClientBuilder, SvmSigner};
-use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{signature::Keypair, signature::Signer as SolanaSigner, signer::EncodableKey};
 use starknet_bridge_client::StarknetBridgeClientBuilder;
 use utxo_bridge_client::{

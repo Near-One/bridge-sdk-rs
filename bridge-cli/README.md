@@ -142,6 +142,23 @@ account is derived from the supplied public key — pass the public key of the
 wallet that actually holds the tokens, or the transaction will reference the
 wrong token account.
 
+#### Using the SDK without an RPC stack (`no-default-features`)
+
+`solana-bridge-client` gates all RPC functionality behind the default-on
+`client` feature. With `default-features = false` the crate exposes only the
+instruction builders, PDA derivation, and unsigned-transaction assembly —
+and builds for `wasm32-wasip2`:
+
+```bash
+cargo build -p solana-bridge-client --no-default-features --target wasm32-wasip2
+```
+
+The three token builders take `token_program_id` / `is_bridged_token`
+explicitly in this mode (`build_log_metadata_instruction` takes only
+`token_program_id`) (fetch them via `fetch_token_context` wherever an RPC
+client is available), and `build_unsigned_transaction_with_blockhash` accepts
+a caller-supplied blockhash.
+
 ## Quick Start
 
 ### Example 1: Deploy an ERC20 Token to NEAR
@@ -196,10 +213,11 @@ bridge-cli testnet near-sign-transfer \
     --native-fee 10000000000000000
 
 # 3. Finalize the transfer on Solana
-bridge-cli testnet solana-finalize-transfer \
+bridge-cli testnet svm-finalize-transfer \
+    --chain sol \
     --tx-hash 8xPxz... \
     --sender-id alice.near \
-    --solana-token 11111111111111111111111111111111
+    --svm-token 11111111111111111111111111111111
 ```
 
 ### Example 4: Transfer BTC from Bitcoin to NEAR
@@ -416,31 +434,39 @@ bridge-cli evm-fin-transfer \
     --tx-hash <NEAR_TX_HASH>
 ```
 
-#### Solana Operations
+#### SVM Operations (Solana / Fogo)
+
+Every SVM command takes `--chain <sol|fogo>` selecting the target chain.
+
 ```bash
-# Initialize Solana bridge
-bridge-cli solana-initialize \
+# Initialize the SVM bridge
+bridge-cli svm-initialize \
+    --chain sol \
     --program-keypair <KEYPAIR>
 
-# Initialize a token transfer from Solana
-bridge-cli solana-init-transfer \
+# Initialize a token transfer from Solana/Fogo
+bridge-cli svm-init-transfer \
+    --chain sol \
     --token <TOKEN_ADDRESS> \
     --amount <AMOUNT> \
     --recipient <RECIPIENT_ADDRESS>
 
 # Initialize a SOL transfer
-bridge-cli solana-init-transfer-sol \
+bridge-cli svm-init-transfer-sol \
+    --chain sol \
     --amount <AMOUNT> \
     --recipient <RECIPIENT_ADDRESS>
 
-# Finalize a token transfer on Solana
-bridge-cli solana-finalize-transfer \
+# Finalize a token transfer on Solana/Fogo
+bridge-cli svm-finalize-transfer \
+    --chain sol \
     --tx-hash <NEAR_TX_HASH> \
     [--sender-id <NEAR_SENDER_ID>] \
-    --solana-token <TOKEN_ADDRESS>
+    --svm-token <TOKEN_ADDRESS>
 
 # Finalize a SOL transfer
-bridge-cli solana-finalize-transfer-sol \
+bridge-cli svm-finalize-transfer-sol \
+    --chain sol \
     --tx-hash <NEAR_TX_HASH> \
     [--sender-id <NEAR_SENDER_ID>]
 ```
