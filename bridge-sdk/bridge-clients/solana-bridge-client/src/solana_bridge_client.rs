@@ -896,7 +896,7 @@ impl SolanaBridgeClient {
             &instruction_data,
             vec![
                 AccountMeta::new(sol_vault, false),
-                AccountMeta::new_readonly(sender, true),
+                AccountMeta::new(sender, true),
                 AccountMeta::new_readonly(config, false),
                 AccountMeta::new(wormhole_bridge, false),
                 AccountMeta::new(wormhole_fee_collector, false),
@@ -1510,10 +1510,11 @@ mod tests {
         assert_eq!(instruction.program_id, *client.program_id().unwrap());
         assert_eq!(instruction.data[..8], INIT_TRANSFER_SOL_DISCRIMINATOR);
         assert_eq!(instruction.accounts.len(), 14);
-        // sender is the readonly signer (index 1); payer is the writable
-        // Wormhole CPI payer (index 7) — distinct accounts for relayed txs
+        // sender is the writable signer (index 1) whose native SOL is
+        // debited; payer is the writable Wormhole CPI payer (index 7) —
+        // distinct accounts for relayed txs
         assert_eq!(instruction.accounts[1].pubkey, sender);
-        assert!(instruction.accounts[1].is_signer && !instruction.accounts[1].is_writable);
+        assert!(instruction.accounts[1].is_signer && instruction.accounts[1].is_writable);
         assert_eq!(instruction.accounts[7].pubkey, payer);
         assert!(instruction.accounts[7].is_signer && instruction.accounts[7].is_writable);
         // no other account is marked signer
