@@ -1,0 +1,19 @@
+[package]
+name = "hypercore-bridge-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+alloy.workspace = true
+hex.workspace = true
+omni-types.workspace = true
+reqwest.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[lib]
+path = "src/hypercore_bridge_client.rs"

@@ -17,6 +17,17 @@ struct CliConfig {
     near_signer: Option<String>,
     #[arg(long)]
     near_private_key: Option<String>,
+    #[arg(
+        long,
+        help = "NEAR signer public key; required with --dry-run for offline/hardware-wallet signing"
+    )]
+    near_public_key: Option<String>,
+    #[arg(
+        long,
+        help = "Build and print the unsigned NEAR transaction (base64 borsh) instead of signing and broadcasting it. Only valid for NEAR commands; errors on other chains"
+    )]
+    #[serde(default)]
+    dry_run: bool,
     #[arg(long)]
     near_token_locker_id: Option<String>,
     #[arg(long)]
@@ -81,6 +92,11 @@ struct CliConfig {
     hyperevm_bridge_token_factory_address: Option<String>,
     #[arg(long)]
     hyperevm_wormhole_address: Option<String>,
+
+    #[arg(long)]
+    hypercore_api: Option<String>,
+    #[arg(long)]
+    hypercore_signature_chain_id: Option<String>,
 
     #[arg(long)]
     abs_rpc: Option<String>,
@@ -165,6 +181,8 @@ impl CliConfig {
             near_rpc: self.near_rpc.or(other.near_rpc),
             near_signer: self.near_signer.or(other.near_signer),
             near_private_key: self.near_private_key.or(other.near_private_key),
+            near_public_key: self.near_public_key.or(other.near_public_key),
+            dry_run: self.dry_run || other.dry_run,
             near_token_locker_id: self.near_token_locker_id.or(other.near_token_locker_id),
             near_mpc_omni_prover_id: self
                 .near_mpc_omni_prover_id
@@ -216,6 +234,11 @@ impl CliConfig {
             hyperevm_wormhole_address: self
                 .hyperevm_wormhole_address
                 .or(other.hyperevm_wormhole_address),
+
+            hypercore_api: self.hypercore_api.or(other.hypercore_api),
+            hypercore_signature_chain_id: self
+                .hypercore_signature_chain_id
+                .or(other.hypercore_signature_chain_id),
 
             abs_rpc: self.abs_rpc.or(other.abs_rpc),
             abs_private_key: self.abs_private_key.or(other.abs_private_key),
@@ -283,6 +306,8 @@ fn env_config() -> CliConfig {
         near_rpc: env::var("NEAR_RPC").ok(),
         near_signer: env::var("NEAR_SIGNER").ok(),
         near_private_key: env::var("NEAR_PRIVATE_KEY").ok(),
+        near_public_key: env::var("NEAR_PUBLIC_KEY").ok(),
+        dry_run: env::var("DRY_RUN").is_ok_and(|s| s == "true"),
         near_token_locker_id: env::var("TOKEN_LOCKER_ID").ok(),
         near_mpc_omni_prover_id: env::var("MPC_OMNI_PROVER_ID").ok(),
         eth_light_client_id: env::var("ETH_LIGHT_CLIENT_ID").ok(),
@@ -319,6 +344,9 @@ fn env_config() -> CliConfig {
         hyperevm_bridge_token_factory_address: env::var("HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS")
             .ok(),
         hyperevm_wormhole_address: env::var("HYPEREVM_WORMHOLE_ADDRESS").ok(),
+
+        hypercore_api: env::var("HYPERCORE_API").ok(),
+        hypercore_signature_chain_id: env::var("HYPERCORE_SIGNATURE_CHAIN_ID").ok(),
 
         abs_rpc: env::var("ABS_RPC").ok(),
         abs_private_key: env::var("ABS_PRIVATE_KEY").ok(),
@@ -383,6 +411,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_MAINNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_MAINNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
@@ -430,6 +460,11 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_MAINNET.to_owned()),
+
+            hypercore_api: Some(defaults::HYPERCORE_API_MAINNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_MAINNET.to_owned(),
+            ),
 
             abs_rpc: Some(defaults::ABS_RPC_MAINNET.to_owned()),
             abs_private_key: None,
@@ -488,6 +523,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_TESTNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_TESTNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
@@ -535,6 +572,11 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_TESTNET.to_owned()),
+
+            hypercore_api: Some(defaults::HYPERCORE_API_TESTNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_TESTNET.to_owned(),
+            ),
 
             abs_rpc: Some(defaults::ABS_RPC_TESTNET.to_owned()),
             abs_private_key: None,
@@ -594,6 +636,8 @@ fn default_config(network: Network) -> CliConfig {
             near_rpc: Some(defaults::NEAR_RPC_DEVNET.to_owned()),
             near_signer: None,
             near_private_key: None,
+            near_public_key: None,
+            dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_DEVNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
@@ -641,6 +685,11 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
             hyperevm_wormhole_address: Some(defaults::HYPEREVM_WORMHOLE_ADDRESS_DEVNET.to_owned()),
+
+            hypercore_api: Some(defaults::HYPERCORE_API_DEVNET.to_owned()),
+            hypercore_signature_chain_id: Some(
+                defaults::HYPERCORE_SIGNATURE_CHAIN_ID_DEVNET.to_owned(),
+            ),
 
             abs_rpc: Some(defaults::ABS_RPC_DEVNET.to_owned()),
             abs_private_key: None,

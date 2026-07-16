@@ -100,6 +100,12 @@ pub struct NearBridgeClient {
     private_key: Option<String>,
     #[doc = r"NEAR account id of the transaction signer"]
     signer: Option<AccountId>,
+    #[doc = r"NEAR public key of the signer (used for dry-run/offline signing, e.g. a hardware wallet)"]
+    #[builder(default)]
+    signer_public_key: Option<String>,
+    #[doc = r"When set, NEAR transactions are printed as an unsigned payload instead of being signed and broadcast"]
+    #[builder(default)]
+    dry_run: bool,
     #[doc = r"`OmniBridge` account id on Near"]
     omni_bridge_id: Option<AccountId>,
     #[doc = r"`MpcOmniProver` account id on Near"]
@@ -986,21 +992,41 @@ impl NearBridgeClient {
             .cloned()
     }
 
-    pub fn signer(&self) -> Result<near_crypto::InMemorySigner> {
+    pub fn signer(&self) -> Result<near_rpc_client::TxSigner> {
+        let signer_id = self.account_id()?;
+
+        // In dry-run mode no secret key is available (it lives on the hardware
+        // wallet); build a public-key-only signer so the transaction can be
+        // assembled and printed for offline signing.
+        if self.dry_run {
+            let public_key = self
+                .signer_public_key
+                .as_ref()
+                .ok_or(BridgeSdkError::ConfigError(
+                    "Near signer public key is not set (required for dry-run)".to_string(),
+                ))?
+                .parse()
+                .map_err(|_| BridgeSdkError::ConfigError("Invalid near public key".to_string()))?;
+
+            return Ok(near_rpc_client::TxSigner::DryRun {
+                account_id: signer_id,
+                public_key,
+            });
+        }
+
         let private_key = self
             .private_key
             .as_ref()
             .ok_or(BridgeSdkError::ConfigError(
                 "Near account private key is not set".to_string(),
             ))?;
-        let signer_id = self.account_id()?;
 
         if let Signer::InMemory(signer) = near_crypto::InMemorySigner::from_secret_key(
             signer_id,
             SecretKey::from_str(private_key)
                 .map_err(|_| BridgeSdkError::ConfigError("Invalid near private key".to_string()))?,
         ) {
-            Ok(signer)
+            Ok(near_rpc_client::TxSigner::InMemory(signer))
         } else {
             Err(BridgeSdkError::ConfigError(
                 "Failed to create near signer".to_string(),

@@ -836,6 +836,7 @@ impl SolanaBridgeClient {
         };
 
         let mut accounts = vec![
+            AccountMeta::new(config, false),
             AccountMeta::new(used_nonces, false),
             AccountMeta::new(authority, false),
             AccountMeta::new_readonly(recipient, false),
@@ -864,13 +865,6 @@ impl SolanaBridgeClient {
             AccountMeta::new_readonly(program::ID, false),
             AccountMeta::new_readonly(token_program_id, false),
         ];
-
-        // Fogo runs the post-omni-bridge-#562 program where `config` is the
-        // first top-level account in `FinalizeTransfer`. Solana mainnet still
-        // runs the pre-#562 version. Drop this branch once Solana is upgraded.
-        if matches!(self.chain, Some(ChainKind::Fogo)) {
-            accounts.insert(0, AccountMeta::new(config, false));
-        }
 
         let instruction = Instruction::new_with_borsh(*program_id, &instruction_data, accounts);
 
@@ -1008,7 +1002,11 @@ impl SolanaBridgeClient {
 
     pub fn get_token_vault(&self, token: Pubkey) -> Result<Pubkey, SolanaBridgeClientError> {
         let program_id = self.program_id()?;
-        let (vault, _) = Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id);
+        let (vault, _) = if token == Pubkey::default() {
+            Pubkey::find_program_address(&[b"sol_vault"], program_id)
+        } else {
+            Pubkey::find_program_address(&[b"vault", token.as_ref()], program_id)
+        };
         Ok(vault)
     }
 

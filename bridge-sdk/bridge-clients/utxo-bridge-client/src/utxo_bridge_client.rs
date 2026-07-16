@@ -213,8 +213,15 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "btc tx not found in block".to_string(),
             ))?;
 
-        let merkle_proof = merkle_tools::merkle_proof_calculator(transactions, tx_index);
+        let merkle_proof = merkle_tools::merkle_proof_calculator(transactions.clone(), tx_index);
         let merkle_proof_str = merkle_proof
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+
+        let coinbase_tx_id = transactions[0].to_string();
+        let coinbase_merkle_proof = merkle_tools::merkle_proof_calculator(transactions, 0);
+        let coinbase_merkle_proof_str = coinbase_merkle_proof
             .iter()
             .map(std::string::ToString::to_string)
             .collect();
@@ -227,6 +234,8 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 .try_into()
                 .expect("Error on convert usize into u64"),
             merkle_proof: merkle_proof_str,
+            coinbase_tx_id,
+            coinbase_merkle_proof: coinbase_merkle_proof_str,
             outputs,
         })
     }
@@ -372,6 +381,19 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 "Failed to read getrawtransaction. Response: {response_text}"
             ))
         })?;
+
+        if !response["error"].is_null() {
+            return Err(UtxoClientError::RpcError(format!(
+                "getrawtransaction failed for tx {tx_hash}: {}",
+                response["error"]
+            )));
+        }
+
+        if response["result"].is_null() {
+            return Err(UtxoClientError::RpcError(format!(
+                "Transaction {tx_hash} not found by the RPC node. Check that the tx hash and RPC endpoint match the expected network, the tx has been broadcast, and the node has txindex enabled."
+            )));
+        }
 
         serde_json::from_value(response["result"].clone()).map_err(|e| {
             UtxoClientError::RpcError(format!(

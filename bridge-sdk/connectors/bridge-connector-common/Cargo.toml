@@ -1,6 +1,6 @@
 [package]
 name = "bridge-connector-common"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 rust-version = "1.88.0"
 
@@ -17,3 +17,4 @@ solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 evm-bridge-client = { path = "../../bridge-clients/evm-bridge-client" }
 starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
+hypercore-bridge-client = { path = "../../bridge-clients/hypercore-bridge-client" }

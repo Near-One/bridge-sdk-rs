@@ -22,4 +22,11 @@ pub enum NearRpcError {
     NonceError,
     #[error("Could not confirm that transaction was finalized")]
     FinalizationError,
+    #[error("Could not serialize transaction")]
+    SerializationError,
+    #[error("Public key {public_key} is not an access key on account {account_id}")]
+    UnknownAccessKey {
+        account_id: String,
+        public_key: String,
+    },
 }

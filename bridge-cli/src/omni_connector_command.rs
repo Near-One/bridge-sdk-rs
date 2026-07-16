@@ -7,6 +7,7 @@ use std::{path::Path, str::FromStr};
 use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
 use evm_bridge_client::EvmBridgeClientBuilder;
+use hypercore_bridge_client::{HyperCoreBridgeClientBuilder, HyperliquidNetwork};
 use light_client::LightClientBuilder;
 use near_bridge_client::{
     btc::{format_max_gas_fee, DepositMsg, SafeDepositMsg},
@@ -292,6 +293,24 @@ async fn resolve_svm_fees(
     Ok((fee, native_fee, gas_fee))
 }
 
+/// Message injected into a NEAR `init_transfer` when `--transfer-to-hypercore`
+/// is set.
+///
+/// The NEAR omni-bridge parses this string as a `DestinationChainMsg` and keeps
+/// only the decoded `DestHexMsg` bytes in the signed `TransferMessagePayload`
+/// (`omni-bridge/src/lib.rs`: `DestinationChainMsg::from_json(..).destination_msg()`);
+/// anything that doesn't parse to `{"DestHexMsg":"<hex>"}` decodes to empty.
+/// On HyperEVM, `OmniBridge.finTransfer` then dispatches purely on
+/// `payload.message.length`: empty → 2-arg `mint` (plain HyperEVM ERC20),
+/// non-empty → 3-arg `mint` on `HlBridgeToken`, which `_update`s the supply to
+/// the system address so HyperCore credits the recipient's spot balance.
+///
+/// The byte *content* is ignored by the 3-arg `mint` — only its non-emptiness
+/// matters. The bytes `636F7265` decode to ASCII `"core"`: a human-readable
+/// marker for indexers/logs, and byte-identical to `@omni-bridge/sdk`'s
+/// `HYPERLIQUID_MESSAGE` so both SDKs emit the same `DestHexMsg` payload.
+const HYPERCORE_DEST_MESSAGE: &str = r#"{"DestHexMsg":"636F7265"}"#;
+
 #[derive(Subcommand, Debug)]
 pub enum OmniConnectorSubCommand {
     #[clap(about = "Log metadata for a token")]
@@ -378,6 +397,12 @@ pub enum OmniConnectorSubCommand {
             help = "Additional message (JSON format, e.g. '{\"MaxGasFee\": \"400\"}' for BTC transfers)"
         )]
         message: Option<String>,
+        #[clap(
+            long,
+            conflicts_with = "message",
+            help = "Deliver to a HyperCore (Hyperliquid L1) spot balance. Only valid with an hlevm:0x... recipient; auto-sets the message that routes the supply to the recipient's Core spot balance. Mutually exclusive with --message."
+        )]
+        transfer_to_hypercore: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -469,6 +494,47 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
 
+    #[clap(about = "HyperCore -> any destination via sendToEvmWithData. \
+                 hlevm:0x... recipient uses ACTION_TRANSFER (direct pool release on HyperEVM); \
+                 any other recipient uses ACTION_INIT_TRANSFER (route through OmniBridge).")]
+    HyperCoreTransfer {
+        #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
+        token: String,
+        #[clap(
+            long,
+            help = "HlBridgeToken contract address on HyperEVM (resolved from spotMeta if omitted)"
+        )]
+        hl_token: Option<EvmH160>,
+        #[clap(short, long, help = "Amount in bridge ERC20 wei units")]
+        amount: u128,
+        #[clap(
+            long,
+            help = "Bridge token decimals (resolved from spotMeta if omitted)"
+        )]
+        decimals: Option<u8>,
+        #[clap(
+            short,
+            long,
+            help = "Recipient OmniAddress: hlevm:0x... (pool release on HyperEVM) or near:... / sol:... / eth:0x... etc. (bridge)"
+        )]
+        recipient: OmniAddress,
+        #[clap(
+            short,
+            long,
+            help = "Bridge fee in bridge ERC20 wei units (ignored when recipient is hlevm:)"
+        )]
+        fee: Option<u128>,
+        #[clap(
+            short,
+            long,
+            help = "Additional message routed through the bridge (ignored when recipient is hlevm:)"
+        )]
+        message: Option<String>,
+        #[clap(long, help = "Override HyperEVM gas limit for the system call")]
+        gas_limit: Option<u64>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Initialize a transfer on Starknet")]
     StarknetInitTransfer {
         #[clap(short, long, help = "Token address on Starknet (felt hex)")]
@@ -551,8 +617,6 @@ pub enum OmniConnectorSubCommand {
         amount: u128,
         #[clap(short, long, help = "Recipient address on the destination chain")]
         recipient: OmniAddress,
-        #[clap(short, long, help = "Fee to charge for the transfer")]
-        fee: Option<u128>,
         #[clap(short, long, help = "Native fee to charge for the transfer")]
         native_fee: Option<u64>,
         #[command(flatten)]
@@ -654,6 +718,12 @@ pub enum OmniConnectorSubCommand {
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
         #[clap(
+            long,
+            help = "Change reserve for RBF transactions",
+            default_value = "5000"
+        )]
+        change_reserve: Option<u128>,
+        #[clap(
             short,
             long,
             help = "Optional ZIP-302 memo for shielded Zcash recipients (only valid with --chain zcash)"
@@ -694,11 +764,6 @@ pub enum OmniConnectorSubCommand {
             help = "Optional msg set as SafeDepositMsg.msg (only valid with direct recipient, i.e. without chain prefix)"
         )]
         msg: Option<String>,
-        #[clap(
-            long,
-            help = "Print the call args as JSON without submitting the transaction"
-        )]
-        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -787,11 +852,6 @@ pub enum OmniConnectorSubCommand {
         no_deposit_refund_address: bool,
         #[clap(long, help = "Optional custom gas fee in satoshi (DAO/Operator only)")]
         gas_fee: Option<u128>,
-        #[clap(
-            long,
-            help = "Print the call args as JSON without submitting the transaction"
-        )]
-        dry_run: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -834,6 +894,11 @@ pub enum OmniConnectorSubCommand {
             default_value = "0"
         )]
         fee: u128,
+        #[clap(
+            long,
+            help = "Derive the deposit address via the UTXO connector contract view method instead of the bridge indexer service"
+        )]
+        from_contract: bool,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -902,8 +967,49 @@ pub(crate) enum InternalSubCommand {
     },
 }
 
+/// `--dry-run` builds and prints an unsigned NEAR transaction; it is meaningless
+/// (and dangerous to silently ignore) for commands that broadcast to another
+/// chain. Reject those up front so a stray `--dry-run` never lets a non-NEAR
+/// transaction go out for real.
+fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
+    use OmniConnectorSubCommand as Cmd;
+
+    let submits_to_non_near = match cmd {
+        Cmd::EvmInitTransfer { config_cli, .. }
+        | Cmd::EvmFinTransfer { config_cli, .. }
+        | Cmd::StarknetInitTransfer { config_cli, .. }
+        | Cmd::StarknetFinTransfer { config_cli, .. }
+        | Cmd::SvmInitialize { config_cli, .. }
+        | Cmd::SvmInitTransfer { config_cli, .. }
+        | Cmd::SvmInitTransferSol { config_cli, .. }
+        | Cmd::SvmFinalizeTransfer { config_cli, .. }
+        | Cmd::SvmFinalizeTransferSol { config_cli, .. }
+        | Cmd::SvmSetAdmin { config_cli, .. }
+        | Cmd::SvmPause { config_cli, .. }
+        | Cmd::SvmUpdateMetadata { config_cli, .. }
+        | Cmd::BtcFinTransfer { config_cli, .. } => {
+            combined_config(config_cli.clone(), network).dry_run
+        }
+        // `deploy-token --chain Near` is a NEAR transaction; any other chain is not.
+        Cmd::DeployToken {
+            chain, config_cli, ..
+        } if *chain != ChainKind::Near => combined_config(config_cli.clone(), network).dry_run,
+        _ => false,
+    };
+
+    if submits_to_non_near {
+        eprintln!(
+            "error: --dry-run is only supported for NEAR transactions; this command \
+             submits to another chain and would broadcast for real"
+        );
+        std::process::exit(1);
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
+    ensure_dry_run_supported(&cmd, network);
+
     match cmd {
         OmniConnectorSubCommand::LogMetadata { token, config_cli } => {
             omni_connector(network, config_cli)
@@ -1046,6 +1152,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             near_tx_hash,
             sender_id,
             fee_rate,
+            change_reserve,
             memo,
             config_cli,
         } => {
@@ -1056,7 +1163,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     sender_id,
                     fee_rate,
                     TransactionOptions::default(),
+                    change_reserve,
                     memo,
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1068,8 +1177,16 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             fee,
             native_fee,
             message,
+            transfer_to_hypercore,
             config_cli,
         } => {
+            if transfer_to_hypercore && recipient.get_chain() != ChainKind::HyperEvm {
+                eprintln!(
+                    "--transfer-to-hypercore requires an hlevm:0x... recipient, got {recipient}"
+                );
+                return;
+            }
+
             let combined_config = combined_config(config_cli.clone(), network);
 
             let (_, native_fee, gas_fee) = match (fee, native_fee) {
@@ -1099,7 +1216,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             };
 
             let mut message = message.unwrap_or_default();
-            if message.is_empty()
+            if transfer_to_hypercore {
+                message = HYPERCORE_DEST_MESSAGE.to_string();
+            } else if message.is_empty()
                 && matches!(recipient.get_chain(), ChainKind::Btc | ChainKind::Zcash)
             {
                 if let Some(gas_fee) = gas_fee {
@@ -1282,6 +1401,32 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .unwrap();
         }
 
+        OmniConnectorSubCommand::HyperCoreTransfer {
+            token,
+            hl_token,
+            amount,
+            decimals,
+            recipient,
+            fee,
+            message,
+            gas_limit,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .init_transfer(InitTransferArgs::HyperCoreTransfer {
+                    token,
+                    hl_bridge_token: hl_token,
+                    amount,
+                    decimals,
+                    recipient,
+                    fee: fee.unwrap_or_default(),
+                    message: message.unwrap_or_default(),
+                    gas_limit,
+                })
+                .await
+                .unwrap();
+        }
+
         OmniConnectorSubCommand::StarknetInitTransfer {
             token,
             amount,
@@ -1390,29 +1535,26 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             amount,
             recipient,
-            fee,
             native_fee,
             config_cli,
         } => {
             let combined_config = combined_config(config_cli.clone(), network);
 
-            let (fee, native_fee, _): (u128, u64, Option<u128>) = match (fee, native_fee) {
-                (Some(f), Some(nf)) => (f, nf, None),
-                (Some(f), None) => (f, 0, None),
-                (None, Some(nf)) => (0, nf, None),
-                _ => match resolve_svm_fees(
+            // The on-chain `init_transfer_sol` instruction requires `fee == 0`
+            // (the bridge service fee is rolled into `native_fee`, which is
+            // debited together with `amount` from the user's SOL balance).
+            let native_fee = match native_fee {
+                Some(nf) => nf,
+                None => match resolve_svm_fees(
                     chain,
                     &combined_config,
-                    &format!(
-                        "{}:So11111111111111111111111111111111111111112",
-                        chain.prefix()
-                    ),
+                    &format!("{}:11111111111111111111111111111111", chain.prefix()),
                     amount,
                     &recipient,
                 )
                 .await
                 {
-                    Ok(values) => values,
+                    Ok((_, nf, _)) => nf,
                     Err(e) => {
                         eprintln!("{e}");
                         return;
@@ -1425,7 +1567,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     chain_kind: chain.into(),
                     amount,
                     recipient,
-                    fee,
+                    fee: 0,
                     native_fee,
                     message: String::new(),
                 })
@@ -1572,7 +1714,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             refund_address,
             fee,
             msg,
-            dry_run,
             config_cli,
         } => {
             let connector = omni_connector(network, config_cli);
@@ -1602,37 +1743,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             )
             .await;
 
-            if dry_run {
-                let args = connector
-                    .build_fin_btc_transfer_args(
-                        chain.into(),
-                        btc_tx_hash,
-                        resolved_vout,
-                        deposit_args,
-                        prefetched,
-                    )
-                    .await
-                    .unwrap();
-                let method_name = if args.deposit_msg.safe_deposit.is_some() {
-                    "safe_verify_deposit"
-                } else {
-                    "verify_deposit"
-                };
-                println!("method: {method_name}");
-                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
-            } else {
-                connector
-                    .fin_transfer(FinTransferArgs::NearFinTransferBTC {
-                        chain_kind: chain.into(),
-                        btc_tx_hash,
-                        vout: resolved_vout,
-                        btc_deposit_args: deposit_args,
-                        prefetched,
-                        transaction_options: TransactionOptions::default(),
-                    })
-                    .await
-                    .unwrap();
-            }
+            // `--dry-run` (if set) is honored at the NEAR client: the verify_deposit
+            // transaction is printed as an unsigned payload instead of broadcast.
+            connector
+                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
+                    chain_kind: chain.into(),
+                    btc_tx_hash,
+                    vout: resolved_vout,
+                    btc_deposit_args: deposit_args,
+                    prefetched,
+                    transaction_options: TransactionOptions::default(),
+                })
+                .await
+                .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyWithdraw {
             chain,
@@ -1694,7 +1817,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             msg,
             no_deposit_refund_address,
             gas_fee,
-            dry_run,
             config_cli,
         } => {
             let chain_kind: ChainKind = chain.into();
@@ -1751,34 +1873,20 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     )
                 });
 
-            if dry_run {
-                let args = connector
-                    .build_btc_request_refund_args(
-                        &btc_tx_hash,
-                        resolved_vout,
-                        btc_deposit_args,
-                        final_refund_address,
-                        gas_fee,
-                        prefetched,
-                    )
-                    .await
-                    .unwrap();
-                println!("method: request_refund");
-                println!("args: {}", serde_json::to_string_pretty(&args).unwrap());
-            } else {
-                connector
-                    .btc_request_refund(
-                        btc_tx_hash,
-                        resolved_vout,
-                        btc_deposit_args,
-                        final_refund_address,
-                        gas_fee,
-                        prefetched,
-                        TransactionOptions::default(),
-                    )
-                    .await
-                    .unwrap();
-            }
+            // `--dry-run` (if set) is honored at the NEAR client: the request_refund
+            // transaction is printed as an unsigned payload instead of broadcast.
+            connector
+                .btc_request_refund(
+                    btc_tx_hash,
+                    resolved_vout,
+                    btc_deposit_args,
+                    final_refund_address,
+                    gas_fee,
+                    prefetched,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
         }
         OmniConnectorSubCommand::BtcVerifyRefundFinalize {
             btc_tx_hash,
@@ -1812,11 +1920,18 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             recipient_id,
             refund_address,
             fee,
+            from_contract,
             config_cli,
         } => {
             let omni_connector = omni_connector(network, config_cli);
             let btc_address = omni_connector
-                .get_btc_address(chain.into(), &recipient_id, refund_address, fee)
+                .get_btc_address(
+                    chain.into(),
+                    &recipient_id,
+                    refund_address,
+                    fee,
+                    from_contract,
+                )
                 .await
                 .unwrap();
 
@@ -1918,6 +2033,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
                 .near_signer
                 .map(|account| account.parse().unwrap()),
         )
+        .signer_public_key(combined_config.near_public_key)
+        .dry_run(combined_config.dry_run)
         .omni_bridge_id(
             combined_config
                 .near_token_locker_id
@@ -1978,8 +2095,8 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .unwrap();
 
     let hyperevm_bridge_client = EvmBridgeClientBuilder::default()
-        .endpoint(combined_config.hyperevm_rpc)
-        .private_key(combined_config.hyperevm_private_key)
+        .endpoint(combined_config.hyperevm_rpc.clone())
+        .private_key(combined_config.hyperevm_private_key.clone())
         .omni_bridge_address(combined_config.hyperevm_bridge_token_factory_address)
         .wormhole_core_address(combined_config.hyperevm_wormhole_address)
         .build()
@@ -1993,6 +2110,23 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .mpc_finality(Some(EvmFinality::Latest))
         .build()
         .unwrap();
+
+    let hypercore_network = match network {
+        Network::Mainnet => HyperliquidNetwork::Mainnet,
+        Network::Testnet | Network::Devnet => HyperliquidNetwork::Testnet,
+    };
+    let hypercore_bridge_client = combined_config.hyperevm_private_key.as_ref().map(|pk| {
+        HyperCoreBridgeClientBuilder::default()
+            .network(hypercore_network)
+            .api_url(combined_config.hypercore_api.clone())
+            .hyperevm_rpc_url(combined_config.hyperevm_rpc.clone())
+            .private_key(Some(pk.clone()))
+            .signature_chain_id(combined_config.hypercore_signature_chain_id.clone())
+            .poll_interval(None)
+            .poll_timeout(None)
+            .build()
+            .unwrap()
+    });
 
     let solana_bridge_client = SolanaBridgeClientBuilder::default()
         .chain(Some(ChainKind::Sol))
@@ -2140,6 +2274,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .pol_bridge_client(Some(pol_bridge_client))
         .hyperevm_bridge_client(Some(hyperevm_bridge_client))
         .abs_bridge_client(Some(abs_bridge_client))
+        .hypercore_bridge_client(hypercore_bridge_client)
         .solana_bridge_client(Some(solana_bridge_client))
         .fogo_bridge_client(Some(fogo_bridge_client))
         .starknet_bridge_client(Some(starknet_bridge_client))
