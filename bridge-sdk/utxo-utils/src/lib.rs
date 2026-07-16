@@ -605,13 +605,13 @@ pub fn choose_utxos_for_active_management(
             if merge_cap_divisor == 0 {
                 return Err("merge_cap_divisor must be positive".to_string());
             }
-            let half_cap = max_change_amount / merge_cap_divisor;
+            let per_utxo_cap = max_change_amount / merge_cap_divisor;
             for utxo_item in utxo_list.iter().rev() {
                 if selected.len() >= utxo_amount {
                     break;
                 }
                 let next_balance = u128::from(utxo_item.1.balance);
-                if next_balance > half_cap {
+                if next_balance > per_utxo_cap {
                     continue;
                 }
                 if u128::from(utxos_balance) + next_balance >= max_change_amount {
@@ -622,7 +622,7 @@ pub fn choose_utxos_for_active_management(
             }
             if selected.len() < 2 {
                 return Err(format!(
-                    "merge-largest: need at least 2 UTXOs <= max_change_amount/{merge_cap_divisor} ({half_cap}) to merge"
+                    "merge-largest: need at least 2 UTXOs <= max_change_amount/{merge_cap_divisor} ({per_utxo_cap}) to merge"
                 ));
             }
         } else {
