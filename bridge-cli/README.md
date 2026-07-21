@@ -84,9 +84,10 @@ signing and broadcasting, the CLI builds the transaction (fetching the current
 nonce and a recent block hash) and prints it as a base64-encoded borsh payload,
 ready to be signed externally — e.g. on a hardware wallet — and submitted by you.
 
-`--dry-run` is only valid for NEAR commands; using it on a command that submits
-to another chain (EVM/SVM/Starknet, `btc-fin-transfer`, or `deploy-token` to a
-non-Near chain) exits with an error rather than broadcasting.
+`--dry-run` is valid for NEAR commands and, per the section below, for SVM
+(Solana/Fogo) commands; using it on a command that submits to any other chain
+(EVM/Starknet, `btc-fin-transfer`, or `deploy-token`/`log-metadata` targeting a
+non-Near, non-SVM chain) exits with an error rather than broadcasting.
 
 In this mode **no private key is needed**; supply the signer account and the
 public key that will sign (the access key must exist on the account):
@@ -112,6 +113,51 @@ Sign and submit the printed payload with your preferred tool, for example
 for ~24h, so sign and submit promptly.
 
 Equivalent env vars: `NEAR_PUBLIC_KEY`, `DRY_RUN=true`.
+
+### Offline signing (SVM: Solana & Fogo)
+
+SVM commands support `--dry-run` too: instead of signing and broadcasting, the CLI
+prints the unsigned transaction as base64-encoded bincode (the same wire format
+`sendTransaction` accepts once signed) plus a human-readable summary. No keypair is
+required — supply the fee payer's public key instead:
+
+```bash
+bridge-cli testnet svm-init-transfer \
+  --chain sol \
+  --token <MINT> --amount 1000000 --recipient near:alice.testnet \
+  --fee 0 --native-fee 10000 \
+  --solana-public-key <PAYER_PUBKEY_BASE58> \
+  --dry-run
+```
+
+Environment variables: `SOLANA_PUBLIC_KEY`, `FOGO_PUBLIC_KEY` (for `--chain fogo`).
+
+**Important:** unlike NEAR (whose block hash stays valid for ~24 h), a Solana/Fogo
+blockhash expires after ~60-90 seconds. Sign and submit immediately, and pass
+`--fee`/`--native-fee` explicitly to skip the fee-indexer round-trip. `svm-initialize`
+does not support `--dry-run` (the program keypair must sign for real).
+
+Note: for token transfers (`svm-init-transfer`), the sender's associated token
+account is derived from the supplied public key — pass the public key of the
+wallet that actually holds the tokens, or the transaction will reference the
+wrong token account.
+
+#### Using the SDK without an RPC stack (`no-default-features`)
+
+`solana-bridge-client` gates all RPC functionality behind the default-on
+`client` feature. With `default-features = false` the crate exposes only the
+instruction builders, PDA derivation, and unsigned-transaction assembly —
+and builds for `wasm32-wasip2`:
+
+```bash
+cargo build -p solana-bridge-client --no-default-features --target wasm32-wasip2
+```
+
+The three token builders take `token_program_id` / `is_bridged_token`
+explicitly in this mode (`build_log_metadata_instruction` takes only
+`token_program_id`) (fetch them via `fetch_token_context` wherever an RPC
+client is available), and `build_unsigned_transaction_with_blockhash` accepts
+a caller-supplied blockhash.
 
 ## Quick Start
 
@@ -167,10 +213,11 @@ bridge-cli testnet near-sign-transfer \
     --native-fee 10000000000000000
 
 # 3. Finalize the transfer on Solana
-bridge-cli testnet solana-finalize-transfer \
+bridge-cli testnet svm-finalize-transfer \
+    --chain sol \
     --tx-hash 8xPxz... \
     --sender-id alice.near \
-    --solana-token 11111111111111111111111111111111
+    --svm-token 11111111111111111111111111111111
 ```
 
 ### Example 4: Transfer BTC from Bitcoin to NEAR
@@ -387,31 +434,39 @@ bridge-cli evm-fin-transfer \
     --tx-hash <NEAR_TX_HASH>
 ```
 
-#### Solana Operations
+#### SVM Operations (Solana / Fogo)
+
+Every SVM command takes `--chain <sol|fogo>` selecting the target chain.
+
 ```bash
-# Initialize Solana bridge
-bridge-cli solana-initialize \
+# Initialize the SVM bridge
+bridge-cli svm-initialize \
+    --chain sol \
     --program-keypair <KEYPAIR>
 
-# Initialize a token transfer from Solana
-bridge-cli solana-init-transfer \
+# Initialize a token transfer from Solana/Fogo
+bridge-cli svm-init-transfer \
+    --chain sol \
     --token <TOKEN_ADDRESS> \
     --amount <AMOUNT> \
     --recipient <RECIPIENT_ADDRESS>
 
 # Initialize a SOL transfer
-bridge-cli solana-init-transfer-sol \
+bridge-cli svm-init-transfer-sol \
+    --chain sol \
     --amount <AMOUNT> \
     --recipient <RECIPIENT_ADDRESS>
 
-# Finalize a token transfer on Solana
-bridge-cli solana-finalize-transfer \
+# Finalize a token transfer on Solana/Fogo
+bridge-cli svm-finalize-transfer \
+    --chain sol \
     --tx-hash <NEAR_TX_HASH> \
     [--sender-id <NEAR_SENDER_ID>] \
-    --solana-token <TOKEN_ADDRESS>
+    --svm-token <TOKEN_ADDRESS>
 
 # Finalize a SOL transfer
-bridge-cli solana-finalize-transfer-sol \
+bridge-cli svm-finalize-transfer-sol \
+    --chain sol \
     --tx-hash <NEAR_TX_HASH> \
     [--sender-id <NEAR_SENDER_ID>]
 ```

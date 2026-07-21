@@ -53,3 +53,10 @@ jobs:
       - name: Run tests
         id: tests
         run: cargo test --workspace
+
+      - name: Check solana-bridge-client without the RPC stack (wasm32-wasip2)
+        id: no_default_features
+        run: |
+          cargo check -p solana-bridge-client --no-default-features
+          rustup target add wasm32-wasip2
+          cargo check -p solana-bridge-client --no-default-features --target wasm32-wasip2

@@ -44,8 +44,10 @@ use solana_bridge_client::{
     DeployTokenData, DepositPayload, FinalizeDepositData, MetadataPayload, SolanaBridgeClient,
     TransferId,
 };
+use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
+use solana_sdk::transaction::Transaction;
 use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -2570,11 +2572,7 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn svm_deploy_token_with_event(
-        &self,
-        chain_kind: ChainKind,
-        event: OmniBridgeEvent,
-    ) -> Result<Signature> {
+    fn svm_deploy_token_payload(event: OmniBridgeEvent) -> Result<DeployTokenData> {
         let OmniBridgeEvent::LogMetadataEvent {
             signature,
             metadata_payload,
@@ -2583,12 +2581,10 @@ impl OmniConnector {
             return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
 
-        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
-
         let mut signature = signature.to_bytes();
         signature[64] -= 27; // TODO: Remove recovery_id modification in OmniTypes and add it specifically when submitting to EVM chains
 
-        let payload = DeployTokenData {
+        Ok(DeployTokenData {
             metadata: MetadataPayload {
                 token: metadata_payload.token,
                 name: metadata_payload.name,
@@ -2598,7 +2594,56 @@ impl OmniConnector {
             signature: signature.try_into().map_err(|_| {
                 BridgeSdkError::ConfigError("Failed to parse signature".to_string())
             })?,
+        })
+    }
+
+    fn svm_finalize_deposit_data(
+        chain_kind: ChainKind,
+        event: OmniBridgeEvent,
+    ) -> Result<FinalizeDepositData> {
+        let OmniBridgeEvent::SignTransferEvent {
+            message_payload,
+            signature,
+        } = event
+        else {
+            return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
         };
+
+        let mut signature = signature.to_bytes();
+        signature[64] -= 27;
+
+        Ok(FinalizeDepositData {
+            payload: DepositPayload {
+                destination_nonce: message_payload.destination_nonce,
+                transfer_id: TransferId {
+                    origin_chain: message_payload.transfer_id.origin_chain.into(),
+                    origin_nonce: message_payload.transfer_id.origin_nonce,
+                },
+                amount: message_payload.amount.into(),
+                recipient: match (chain_kind, message_payload.recipient) {
+                    (ChainKind::Sol, OmniAddress::Sol(addr))
+                    | (ChainKind::Fogo, OmniAddress::Fogo(addr)) => Pubkey::new_from_array(addr.0),
+                    (chain, recipient) => {
+                        return Err(BridgeSdkError::ConfigError(format!(
+                            "Recipient {recipient:?} does not match destination chain {chain:?}"
+                        )));
+                    }
+                },
+                fee_recipient: message_payload.fee_recipient.map(|addr| addr.to_string()),
+            },
+            signature: signature.try_into().map_err(|_| {
+                BridgeSdkError::ConfigError("Failed to parse signature".to_string())
+            })?,
+        })
+    }
+
+    pub async fn svm_deploy_token_with_event(
+        &self,
+        chain_kind: ChainKind,
+        event: OmniBridgeEvent,
+    ) -> Result<Signature> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let payload = Self::svm_deploy_token_payload(event)?;
 
         let signature = svm_bridge_client.deploy_token(payload).await?;
 
@@ -2691,42 +2736,8 @@ impl OmniConnector {
         event: OmniBridgeEvent,
         svm_token: Pubkey, // TODO: retrieve from near contract
     ) -> Result<Signature> {
-        let OmniBridgeEvent::SignTransferEvent {
-            message_payload,
-            signature,
-        } = event
-        else {
-            return Err(BridgeSdkError::UnknownError("Invalid event".to_string()));
-        };
-
         let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
-
-        let mut signature = signature.to_bytes();
-        signature[64] -= 27;
-
-        let payload = FinalizeDepositData {
-            payload: DepositPayload {
-                destination_nonce: message_payload.destination_nonce,
-                transfer_id: TransferId {
-                    origin_chain: message_payload.transfer_id.origin_chain.into(),
-                    origin_nonce: message_payload.transfer_id.origin_nonce,
-                },
-                amount: message_payload.amount.into(),
-                recipient: match (chain_kind, message_payload.recipient) {
-                    (ChainKind::Sol, OmniAddress::Sol(addr))
-                    | (ChainKind::Fogo, OmniAddress::Fogo(addr)) => Pubkey::new_from_array(addr.0),
-                    (chain, recipient) => {
-                        return Err(BridgeSdkError::ConfigError(format!(
-                            "Recipient {recipient:?} does not match destination chain {chain:?}"
-                        )));
-                    }
-                },
-                fee_recipient: message_payload.fee_recipient.map(|addr| addr.to_string()),
-            },
-            signature: signature.try_into().map_err(|_| {
-                BridgeSdkError::ConfigError("Failed to parse signature".to_string())
-            })?,
-        };
+        let payload = Self::svm_finalize_deposit_data(chain_kind, event)?;
 
         let signature = if svm_token == Pubkey::default() {
             svm_bridge_client.finalize_transfer_sol(payload).await?
@@ -2742,6 +2753,191 @@ impl OmniConnector {
         );
 
         Ok(signature)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn svm_build_init_transfer(
+        &self,
+        chain_kind: ChainKind,
+        token: Pubkey,
+        amount: u128,
+        recipient: OmniAddress,
+        fee: u128,
+        native_fee: u64,
+        message: String,
+        sender: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let (token_program_id, is_bridged_token) =
+            svm_bridge_client.fetch_token_context(token).await?;
+        Ok(svm_bridge_client.build_init_transfer_instruction(
+            token,
+            amount,
+            recipient.to_string(),
+            fee,
+            native_fee,
+            message,
+            token_program_id,
+            is_bridged_token,
+            sender,
+            payer,
+        )?)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn svm_build_init_transfer_sol(
+        &self,
+        chain_kind: ChainKind,
+        amount: u128,
+        recipient: OmniAddress,
+        fee: u128,
+        native_fee: u64,
+        message: String,
+        sender: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        Ok(svm_bridge_client.build_init_transfer_sol_instruction(
+            amount,
+            recipient.to_string(),
+            fee,
+            native_fee,
+            message,
+            sender,
+            payer,
+        )?)
+    }
+
+    pub async fn svm_build_finalize_transfer_with_event(
+        &self,
+        chain_kind: ChainKind,
+        event: OmniBridgeEvent,
+        svm_token: Pubkey, // TODO: retrieve from near contract
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let payload = Self::svm_finalize_deposit_data(chain_kind, event)?;
+
+        if svm_token == Pubkey::default() {
+            Ok(svm_bridge_client.build_finalize_transfer_sol_instruction(payload, payer)?)
+        } else {
+            let (token_program_id, is_bridged_token) =
+                svm_bridge_client.fetch_token_context(svm_token).await?;
+            Ok(svm_bridge_client.build_finalize_transfer_instruction(
+                payload,
+                svm_token,
+                token_program_id,
+                is_bridged_token,
+                payer,
+            )?)
+        }
+    }
+
+    pub async fn svm_build_finalize_transfer_with_tx_hash(
+        &self,
+        chain_kind: ChainKind,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+        svm_token: Pubkey, // TODO: retrieve from near contract
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
+            .await?;
+
+        self.svm_build_finalize_transfer_with_event(
+            chain_kind,
+            serde_json::from_str(&transfer_log)?,
+            svm_token,
+            payer,
+        )
+        .await
+    }
+
+    pub fn svm_build_deploy_token_with_event(
+        &self,
+        chain_kind: ChainKind,
+        event: OmniBridgeEvent,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let payload = Self::svm_deploy_token_payload(event)?;
+
+        Ok(svm_bridge_client.build_deploy_token_instruction(payload, payer)?)
+    }
+
+    pub async fn svm_build_deploy_token_with_tx_hash(
+        &self,
+        chain_kind: ChainKind,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
+            .await?;
+
+        self.svm_build_deploy_token_with_event(
+            chain_kind,
+            serde_json::from_str(&transfer_log)?,
+            payer,
+        )
+    }
+
+    pub async fn svm_build_log_metadata(
+        &self,
+        chain_kind: ChainKind,
+        token: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        let token_program_id = svm_bridge_client.fetch_token_program_id(token).await?;
+        Ok(svm_bridge_client.build_log_metadata_instruction(token, token_program_id, payer)?)
+    }
+
+    pub fn svm_build_update_metadata(
+        &self,
+        chain_kind: ChainKind,
+        token: Pubkey,
+        name: Option<String>,
+        symbol: Option<String>,
+        uri: Option<String>,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        Ok(svm_bridge_client.build_update_metadata_instruction(token, name, symbol, uri, payer)?)
+    }
+
+    pub fn svm_build_pause(&self, chain_kind: ChainKind, payer: Pubkey) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        Ok(svm_bridge_client.build_pause_instruction(payer)?)
+    }
+
+    pub fn svm_build_set_admin(
+        &self,
+        chain_kind: ChainKind,
+        admin: Pubkey,
+        payer: Pubkey,
+    ) -> Result<Instruction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        Ok(svm_bridge_client.build_set_admin_instruction(admin, payer)?)
+    }
+
+    pub async fn svm_build_unsigned_transaction(
+        &self,
+        chain_kind: ChainKind,
+        instructions: Vec<Instruction>,
+        payer: Pubkey,
+    ) -> Result<Transaction> {
+        let svm_bridge_client = self.svm_bridge_client(chain_kind)?;
+        Ok(svm_bridge_client
+            .build_unsigned_transaction(instructions, payer)
+            .await?)
     }
 
     pub async fn log_metadata(
