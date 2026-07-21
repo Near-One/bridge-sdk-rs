@@ -7,8 +7,6 @@ use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_pubkey::Pubkey;
 use solana_sdk_ids::sysvar;
-#[cfg(test)]
-use solana_signature::Signature;
 use solana_signer::Signer;
 use solana_system_interface::program;
 use solana_transaction::Transaction;
@@ -775,6 +773,7 @@ pub fn serialize_unsigned_transaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_signature::Signature;
 
     #[test]
     fn svm_signer_keypair_mode() {
