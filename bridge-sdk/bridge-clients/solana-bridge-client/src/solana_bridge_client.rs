@@ -3,7 +3,6 @@ use bitvec::array::BitArray;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_builder::Builder;
 use instructions::UpdateMetadata;
-use omni_types::ChainKind;
 use sha2::{Digest, Sha256};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcTransactionConfig};
 use solana_sdk::{
@@ -121,7 +120,6 @@ pub struct WormholeSequence {
 #[derive(Builder)]
 #[builder(pattern = "owned")]
 pub struct SolanaBridgeClient {
-    chain: Option<ChainKind>,
     client: Option<RpcClient>,
     program_id: Option<Pubkey>,
     wormhole_core: Option<Pubkey>,
@@ -835,7 +833,7 @@ impl SolanaBridgeClient {
             COption::None => false,
         };
 
-        let mut accounts = vec![
+        let accounts = vec![
             AccountMeta::new(config, false),
             AccountMeta::new(used_nonces, false),
             AccountMeta::new(authority, false),
