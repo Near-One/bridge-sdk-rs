@@ -70,6 +70,10 @@ pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0x05f9a4a841dfb7bb3cde33073b2450fe45dcd407fb6c0985a274b0e943ad8598";
 pub const STARKNET_CHAIN_ID_MAINNET: &str = "SN_MAIN";
 
+pub const APTOS_RPC_MAINNET: &str = "https://fullnode.mainnet.aptoslabs.com/v1";
+pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0xe4ec15f237e5a8c7daa7a34ece28e2bd2c079360763f181bf65862ec148b914a";
+
 pub const FOGO_RPC_MAINNET: &str = "https://mainnet.fogo.io";
 pub const FOGO_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const FOGO_WORMHOLE_ADDRESS_MAINNET: &str = "worm2mrQkG1B1KTz37erMfWN8anHkSK24nzca7UD8BB";
@@ -133,7 +137,7 @@ pub const BTC_CONNECTOR_TESTNET: &str = "btc-connector.n-bridge.testnet";
 pub const BTC_TESTNET: &str = "nbtc.n-bridge.testnet";
 pub const SATOSHI_RELAYER_TESTNET: &str = "cosmosfirst.testnet";
 
-pub const ZCASH_ENDPOINT_TESTNET: &str = "http://127.0.0.1:18232";
+pub const ZCASH_ENDPOINT_TESTNET: &str = "https://zcash-testnet.gateway.tatum.io/";
 pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
@@ -142,6 +146,10 @@ pub const STARKNET_RPC_TESTNET: &str = "https://starknet-sepolia-rpc.publicnode.
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x02830785fd87b181c5391819f4a5e6a0b2d76c49d92b7f748a2433495eead162";
 pub const STARKNET_CHAIN_ID_TESTNET: &str = "SN_SEPOLIA";
+
+pub const APTOS_RPC_TESTNET: &str = "https://fullnode.testnet.aptoslabs.com/v1";
+pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0x904a7d620944eec42d5d46cf4fe12463f713c8a705d581c10a010672228f967c";
 
 pub const FOGO_RPC_TESTNET: &str = "https://testnet.fogo.io";
 // pub const FOGO_BRIDGE_ADDRESS_TESTNET: &str = "";
@@ -215,6 +223,10 @@ pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.c
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x05a0ad01b18eba34432d22e4cb5c987560cae87a785b494ed58d9553a98bdc8f";
 pub const STARKNET_CHAIN_ID_DEVNET: &str = "SN_SEPOLIA";
+
+pub const APTOS_RPC_DEVNET: &str = "https://fullnode.testnet.aptoslabs.com/v1";
+pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 pub const FOGO_RPC_DEVNET: &str = "https://testnet.fogo.io";
 // pub const FOGO_BRIDGE_ADDRESS_DEVNET: &str = "";

@@ -488,6 +488,12 @@ impl StarknetBridgeClient {
             .await
     }
 
+    /// Returns the raw `LogMetadata` log with full metadata for MPC proof construction.
+    pub async fn get_log_metadata_log(&self, tx_hash: Felt) -> Result<StarknetEventLog> {
+        self.get_event_log(tx_hash, selector!("LogMetadata"), "LogMetadata")
+            .await
+    }
+
     async fn get_event_log(
         &self,
         tx_hash: Felt,

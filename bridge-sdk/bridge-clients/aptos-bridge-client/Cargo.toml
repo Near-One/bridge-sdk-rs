@@ -1,0 +1,22 @@
+[package]
+name = "aptos-bridge-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+near-mpc-contract-interface.workspace = true
+omni-types.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+bcs.workspace = true
+ed25519-dalek.workspace = true
+sha3.workspace = true
+
+[lib]
+path = "src/aptos_bridge_client.rs"
