@@ -98,9 +98,10 @@ rev = "475ef0ff77d45aebff93cb039d639250d82518a3"
 # RustCrypto *pre-release* digest-0.11 chain (sha2 =0.11.0-pre.4, hmac, ripemd) and
 # clashes with near-sdk 5.28.1's stable sha2 0.11. There is no stable bip32 0.6.0, and
 # a [patch] can only be applied at the workspace root, so we vendor bip32 0.6.0-pre.1
-# verbatim with its RustCrypto deps moved to the released stable versions. Combined with
-# the librustzcash stable-crypto bump (crypto-common/block-buffer released versions),
-# the whole digest-0.11 stack unifies on stable. Drop once bip32 ships a stable 0.6.0.
+# verbatim with its RustCrypto deps moved to the released stable versions. Upstream fixed
+# its deps in iqlusioninc/crates@cfedeba4 but that rev also bumps secp256k1 to 0.31
+# (type-clashes with zcash_transparent's 0.29) and is unpublished — the vendor stays
+# until a published bip32 aligns with the zcash stack's secp256k1.
 [patch.crates-io.bip32]
 path = "vendor/bip32"
 
