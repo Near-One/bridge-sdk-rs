@@ -46,7 +46,7 @@ const BTC_VERIFY_REFUND_FINALIZE_DEPOSIT: u128 = 0;
 const SUBMIT_BTC_TRANSFER_DEPOSIT: u128 = 0;
 pub const MAX_RATIO: u32 = 10000;
 
-pub const UTXO_BATCH_SIZE: u32 = 500;
+pub const UTXO_BATCH_SIZE: u32 = 200;
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
