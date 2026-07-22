@@ -118,4 +118,10 @@ path = "vendor/bip32"
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+# LTO is disabled deliberately: `lto = "thin"` makes rustc emit LLVM bitcode
+# into the dependency rlibs, and the release runners link the non-native
+# targets with foreign linkers whose LLVM LTO readers are older than rustc's
+# (cargo-zigbuild's lld and Xcode's ld). Newer bitcode + older reader =
+# "Unknown attribute kind" link failures on aarch64-linux (cross) and both
+# macOS targets. Emitting native objects keeps every target linkable.
+lto = false
