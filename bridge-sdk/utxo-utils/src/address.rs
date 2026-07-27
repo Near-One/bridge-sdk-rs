@@ -56,6 +56,11 @@ pub enum UTXOAddress {
         chain: ChainKind,
         network: Network,
     },
+    Tex {
+        hash: PubkeyHash,
+        chain: ChainKind,
+        network: Network,
+    },
 }
 
 impl zcash_address::TryFromAddress for UTXOAddress {
@@ -75,6 +80,26 @@ impl zcash_address::TryFromAddress for UTXOAddress {
         Ok(Self::P2pkh {
             hash: PubkeyHash::from_slice(&data[..])
                 .map_err(|_e| "Invalid pubkey hash for Zcash address")?,
+            chain,
+            network,
+        })
+    }
+
+    fn try_from_tex(
+        net: NetworkType,
+        data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        let (chain, network) = match net {
+            NetworkType::Main => (ChainKind::Zcash, Network::Mainnet),
+            NetworkType::Test => (ChainKind::Zcash, Network::Testnet),
+            NetworkType::Regtest => {
+                return Err("Regtest network not supported".into());
+            }
+        };
+
+        Ok(Self::Tex {
+            hash: PubkeyHash::from_slice(&data[..])
+                .map_err(|_e| "Invalid pubkey hash for Zcash TEX address")?,
             chain,
             network,
         })
@@ -165,7 +190,9 @@ impl UTXOAddress {
     /// Return the scriptPubKey corresponding to this address
     pub fn script_pubkey(&self) -> Result<bitcoin::ScriptBuf, String> {
         match self {
-            UTXOAddress::P2pkh { hash, .. } => Ok(bitcoin::ScriptBuf::new_p2pkh(hash)),
+            UTXOAddress::P2pkh { hash, .. } | UTXOAddress::Tex { hash, .. } => {
+                Ok(bitcoin::ScriptBuf::new_p2pkh(hash))
+            }
             UTXOAddress::P2sh { hash, .. } => Ok(bitcoin::ScriptBuf::new_p2sh(hash)),
             UTXOAddress::Segwit { program, .. } => {
                 Ok(bitcoin::ScriptBuf::new_witness_program(program))
@@ -270,7 +297,7 @@ impl UTXOAddress {
 /// Formats bech32 as upper case if alternate formatting is chosen (`{:#}`).
 impl fmt::Display for UTXOAddress {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        use UTXOAddress::{P2pkh, P2sh, Segwit, Unified};
+        use UTXOAddress::{P2pkh, P2sh, Segwit, Tex, Unified};
         match self {
             P2pkh {
                 hash,
@@ -315,6 +342,11 @@ impl fmt::Display for UTXOAddress {
             } => {
                 let str_address =
                     ZcashAddress::from_unified((*network).into(), address.clone()).encode();
+                write!(fmt, "{str_address}")
+            }
+            Tex { hash, network, .. } => {
+                let str_address =
+                    ZcashAddress::from_tex((*network).into(), hash.to_byte_array()).encode();
                 write!(fmt, "{str_address}")
             }
         }
@@ -396,6 +428,44 @@ fn get_script_address_prefix(chain: ChainKind, network: Network) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_zcash_tex_address_as_p2pkh_script() {
+        let hash = [0x11u8; 20];
+        let tex = ZcashAddress::from_tex(NetworkType::Main, hash).encode();
+
+        let parsed = UTXOAddress::parse(&tex, ChainKind::Zcash, Network::Mainnet)
+            .expect("TEX address must parse");
+
+        let expected_script =
+            bitcoin::ScriptBuf::new_p2pkh(&PubkeyHash::from_slice(&hash).unwrap());
+        assert_eq!(parsed.script_pubkey().unwrap(), expected_script);
+        assert_eq!(parsed.to_string(), tex);
+    }
+
+    #[test]
+    fn parse_zcash_tex_address_rejects_wrong_network() {
+        let tex = ZcashAddress::from_tex(NetworkType::Main, [0x11u8; 20]).encode();
+        assert!(UTXOAddress::parse(&tex, ChainKind::Zcash, Network::Testnet).is_err());
+    }
+
+    #[test]
+    fn tex_and_t1_addresses_share_script_pubkey() {
+        let hash = [0x42u8; 20];
+        let tex = ZcashAddress::from_tex(NetworkType::Main, hash).encode();
+        let t1 = ZcashAddress::from_transparent_p2pkh(NetworkType::Main, hash).encode();
+
+        let tex_script = UTXOAddress::parse(&tex, ChainKind::Zcash, Network::Mainnet)
+            .unwrap()
+            .script_pubkey()
+            .unwrap();
+        let t1_script = UTXOAddress::parse(&t1, ChainKind::Zcash, Network::Mainnet)
+            .unwrap()
+            .script_pubkey()
+            .unwrap();
+
+        assert_eq!(tex_script, t1_script);
+    }
 
     #[test]
     fn parse_btc_segwit_accepts_uppercase_and_lowercase() {
