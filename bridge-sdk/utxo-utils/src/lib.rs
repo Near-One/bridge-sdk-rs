@@ -876,6 +876,16 @@ impl zcash_address::TryFromAddress for ZcashAddressReceivers {
         })
     }
 
+    fn try_from_transparent_p2sh(
+        _net: zcash_protocol::consensus::NetworkType,
+        _data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        Ok(Self {
+            has_orchard: false,
+            has_transparent: true,
+        })
+    }
+
     fn try_from_tex(
         _net: zcash_protocol::consensus::NetworkType,
         _data: [u8; 20],
@@ -1053,17 +1063,23 @@ mod tests {
     }
 
     #[test]
-    fn zcash_t3_mainnet_rejected_at_parse() {
-        let t3 = synthetic_t3_mainnet([0u8; 20]);
-        UTXOAddress::parse(&t3, ChainKind::Zcash, Network::Mainnet)
-            .expect_err("Zcash P2SH (t3) is unsupported and must not parse");
+    fn zcash_t3_mainnet_parses_as_p2sh() {
+        let script_hash = [0x42u8; 20];
+        let t3 = synthetic_t3_mainnet(script_hash);
+        let parsed = UTXOAddress::parse(&t3, ChainKind::Zcash, Network::Mainnet)
+            .expect("Zcash P2SH (t3) must parse");
+
+        let script = parsed.script_pubkey().expect("t3 must yield a script");
+        assert!(script.is_p2sh(), "expected P2SH script, got: {script:?}");
+        assert_eq!(&script.as_bytes()[2..22], &script_hash);
+        assert_eq!(parsed.to_string(), t3, "t3 address must roundtrip");
     }
 
     #[test]
-    fn zcash_t3_rejected_by_classification() {
+    fn zcash_t3_classified_as_transparent() {
         let t3 = synthetic_t3_mainnet([0u8; 20]);
-        assert!(contains_orchard_address(&t3).is_err());
-        assert!(contains_transparent_address(&t3).is_err());
+        assert_eq!(contains_orchard_address(&t3), Ok(false));
+        assert_eq!(contains_transparent_address(&t3), Ok(true));
     }
 
     #[test]
@@ -1072,8 +1088,26 @@ mod tests {
         let err = get_tx_outs_orchard(100_000, &t3, &[50_000], ChainKind::Zcash, Network::Mainnet)
             .expect_err("orchard mode must reject P2SH change addresses");
         assert!(
-            err.contains("Invalid change UTXO address"),
-            "expected change-address parse failure, got: {err}"
+            err.contains("requires a P2PKH transparent change address"),
+            "expected non-P2PKH change rejection, got: {err}"
         );
+    }
+
+    #[test]
+    fn get_tx_outs_supports_p2sh_recipient() {
+        let t3 = synthetic_t3_mainnet([0x42u8; 20]);
+        let outs = get_tx_outs(
+            &t3,
+            100_000,
+            "t1Yuiss7kdrddAkaAQjtHctsZPG3uKj4f2o",
+            50_000,
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect("tx_outs build succeeds for P2SH recipient");
+
+        assert_eq!(outs.len(), 2);
+        assert!(outs[0].script_pubkey.is_p2sh());
+        assert!(outs[1].script_pubkey.is_p2pkh());
     }
 }
