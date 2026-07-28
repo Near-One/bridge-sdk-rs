@@ -876,6 +876,16 @@ impl zcash_address::TryFromAddress for ZcashAddressReceivers {
         })
     }
 
+    fn try_from_tex(
+        _net: zcash_protocol::consensus::NetworkType,
+        _data: [u8; 20],
+    ) -> Result<Self, zcash_address::ConversionError<Self::Error>> {
+        Ok(Self {
+            has_orchard: false,
+            has_transparent: true,
+        })
+    }
+
     fn try_from_unified(
         _net: zcash_protocol::consensus::NetworkType,
         data: unified::Address,
@@ -948,6 +958,21 @@ mod tests {
     fn invalid_address_returns_error() {
         assert!(contains_orchard_address("not-a-zcash-address").is_err());
         assert!(contains_transparent_address("not-a-zcash-address").is_err());
+    }
+
+    fn tex_mainnet_from_t1(t1: &str) -> String {
+        use zcash_address::ToAddress;
+        let data = base58::decode_check(t1).unwrap();
+        let hash: [u8; 20] = data[2..].try_into().unwrap();
+        zcash_address::ZcashAddress::from_tex(zcash_protocol::consensus::NetworkType::Main, hash)
+            .encode()
+    }
+
+    #[test]
+    fn tex_address_is_transparent_without_orchard() {
+        let tex = tex_mainnet_from_t1(TRANSPARENT_P2PKH_MAINNET);
+        assert_eq!(contains_transparent_address(&tex), Ok(true));
+        assert_eq!(contains_orchard_address(&tex), Ok(false));
     }
 
     #[test]
