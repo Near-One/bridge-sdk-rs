@@ -24,7 +24,7 @@ struct CliConfig {
     near_public_key: Option<String>,
     #[arg(
         long,
-        help = "Build and print the unsigned NEAR transaction (base64 borsh) instead of signing and broadcasting it. Only valid for NEAR commands; errors on other chains"
+        help = "Build and print the unsigned transaction (base64) instead of signing and broadcasting it. Supported for NEAR and SVM (Solana/Fogo) commands; errors on commands that submit to other chains"
     )]
     #[serde(default)]
     dry_run: bool,
@@ -114,9 +114,12 @@ struct CliConfig {
     #[arg(long)]
     solana_wormhole_post_message_shim_program_id: Option<String>,
     #[arg(long)]
-    solana_wormhole_post_message_shim_event_authority: Option<String>,
-    #[arg(long)]
     solana_keypair: Option<String>,
+    #[arg(
+        long,
+        help = "Solana fee-payer public key (base58); required with --dry-run for offline signing of Solana transactions"
+    )]
+    solana_public_key: Option<String>,
 
     #[arg(long)]
     fogo_rpc: Option<String>,
@@ -127,9 +130,12 @@ struct CliConfig {
     #[arg(long)]
     fogo_wormhole_post_message_shim_program_id: Option<String>,
     #[arg(long)]
-    fogo_wormhole_post_message_shim_event_authority: Option<String>,
-    #[arg(long)]
     fogo_keypair: Option<String>,
+    #[arg(
+        long,
+        help = "Fogo fee-payer public key (base58); required with --dry-run for offline signing of Fogo transactions"
+    )]
+    fogo_public_key: Option<String>,
 
     #[arg(long)]
     wormhole_api: Option<String>,
@@ -170,6 +176,15 @@ struct CliConfig {
     starknet_bridge_address: Option<String>,
     #[arg(long)]
     starknet_chain_id: Option<String>,
+
+    #[arg(long)]
+    aptos_rpc: Option<String>,
+    #[arg(long)]
+    aptos_private_key: Option<String>,
+    #[arg(long)]
+    aptos_account_address: Option<String>,
+    #[arg(long)]
+    aptos_bridge_address: Option<String>,
 
     #[arg(long)]
     config: Option<String>,
@@ -254,10 +269,8 @@ impl CliConfig {
             solana_wormhole_post_message_shim_program_id: self
                 .solana_wormhole_post_message_shim_program_id
                 .or(other.solana_wormhole_post_message_shim_program_id),
-            solana_wormhole_post_message_shim_event_authority: self
-                .solana_wormhole_post_message_shim_event_authority
-                .or(other.solana_wormhole_post_message_shim_event_authority),
             solana_keypair: self.solana_keypair.or(other.solana_keypair),
+            solana_public_key: self.solana_public_key.or(other.solana_public_key),
 
             fogo_rpc: self.fogo_rpc.or(other.fogo_rpc),
             fogo_bridge_address: self.fogo_bridge_address.or(other.fogo_bridge_address),
@@ -265,10 +278,8 @@ impl CliConfig {
             fogo_wormhole_post_message_shim_program_id: self
                 .fogo_wormhole_post_message_shim_program_id
                 .or(other.fogo_wormhole_post_message_shim_program_id),
-            fogo_wormhole_post_message_shim_event_authority: self
-                .fogo_wormhole_post_message_shim_event_authority
-                .or(other.fogo_wormhole_post_message_shim_event_authority),
             fogo_keypair: self.fogo_keypair.or(other.fogo_keypair),
+            fogo_public_key: self.fogo_public_key.or(other.fogo_public_key),
 
             wormhole_api: self.wormhole_api.or(other.wormhole_api),
 
@@ -295,6 +306,11 @@ impl CliConfig {
                 .starknet_bridge_address
                 .or(other.starknet_bridge_address),
             starknet_chain_id: self.starknet_chain_id.or(other.starknet_chain_id),
+
+            aptos_rpc: self.aptos_rpc.or(other.aptos_rpc),
+            aptos_private_key: self.aptos_private_key.or(other.aptos_private_key),
+            aptos_account_address: self.aptos_account_address.or(other.aptos_account_address),
+            aptos_bridge_address: self.aptos_bridge_address.or(other.aptos_bridge_address),
 
             config: self.config.or(other.config),
         }
@@ -359,11 +375,8 @@ fn env_config() -> CliConfig {
             "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
         )
         .ok(),
-        solana_wormhole_post_message_shim_event_authority: env::var(
-            "SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
-        )
-        .ok(),
         solana_keypair: env::var("SOLANA_KEYPAIR").ok(),
+        solana_public_key: env::var("SOLANA_PUBLIC_KEY").ok(),
 
         fogo_rpc: env::var("FOGO_RPC").ok(),
         fogo_bridge_address: env::var("FOGO_BRIDGE_ADDRESS").ok(),
@@ -372,11 +385,8 @@ fn env_config() -> CliConfig {
             "FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID",
         )
         .ok(),
-        fogo_wormhole_post_message_shim_event_authority: env::var(
-            "FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY",
-        )
-        .ok(),
         fogo_keypair: env::var("FOGO_KEYPAIR").ok(),
+        fogo_public_key: env::var("FOGO_PUBLIC_KEY").ok(),
 
         wormhole_api: env::var("WORMHOLE_API").ok(),
 
@@ -399,6 +409,11 @@ fn env_config() -> CliConfig {
         starknet_account_address: env::var("STARKNET_ACCOUNT_ADDRESS").ok(),
         starknet_bridge_address: env::var("STARKNET_BRIDGE_ADDRESS").ok(),
         starknet_chain_id: env::var("STARKNET_CHAIN_ID").ok(),
+
+        aptos_rpc: env::var("APTOS_RPC").ok(),
+        aptos_private_key: env::var("APTOS_PRIVATE_KEY").ok(),
+        aptos_account_address: env::var("APTOS_ACCOUNT_ADDRESS").ok(),
+        aptos_bridge_address: env::var("APTOS_BRIDGE_ADDRESS").ok(),
 
         config: None,
     }
@@ -478,10 +493,8 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
-            ),
             solana_keypair: None,
+            solana_public_key: None,
 
             fogo_rpc: Some(defaults::FOGO_RPC_MAINNET.to_owned()),
             fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_MAINNET.to_owned()),
@@ -489,10 +502,8 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_MAINNET.to_owned(),
             ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_MAINNET.to_owned(),
-            ),
             fogo_keypair: None,
+            fogo_public_key: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_MAINNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_MAINNET.to_owned()),
@@ -516,6 +527,13 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_MAINNET.to_owned()),
+
+            aptos_rpc: Some(defaults::APTOS_RPC_MAINNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
+            ),
 
             config: None,
         },
@@ -590,10 +608,8 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
-            ),
             solana_keypair: None,
+            solana_public_key: None,
 
             fogo_rpc: Some(defaults::FOGO_RPC_TESTNET.to_owned()),
             // fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_TESTNET.to_owned()),
@@ -602,10 +618,8 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_TESTNET.to_owned(),
             ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_TESTNET.to_owned(),
-            ),
             fogo_keypair: None,
+            fogo_public_key: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_TESTNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_TESTNET.to_owned()),
@@ -629,6 +643,13 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_TESTNET.to_owned()),
+
+            aptos_rpc: Some(defaults::APTOS_RPC_TESTNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
+            ),
 
             config: None,
         },
@@ -703,10 +724,8 @@ fn default_config(network: Network) -> CliConfig {
             solana_wormhole_post_message_shim_program_id: Some(
                 defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
             ),
-            solana_wormhole_post_message_shim_event_authority: Some(
-                defaults::SOLANA_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
-            ),
             solana_keypair: None,
+            solana_public_key: None,
 
             fogo_rpc: Some(defaults::FOGO_RPC_DEVNET.to_owned()),
             // fogo_bridge_address: Some(defaults::FOGO_BRIDGE_ADDRESS_DEVNET.to_owned()),
@@ -715,10 +734,8 @@ fn default_config(network: Network) -> CliConfig {
             fogo_wormhole_post_message_shim_program_id: Some(
                 defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_PROGRAM_ID_DEVNET.to_owned(),
             ),
-            fogo_wormhole_post_message_shim_event_authority: Some(
-                defaults::FOGO_WORMHOLE_POST_MESSAGE_SHIM_EVENT_AUTHORITY_DEVNET.to_owned(),
-            ),
             fogo_keypair: None,
+            fogo_public_key: None,
 
             wormhole_api: Some(defaults::WORMHOLE_API_DEVNET.to_owned()),
             btc_endpoint: Some(defaults::BTC_ENDPOINT_DEVNET.to_owned()),
@@ -742,6 +759,13 @@ fn default_config(network: Network) -> CliConfig {
                 defaults::STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
             starknet_chain_id: Some(defaults::STARKNET_CHAIN_ID_DEVNET.to_owned()),
+
+            aptos_rpc: Some(defaults::APTOS_RPC_DEVNET.to_owned()),
+            aptos_private_key: None,
+            aptos_account_address: None,
+            aptos_bridge_address: Some(
+                defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
+            ),
 
             config: None,
         },

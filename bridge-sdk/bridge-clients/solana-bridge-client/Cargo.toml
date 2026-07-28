@@ -1,25 +1,51 @@
 [package]
 name = "solana-bridge-client"
-version = "0.2.10"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 derive_builder.workspace = true
 borsh.workspace = true
-omni-types.workspace = true
-bitvec = "1.0.1"
+bitvec = { version = "1.0.1", optional = true }
 base64.workspace = true
 sha2.workspace = true
-solana-client.workspace = true
-solana-sdk.workspace = true
+bs58 = { workspace = true, optional = true }
+solana-pubkey.workspace = true
+solana-instruction.workspace = true
+solana-message.workspace = true
+solana-transaction.workspace = true
+solana-hash.workspace = true
+solana-keypair.workspace = true
+solana-signer.workspace = true
+solana-signature.workspace = true
+solana-sdk-ids.workspace = true
+solana-program-pack = { workspace = true, optional = true }
+solana-program-option = { workspace = true, optional = true }
+solana-commitment-config = { workspace = true, optional = true }
 solana-system-interface.workspace = true
-solana-transaction-status-client-types.workspace = true
-mpl-token-metadata.workspace = true
-spl-token.workspace = true
-spl-token-2022 = { workspace = true, features = ["no-entrypoint"] }
-spl-associated-token-account = { workspace = true, features = ["no-entrypoint"] }
+solana-rpc-client = { workspace = true, optional = true }
+solana-rpc-client-api = { workspace = true, optional = true }
+solana-transaction-status-client-types = { workspace = true, optional = true }
+spl-token = { workspace = true, features = ["no-entrypoint"] }
+spl-token-2022-interface.workspace = true
+spl-associated-token-account-interface.workspace = true
 thiserror.workspace = true
-openssl-sys.workspace = true
+openssl-sys = { workspace = true, optional = true }
+bincode.workspace = true
+
+[features]
+default = ["client"]
+client = [
+    "dep:solana-rpc-client",
+    "dep:solana-rpc-client-api",
+    "dep:solana-transaction-status-client-types",
+    "dep:solana-commitment-config",
+    "dep:solana-program-pack",
+    "dep:solana-program-option",
+    "dep:bitvec",
+    "dep:bs58",
+    "dep:openssl-sys",
+]
 
 [lib]
 path = "src/solana_bridge_client.rs"

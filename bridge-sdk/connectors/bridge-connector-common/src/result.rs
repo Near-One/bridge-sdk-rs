@@ -2,12 +2,13 @@ use alloy::{
     providers::PendingTransactionError,
     transports::{RpcError, TransportErrorKind},
 };
+use aptos_bridge_client::error::AptosBridgeClientError;
 use eth_proof::{EthClientError, EthProofError};
 use evm_bridge_client::error::EvmBridgeClientError;
 use hypercore_bridge_client::error::HyperCoreBridgeClientError;
 use near_rpc_client::NearRpcError;
 use solana_bridge_client::error::SolanaBridgeClientError;
-use solana_client::client_error::ClientError;
+use solana_rpc_client_api::client_error::Error as ClientError;
 use starknet_bridge_client::error::StarknetBridgeClientError;
 use std::result;
 use utxo_bridge_client::{self, error::UtxoClientError};
@@ -66,6 +67,10 @@ pub enum BridgeSdkError {
     StarknetRpcError(String),
     #[error("Error working with Starknet: {0}")]
     StarknetOtherError(String),
+    #[error("Error communicating with Aptos RPC: {0}")]
+    AptosRpcError(String),
+    #[error("Error working with Aptos: {0}")]
+    AptosOtherError(String),
     #[error("Transaction has not reached the required MPC finality")]
     MpcFinalityNotReached,
     #[error("Error working with HyperCore: {0}")]
@@ -86,6 +91,9 @@ impl From<SolanaBridgeClientError> for BridgeSdkError {
                 Self::SolanaOtherError("Invalid event".to_string())
             }
             SolanaBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            SolanaBridgeClientError::SerializationError(e) => {
+                Self::SolanaOtherError(format!("Serialization error: {e}"))
+            }
         }
     }
 }
@@ -136,6 +144,19 @@ impl From<StarknetBridgeClientError> for BridgeSdkError {
             StarknetBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             StarknetBridgeClientError::TransactionError(e) => Self::StarknetOtherError(e),
             StarknetBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
+        }
+    }
+}
+
+impl From<AptosBridgeClientError> for BridgeSdkError {
+    fn from(error: AptosBridgeClientError) -> Self {
+        match error {
+            AptosBridgeClientError::RestError(e) => Self::AptosRpcError(e),
+            AptosBridgeClientError::TransactionError(e) => Self::AptosOtherError(e),
+            AptosBridgeClientError::BlockchainDataError(e) => Self::AptosOtherError(e),
+            AptosBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            AptosBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            AptosBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }

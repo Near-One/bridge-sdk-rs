@@ -1,8 +1,8 @@
 [package]
 name = "omni-connector"
-version = "0.4.2"
+version = "0.5.2"
 edition = "2021"
-rust-version = "1.88.0"
+rust-version = "1.96.0"
 
 [dependencies]
 sha3.workspace = true
@@ -29,8 +29,6 @@ zcash_primitives.workspace = true
 zcash_transparent.workspace = true
 zcash_protocol.workspace = true
 pczt.workspace = true
-bip0039.workspace = true
-zcash_keys.workspace = true
 orchard.workspace = true
 zcash_address.workspace = true
 ripemd.workspace = true
@@ -47,6 +45,7 @@ solana-bridge-client = { path = "../../bridge-clients/solana-bridge-client" }
 wormhole-bridge-client = { path = "../../bridge-clients/wormhole-bridge-client" }
 utxo-bridge-client = { path = "../../bridge-clients/utxo-bridge-client" }
 starknet-bridge-client = { path = "../../bridge-clients/starknet-bridge-client" }
+aptos-bridge-client = { path = "../../bridge-clients/aptos-bridge-client" }
 hypercore-bridge-client = { path = "../../bridge-clients/hypercore-bridge-client" }
 starknet.workspace = true
 near-mpc-contract-interface.workspace = true
