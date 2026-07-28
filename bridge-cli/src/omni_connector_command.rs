@@ -1191,6 +1191,7 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::BtcVerifyActiveUtxoManagement { .. }
         | Cmd::BtcRequestRefund { .. }
         | Cmd::BtcVerifyRefundFinalize { .. }
+        | Cmd::BtcExecuteRefund { .. }
         | Cmd::ActiveUTXOManagement { .. } => false,
         // `Internal` wraps hidden subcommands; classify each explicitly so a
         // future addition must be triaged for dry-run safety here too.
