@@ -19,11 +19,9 @@ use tokio::time;
 
 pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 500;
 
-// Generous timeout: calls like `request_refund` upload the raw deposit tx +
-// merkle proof, which can far exceed 30s on slow RPCs.
 static DEFAULT_CONNECTOR: LazyLock<JsonRpcClientConnector> = LazyLock::new(|| {
     JsonRpcClient::with(new_near_rpc_client(Some(std::time::Duration::from_secs(
-        120,
+        30,
     ))))
 });
 
