@@ -249,7 +249,7 @@ pub async fn change(
             let signed_transaction = transaction.sign(&near_crypto::Signer::InMemory(signer));
             let tx_hash = signed_transaction.get_hash();
 
-            tracing::info!(
+            tracing::debug!(
                 tx_hash = tx_hash.to_string(),
                 "Broadcasting NEAR transaction"
             );
