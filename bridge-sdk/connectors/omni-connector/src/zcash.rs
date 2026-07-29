@@ -5,7 +5,7 @@ use bridge_connector_common::result::{BridgeSdkError, Result};
 
 use bitcoin::hashes::Hash;
 use bitcoin::key::rand::rngs::OsRng;
-use near_bridge_client::btc::VUTXO;
+use near_bridge_client::btc::{ChainSpecificData, VUTXO};
 use omni_types::ChainKind;
 use orchard::circuit::OrchardCircuitVersion;
 use pczt::roles::{
@@ -129,6 +129,39 @@ fn to_block_height(height: u64) -> BlockHeight {
     BlockHeight::from_u32(height.try_into().unwrap_or(u32::MAX))
 }
 
+enum OrchardFee {
+    /// Standard zip317 fee, absorbed by the caller's transparent change output.
+    Zip317,
+    /// Exact fee in zatoshis, with no transparent change (refunds).
+    Fixed(u64),
+}
+
+fn extract_orchard_recipient(recipient: &str) -> Result<orchard::Address> {
+    utxo_utils::extract_orchard_address(recipient)
+        .map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Error on extract Orchard Address: {err}"
+            ))
+        })?
+        .into_option()
+        .ok_or_else(|| {
+            BridgeSdkError::ZCashOrchardBundleError(
+                "Recipient has no Orchard receiver (use a transparent refund instead)".to_string(),
+            )
+        })
+}
+
+fn parse_memo_bytes(memo: Option<String>) -> Result<MemoBytes> {
+    match memo {
+        Some(m) => Memo::from_str(&m).map(MemoBytes::from).map_err(|err| {
+            BridgeSdkError::ZCashOrchardBundleError(format!(
+                "Invalid memo (max 512 bytes): {err:?}"
+            ))
+        }),
+        None => Ok(MemoBytes::empty()),
+    }
+}
+
 impl OmniConnector {
     /// Returns the Zcash consensus parameters matching the configured bridge
     /// network. The activation heights (and thus the consensus branch ID used
@@ -146,16 +179,13 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
+        expiry_height: BlockHeight,
     ) -> Result<
         zcash_primitives::transaction::builder::Builder<zcash_protocol::consensus::Network, ()>,
     > {
         let near_bridge_client = self.near_bridge_client().map_err(|err| {
             BridgeSdkError::ConfigError(format!("Near bridge client is not initialized: {err}"))
         })?;
-
-        let expiry_delta = near_bridge_client
-            .get_expiry_height_gap(ChainKind::Zcash)
-            .await?;
 
         let params = self.zcash_params()?;
         let target_height = to_block_height(current_height);
@@ -164,7 +194,7 @@ impl OmniConnector {
         let mut builder = zcash_primitives::transaction::builder::Builder::new(
             params,
             target_height,
-            target_height + expiry_delta,
+            expiry_height,
             zcash_primitives::transaction::builder::BuildConfig::Standard {
                 sapling_anchor: None,
                 orchard_anchor: Some(orchard::Anchor::empty_tree()),
@@ -253,9 +283,15 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
+        expiry_height: BlockHeight,
     ) -> Result<Option<Bundle<zcash_transparent::builder::Unauthorized>>> {
         let builder = self
-            .get_builder_with_transparent(current_height, input_points, tx_out_change)
+            .get_builder_with_transparent(
+                current_height,
+                input_points,
+                tx_out_change,
+                expiry_height,
+            )
             .await?;
         Ok(builder.get_transp_bundel())
     }
@@ -266,6 +302,7 @@ impl OmniConnector {
         current_height: u64,
         input_points: Vec<InputPoint>,
         tx_out_change: Option<&TxOut>,
+        expiry_height: BlockHeight,
     ) -> Result<()> {
         let (pool, circuit_version) =
             shielded_pool_and_circuit(&self.zcash_params()?, to_block_height(current_height))?;
@@ -283,7 +320,7 @@ impl OmniConnector {
         let txid_parts = auth_data.digest(TxIdDigester);
 
         let transparent_bundle = self
-            .get_transparent_bundle(current_height, input_points, tx_out_change)
+            .get_transparent_bundle(current_height, input_points, tx_out_change, expiry_height)
             .await?;
 
         let shielded_sig_commitment = match pool {
@@ -374,34 +411,62 @@ impl OmniConnector {
         tx_out_change: Option<&TxOut>,
         memo: Option<String>,
     ) -> Result<(Vec<u8>, u32)> {
-        let recipient = utxo_utils::extract_orchard_address(&recipient).map_err(|err| {
-            BridgeSdkError::ZCashOrchardBundleError(format!(
-                "Error on extract Orchard Address: {err}"
-            ))
-        })?;
+        let recipient = extract_orchard_recipient(&recipient)?;
 
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Zcash)?;
+        let current_height = self
+            .utxo_bridge_client(ChainKind::Zcash)?
+            .get_current_height()
+            .await?;
 
-        let current_height = utxo_bridge_client.get_current_height().await?;
+        let expiry_delta = self
+            .near_bridge_client()?
+            .get_expiry_height_gap(ChainKind::Zcash)
+            .await?;
+        let expiry_height =
+            BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX)) + expiry_delta;
 
+        let memo_bytes = parse_memo_bytes(memo)?;
+
+        let res = self
+            .build_orchard_bundle(
+                recipient,
+                amount,
+                input_points,
+                tx_out_change,
+                memo_bytes,
+                current_height,
+                expiry_height,
+                OrchardFee::Zip317,
+            )
+            .await?;
+
+        Ok((res, expiry_height.into()))
+    }
+
+    /// `expiry_height` and `fee` must match the transaction the contract will
+    /// reconstruct and broadcast — the Orchard binding signature covers both.
+    #[allow(clippy::too_many_arguments)]
+    async fn build_orchard_bundle(
+        &self,
+        recipient: orchard::Address,
+        amount: u64,
+        input_points: Vec<InputPoint>,
+        tx_out_change: Option<&TxOut>,
+        memo_bytes: MemoBytes,
+        current_height: u64,
+        expiry_height: BlockHeight,
+        fee: OrchardFee,
+    ) -> Result<Vec<u8>> {
         let mut builder = self
-            .get_builder_with_transparent(current_height, input_points.clone(), tx_out_change)
+            .get_builder_with_transparent(
+                current_height,
+                input_points.clone(),
+                tx_out_change,
+                expiry_height,
+            )
             .await?;
 
         let rng = OsRng;
-
-        let recipient = recipient.into_option().ok_or_else(|| {
-            BridgeSdkError::ZCashOrchardBundleError("Recipient Orchard address is None".to_string())
-        })?;
-
-        let memo_bytes = match memo {
-            Some(m) => Memo::from_str(&m).map(MemoBytes::from).map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!(
-                    "Invalid memo (max 512 bytes): {err:?}"
-                ))
-            })?,
-            None => MemoBytes::empty(),
-        };
 
         let (pool, circuit_version) =
             shielded_pool_and_circuit(&self.zcash_params()?, to_block_height(current_height))?;
@@ -429,11 +494,31 @@ impl OmniConnector {
             ))
         })?;
 
-        let zcash_primitives::transaction::builder::PcztResult { pczt_parts, .. } = builder
-            .build_for_pczt(rng, &zip317::FeeRule::standard())
-            .map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!("Error on build PCZT: {err}"))
-            })?;
+        let pczt_parts = match fee {
+            OrchardFee::Zip317 => {
+                builder
+                    .build_for_pczt(rng, &zip317::FeeRule::standard())
+                    .map_err(|err| {
+                        BridgeSdkError::ZCashOrchardBundleError(format!(
+                            "Error on build PCZT: {err}"
+                        ))
+                    })?
+                    .pczt_parts
+            }
+            OrchardFee::Fixed(fee) => {
+                let fee_rule = zcash_primitives::transaction::fees::fixed::FeeRule::non_standard(
+                    zcash_protocol::value::Zatoshis::const_from_u64(fee),
+                );
+                builder
+                    .build_for_pczt(rng, &fee_rule)
+                    .map_err(|err| {
+                        BridgeSdkError::ZCashOrchardBundleError(format!(
+                            "Error on build PCZT: {err}"
+                        ))
+                    })?
+                    .pczt_parts
+            }
+        };
 
         let pczt = Creator::build_from_parts(pczt_parts).ok_or_else(|| {
             BridgeSdkError::ZCashOrchardBundleError(
@@ -489,10 +574,15 @@ impl OmniConnector {
         }
 
         let auth_data = tx.into_data();
-        let expiry_height = auth_data.expiry_height().into();
 
-        self.validate_orchard(&auth_data, current_height, input_points, tx_out_change)
-            .await?;
+        self.validate_orchard(
+            &auth_data,
+            current_height,
+            input_points,
+            tx_out_change,
+            expiry_height,
+        )
+        .await?;
 
         let mut res = Vec::new();
         match pool {
@@ -515,7 +605,83 @@ impl OmniConnector {
             ))
         })?;
 
-        Ok((res, expiry_height))
+        Ok(res)
+    }
+
+    /// Build the `ChainSpecificData` (Orchard bundle) for a shielded Zcash refund
+    /// identified by its UTXO storage key (`{tx_id}@{vout}`). The bundle pays
+    /// `amount − gas_fee` to the request's `refund_address`, with no transparent
+    /// change and `expiry_height = 0` — matching the transaction the contract
+    /// reconstructs in `execute_refund`.
+    pub async fn build_refund_chain_specific_data(
+        &self,
+        utxo_storage_key: &str,
+    ) -> Result<ChainSpecificData> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let refund_request = near_bridge_client
+            .get_refund_request(ChainKind::Zcash, utxo_storage_key)
+            .await?;
+
+        let gas_fee = u64::try_from(refund_request.gas_fee).map_err(|_| {
+            BridgeSdkError::InvalidArgument("Refund gas_fee overflows u64".to_string())
+        })?;
+        let amount = u64::try_from(refund_request.amount).map_err(|_| {
+            BridgeSdkError::InvalidArgument("Refund amount overflows u64".to_string())
+        })?;
+        let refund_amount = amount.checked_sub(gas_fee).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument("Deposit amount too small to cover gas fee".to_string())
+        })?;
+        if refund_amount == 0 {
+            return Err(BridgeSdkError::InvalidArgument(
+                "Refund amount is zero after gas fee".to_string(),
+            ));
+        }
+
+        // Matches the contract's key-derivation path: sha256(deposit_msg_json).
+        let path = hex::encode(sha2::Sha256::digest(
+            refund_request.deposit_msg_json.as_bytes(),
+        ));
+
+        let (txid, _) = parse_utxo_path(utxo_storage_key)?;
+        let vout = u32::try_from(refund_request.vout).map_err(|_| {
+            BridgeSdkError::InvalidArgument("Refund vout overflows u32".to_string())
+        })?;
+
+        let input_point = InputPoint {
+            out_point: OutPoint { txid, vout },
+            utxo: utxo_utils::UTXO {
+                path,
+                tx_bytes: refund_request.tx_bytes.0.clone(),
+                vout,
+                balance: amount,
+            },
+        };
+
+        let recipient = extract_orchard_recipient(&refund_request.refund_address)?;
+
+        let current_height = self
+            .utxo_bridge_client(ChainKind::Zcash)?
+            .get_current_height()
+            .await?;
+
+        let bundle_bytes = self
+            .build_orchard_bundle(
+                recipient,
+                refund_amount,
+                vec![input_point],
+                None,
+                MemoBytes::empty(),
+                current_height,
+                BlockHeight::from_u32(0),
+                OrchardFee::Fixed(gas_fee),
+            )
+            .await?;
+
+        Ok(ChainSpecificData {
+            orchard_bundle_bytes: bundle_bytes.into(),
+            expiry_height: 0,
+        })
     }
 
     /// Internal helper to regenerate an Orchard bundle for an existing pending transaction.

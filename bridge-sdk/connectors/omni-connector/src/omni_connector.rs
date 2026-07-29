@@ -848,12 +848,14 @@ impl OmniConnector {
             .await
     }
 
-    /// Build the args for a BTC refund request without submitting the
-    /// transaction. Bitcoin only. The `prefetched` proof can be supplied by a
+    /// Build the args for a UTXO-chain refund request without submitting the
+    /// transaction. The `prefetched` proof can be supplied by a
     /// prior `resolve_deposit_vout` / `resolve_deposit_from_tx` call to skip
     /// the redundant `extract_btc_proof`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_btc_request_refund_args(
         &self,
+        chain: ChainKind,
         btc_tx_hash: &str,
         vout: usize,
         deposit_args: BtcDepositArgs,
@@ -867,7 +869,7 @@ impl OmniConnector {
             Some(p) => p,
             None => {
                 let proof = self
-                    .utxo_bridge_client(ChainKind::Btc)?
+                    .utxo_bridge_client(chain)?
                     .extract_btc_proof(btc_tx_hash)
                     .await?;
                 PrefetchedTxData { proof }
@@ -883,7 +885,7 @@ impl OmniConnector {
         let deposit_amount = u128::from(deposit_output.value_sat);
 
         self.ensure_sufficient_btc_confirmations(
-            ChainKind::Btc,
+            chain,
             proof_data.block_height,
             deposit_amount,
             false,
@@ -924,10 +926,11 @@ impl OmniConnector {
         })
     }
 
-    /// Submit a refund request for a never-finalized BTC deposit. Bitcoin only.
+    /// Submit a refund request for a never-finalized UTXO-chain deposit (Bitcoin/Zcash).
     #[allow(clippy::too_many_arguments)]
     pub async fn btc_request_refund(
         &self,
+        chain: ChainKind,
         btc_tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
@@ -938,6 +941,7 @@ impl OmniConnector {
     ) -> Result<CryptoHash> {
         let args = self
             .build_btc_request_refund_args(
+                chain,
                 &btc_tx_hash,
                 vout,
                 deposit_args,
@@ -948,27 +952,48 @@ impl OmniConnector {
             .await?;
 
         self.near_bridge_client()?
-            .btc_request_refund(args, transaction_options)
+            .btc_request_refund(chain, args, transaction_options)
             .await
     }
 
-    /// Verify that the refund BTC transaction has been confirmed on Bitcoin. Bitcoin only.
+    /// Execute a previously requested refund, identified by `utxo_storage_key`
+    /// (`{tx_id}@{vout}`). `chain_specific_data` is Zcash-only: an Orchard bundle
+    /// for a shielded refund, `None` for a transparent one.
+    pub async fn btc_execute_refund(
+        &self,
+        chain: ChainKind,
+        utxo_storage_key: String,
+        chain_specific_data: Option<ChainSpecificData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        self.near_bridge_client()?
+            .btc_execute_refund(
+                chain,
+                utxo_storage_key,
+                chain_specific_data,
+                transaction_options,
+            )
+            .await
+    }
+
+    /// Verify that the refund transaction has been confirmed on the UTXO chain (Bitcoin/Zcash).
     pub async fn btc_verify_refund_finalize(
         &self,
+        chain: ChainKind,
         btc_tx_hash: String,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
-        let utxo_bridge_client = self.utxo_bridge_client(ChainKind::Btc)?;
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
         let near_bridge_client = self.near_bridge_client()?;
 
         let proof_data = utxo_bridge_client.extract_btc_proof(&btc_tx_hash).await?;
 
         let pending_info = near_bridge_client
-            .get_btc_pending_info(ChainKind::Btc, btc_tx_hash.clone())
+            .get_btc_pending_info(chain, btc_tx_hash.clone())
             .await?;
 
         self.ensure_sufficient_btc_confirmations(
-            ChainKind::Btc,
+            chain,
             proof_data.block_height,
             pending_info.actual_received_amount,
             false,
@@ -987,7 +1012,7 @@ impl OmniConnector {
         };
 
         near_bridge_client
-            .btc_verify_refund_finalize(args, transaction_options)
+            .btc_verify_refund_finalize(chain, args, transaction_options)
             .await
     }
 
@@ -1043,8 +1068,9 @@ impl OmniConnector {
     }
 
     /// Resolve the deposit `vout` by matching outputs of the BTC/Zcash tx
-    /// `tx_hash` against the deposit address derived from `deposit_args` via
-    /// the bridge indexer.
+    /// `tx_hash` against the deposit address derived from `deposit_args`
+    /// (via the UTXO connector contract when `from_contract` is `true`,
+    /// via the bridge indexer otherwise).
     ///
     /// Returns `InvalidArgument` if no output matches or if multiple outputs
     /// match (in which case the candidate vouts are listed in the message).
@@ -1059,6 +1085,7 @@ impl OmniConnector {
         network: Network,
         tx_hash: &str,
         deposit_args: &BtcDepositArgs,
+        from_contract: bool,
     ) -> Result<(usize, PrefetchedTxData)> {
         let expected_address = match deposit_args {
             BtcDepositArgs::OmniDepositArgs {
@@ -1066,8 +1093,14 @@ impl OmniConnector {
                 refund_address,
                 fee,
             } => {
-                self.get_btc_address(chain, recipient_id, refund_address.clone(), *fee, false)
-                    .await?
+                self.get_btc_address(
+                    chain,
+                    recipient_id,
+                    refund_address.clone(),
+                    *fee,
+                    from_contract,
+                )
+                .await?
             }
             BtcDepositArgs::NearDirectDepositArgs {
                 recipient_id,
@@ -1077,12 +1110,12 @@ impl OmniConnector {
                     chain,
                     recipient_id.clone(),
                     refund_address.clone(),
-                    false,
+                    from_contract,
                 )
                 .await?
             }
             BtcDepositArgs::DepositMsg { msg } => {
-                self.get_btc_address_from_deposit_msg(chain, msg, false)
+                self.get_btc_address_from_deposit_msg(chain, msg, from_contract)
                     .await?
             }
         };

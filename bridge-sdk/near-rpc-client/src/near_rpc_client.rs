@@ -87,7 +87,9 @@ fn new_near_rpc_client(timeout: Option<std::time::Duration>) -> reqwest::Client 
 
     let mut builder = reqwest::Client::builder().default_headers(headers);
     if let Some(timeout) = timeout {
-        builder = builder.timeout(timeout).connect_timeout(timeout);
+        // Connecting should still fail fast even when the overall timeout is long.
+        let connect_timeout = std::cmp::min(timeout, std::time::Duration::from_secs(10));
+        builder = builder.timeout(timeout).connect_timeout(connect_timeout);
     }
     builder.build().unwrap()
 }
@@ -242,11 +244,24 @@ pub async fn change(
         // hardware wallet) instead of signing and broadcasting it.
         TxSigner::DryRun { .. } => print_unsigned_transaction(&transaction),
         TxSigner::InMemory(signer) => {
-            let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-                signed_transaction: transaction.sign(&near_crypto::Signer::InMemory(signer)),
-            };
+            let signed_transaction = transaction.sign(&near_crypto::Signer::InMemory(signer));
+            let tx_hash = signed_transaction.get_hash();
 
-            Ok(client.call(request).await?)
+            tracing::debug!(
+                tx_hash = tx_hash.to_string(),
+                "Broadcasting NEAR transaction"
+            );
+
+            // Unlike `broadcast_tx_async`, `send_tx` reports transaction-pool
+            // rejections to the caller instead of silently dropping the transaction.
+            client
+                .call(methods::send_tx::RpcSendTransactionRequest {
+                    signed_transaction,
+                    wait_until: near_primitives::views::TxExecutionStatus::Included,
+                })
+                .await?;
+
+            Ok(tx_hash)
         }
     }
 }

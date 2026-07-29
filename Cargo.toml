@@ -87,7 +87,7 @@ bcs = "0.1"
 ed25519-dalek = "2"
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
-zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }
+zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs", "non-standard-fees"] }
 zcash_transparent = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", features = ["transparent-inputs"] }
 zcash_protocol = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1" }
 pczt = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", features = ["std", "signer", "io-finalizer", "prover", "signer", "tx-extractor", "spend-finalizer", "zcp-builder"] }
