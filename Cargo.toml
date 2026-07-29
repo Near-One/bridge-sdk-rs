@@ -11,6 +11,7 @@ members = [
     "bridge-sdk/bridge-clients/utxo-bridge-client",
     "bridge-sdk/bridge-clients/starknet-bridge-client",
     "bridge-sdk/bridge-clients/aptos-bridge-client",
+    "bridge-sdk/bridge-clients/sui-bridge-client",
     "bridge-sdk/bridge-clients/hypercore-bridge-client",
     "bridge-sdk/crypto-utils",
     "bridge-sdk/utxo-utils",
@@ -57,7 +58,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "f499d46c2d58869e4cbb5d19cff703ff7d2731d6" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "67b37e6c0277c42b5bc3ab76e202bec1ac4b4845" }
 starknet = "0.17.0"
 serde_with = { version = "3.12.0", features = ["schemars_0_8"] }
 solana-sdk = "4.0.1"
@@ -82,9 +83,14 @@ spl-token = "9.0.0"
 spl-token-2022-interface = "3.1.1"
 spl-associated-token-account-interface = "2.0.0"
 crypto-shared = { git = "https://github.com/near-one/mpc", package = "crypto-shared", rev = "463172481597ee09b12020b72c61d6b01da7b167" }
-near-mpc-contract-interface = { git = "https://github.com/near/mpc", package = "near-mpc-contract-interface", rev = "dcc9e042cad6784d33cfa736afb61b876a14ded0" }
+near-mpc-contract-interface = { git = "https://github.com/near/mpc", package = "near-mpc-contract-interface", rev = "9295cf29ee2761e44e00c67538859a1ef648285a" }
 bcs = "0.1"
 ed25519-dalek = "2"
+sui-sdk-types = { version = "=0.3.2", features = ["serde", "hash"] }
+sui-crypto = { version = "=0.3.1", features = ["ed25519", "bech32"] }
+sui-transaction-builder = "=0.3.2"
+sui-rpc = "=0.3.2"
+tonic = "0.14"
 openssl-sys = { version = "*", features = ["vendored"] }
 light-client = { path = "bridge-sdk/light-client" }
 zcash_primitives = { git = "https://github.com/Near-One/librustzcash", rev = "3dbb28e2254b309e3097a7995aa6dcf5a6d459c1", default-features = false, features = ["circuits", "test-dependencies", "transparent-inputs"] }

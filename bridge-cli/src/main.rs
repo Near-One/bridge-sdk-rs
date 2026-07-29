@@ -187,6 +187,15 @@ struct CliConfig {
     aptos_bridge_address: Option<String>,
 
     #[arg(long)]
+    sui_rpc: Option<String>,
+    #[arg(long)]
+    sui_private_key: Option<String>,
+    #[arg(long)]
+    sui_bridge_address: Option<String>,
+    #[arg(long)]
+    sui_state_object_id: Option<String>,
+
+    #[arg(long)]
     config: Option<String>,
 }
 
@@ -311,6 +320,10 @@ impl CliConfig {
             aptos_private_key: self.aptos_private_key.or(other.aptos_private_key),
             aptos_account_address: self.aptos_account_address.or(other.aptos_account_address),
             aptos_bridge_address: self.aptos_bridge_address.or(other.aptos_bridge_address),
+            sui_rpc: self.sui_rpc.or(other.sui_rpc),
+            sui_private_key: self.sui_private_key.or(other.sui_private_key),
+            sui_bridge_address: self.sui_bridge_address.or(other.sui_bridge_address),
+            sui_state_object_id: self.sui_state_object_id.or(other.sui_state_object_id),
 
             config: self.config.or(other.config),
         }
@@ -414,6 +427,10 @@ fn env_config() -> CliConfig {
         aptos_private_key: env::var("APTOS_PRIVATE_KEY").ok(),
         aptos_account_address: env::var("APTOS_ACCOUNT_ADDRESS").ok(),
         aptos_bridge_address: env::var("APTOS_BRIDGE_ADDRESS").ok(),
+        sui_rpc: env::var("SUI_RPC").ok(),
+        sui_private_key: env::var("SUI_PRIVATE_KEY").ok(),
+        sui_bridge_address: env::var("SUI_BRIDGE_ADDRESS").ok(),
+        sui_state_object_id: env::var("SUI_STATE_OBJECT_ID").ok(),
 
         config: None,
     }
@@ -534,6 +551,10 @@ fn default_config(network: Network) -> CliConfig {
             aptos_bridge_address: Some(
                 defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET.to_owned(),
             ),
+            sui_rpc: Some(defaults::SUI_RPC_MAINNET.to_owned()),
+            sui_private_key: None,
+            sui_bridge_address: Some(defaults::SUI_BRIDGE_ADDRESS_MAINNET.to_owned()),
+            sui_state_object_id: Some(defaults::SUI_STATE_OBJECT_ID_MAINNET.to_owned()),
 
             config: None,
         },
@@ -650,6 +671,10 @@ fn default_config(network: Network) -> CliConfig {
             aptos_bridge_address: Some(
                 defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET.to_owned(),
             ),
+            sui_rpc: Some(defaults::SUI_RPC_TESTNET.to_owned()),
+            sui_private_key: None,
+            sui_bridge_address: Some(defaults::SUI_BRIDGE_ADDRESS_TESTNET.to_owned()),
+            sui_state_object_id: Some(defaults::SUI_STATE_OBJECT_ID_TESTNET.to_owned()),
 
             config: None,
         },
@@ -766,6 +791,10 @@ fn default_config(network: Network) -> CliConfig {
             aptos_bridge_address: Some(
                 defaults::APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET.to_owned(),
             ),
+            sui_rpc: Some(defaults::SUI_RPC_DEVNET.to_owned()),
+            sui_private_key: None,
+            sui_bridge_address: Some(defaults::SUI_BRIDGE_ADDRESS_DEVNET.to_owned()),
+            sui_state_object_id: Some(defaults::SUI_STATE_OBJECT_ID_DEVNET.to_owned()),
 
             config: None,
         },

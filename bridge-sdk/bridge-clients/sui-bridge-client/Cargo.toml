@@ -1,0 +1,25 @@
+[package]
+name = "sui-bridge-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88.0"
+
+[dependencies]
+thiserror.workspace = true
+tracing.workspace = true
+near-mpc-contract-interface.workspace = true
+omni-types.workspace = true
+hex.workspace = true
+serde.workspace = true
+tokio.workspace = true
+bcs.workspace = true
+bs58.workspace = true
+sha3.workspace = true
+sui-sdk-types.workspace = true
+sui-crypto.workspace = true
+sui-transaction-builder.workspace = true
+sui-rpc.workspace = true
+tonic.workspace = true
+
+[lib]
+path = "src/sui_bridge_client.rs"

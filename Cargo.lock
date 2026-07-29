@@ -948,7 +948,7 @@ dependencies = [
  "bcs",
  "ed25519-dalek",
  "hex",
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
  "omni-types",
  "reqwest",
  "serde",
@@ -1265,6 +1265,49 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
+name = "axum"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
+dependencies = [
+ "axum-core",
+ "bytes",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "itoa",
+ "matchit",
+ "memchr",
+ "mime",
+ "percent-encoding",
+ "pin-project-lite",
+ "serde_core",
+ "sync_wrapper",
+ "tower",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
+name = "axum-core"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c78f31d7b1291f7ee735c1c6780ccde7785daae9a9206026862dab7d8792d1"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "http",
+ "http-body",
+ "http-body-util",
+ "mime",
+ "pin-project-lite",
+ "sync_wrapper",
+ "tower-layer",
+ "tower-service",
+]
+
+[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1566,6 +1609,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bnum"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "119771309b95163ec7aaf79810da82f7cd0599c19722d48b9c03894dca833966"
+
+[[package]]
 name = "borsh"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1610,7 +1659,7 @@ dependencies = [
  "hypercore-bridge-client",
  "light-client",
  "near-bridge-client",
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
  "near-primitives",
  "near-sdk",
  "omni-connector",
@@ -1622,6 +1671,7 @@ dependencies = [
  "solana-rpc-client",
  "solana-sdk",
  "starknet-bridge-client",
+ "sui-bridge-client",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1644,6 +1694,7 @@ dependencies = [
  "solana-bridge-client",
  "solana-rpc-client-api",
  "starknet-bridge-client",
+ "sui-bridge-client",
  "thiserror 2.0.18",
  "utxo-bridge-client",
 ]
@@ -1695,7 +1746,7 @@ dependencies = [
  "near-sdk",
  "schemars 0.8.22",
  "serde",
- "sha2 0.10.9",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -1762,6 +1813,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e93abca9e28e0a1b9877922aacb20576e05d4679ffa78c3d6dc22a26a216659"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "bytestring"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86566c496f2f47d9b8147a4c8b02ffdb69c919fe0c2b2e7195d22cbba0e635c9"
+dependencies = [
+ "bytes",
 ]
 
 [[package]]
@@ -2888,7 +2948,7 @@ dependencies = [
  "hex",
  "near-crypto 0.34.7",
  "near-jsonrpc-client",
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
  "near-primitives",
  "near-rpc-client",
  "near-token",
@@ -3258,9 +3318,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.13"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f44da3a8150a6703ed5d34e164b875fd14c2cdab9af1252a9a1020bde2bdc54"
+checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3504,9 +3564,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.8.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ab2d4f250c3d7b1c9fcdff1cece94ea4e2dfbec68614f7b87cb205f24ca9d11"
+checksum = "d22053281f852e11534f5198498373cbb59295120a20771d90f7ed1897490a72"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -3519,7 +3579,6 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "pin-utils",
  "smallvec",
  "tokio",
  "want",
@@ -3540,6 +3599,19 @@ dependencies = [
  "tokio-rustls",
  "tower-service",
  "webpki-roots 1.0.6",
+]
+
+[[package]]
+name = "hyper-timeout"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b90d566bffbce6a75bd8b09a05aa8c2cb1fabb6cb348f8840c9e4c90a0d83b0"
+dependencies = [
+ "hyper",
+ "hyper-util",
+ "pin-project-lite",
+ "tokio",
+ "tower-service",
 ]
 
 [[package]]
@@ -4189,6 +4261,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "matchit"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
 name = "maybe-rayon"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4290,6 +4368,20 @@ dependencies = [
 name = "mpc-primitives"
 version = "3.11.0"
 source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0#dcc9e042cad6784d33cfa736afb61b876a14ded0"
+dependencies = [
+ "borsh",
+ "derive_more",
+ "hex",
+ "near-account-id 2.6.0",
+ "schemars 0.8.22",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "mpc-primitives"
+version = "3.13.0"
+source = "git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a#9295cf29ee2761e44e00c67538859a1ef648285a"
 dependencies = [
  "borsh",
  "derive_more",
@@ -4557,6 +4649,18 @@ dependencies = [
 [[package]]
 name = "near-mpc-bounded-collections"
 version = "0.0.1"
+source = "git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a#9295cf29ee2761e44e00c67538859a1ef648285a"
+dependencies = [
+ "borsh",
+ "derive_more",
+ "hex",
+ "serde",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "near-mpc-bounded-collections"
+version = "0.0.1"
 source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0#dcc9e042cad6784d33cfa736afb61b876a14ded0"
 dependencies = [
  "borsh",
@@ -4570,13 +4674,29 @@ dependencies = [
 [[package]]
 name = "near-mpc-contract-interface"
 version = "0.0.1"
+source = "git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a#9295cf29ee2761e44e00c67538859a1ef648285a"
+dependencies = [
+ "borsh",
+ "derive_more",
+ "mpc-primitives 3.13.0",
+ "near-mpc-bounded-collections 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
+ "near-mpc-crypto-types 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
+ "serde",
+ "serde_repr",
+ "serde_with",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "near-mpc-contract-interface"
+version = "0.0.1"
 source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0#dcc9e042cad6784d33cfa736afb61b876a14ded0"
 dependencies = [
  "borsh",
  "derive_more",
- "mpc-primitives",
- "near-mpc-bounded-collections",
- "near-mpc-crypto-types",
+ "mpc-primitives 3.11.0",
+ "near-mpc-bounded-collections 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
+ "near-mpc-crypto-types 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
  "schemars 0.8.22",
  "serde",
  "serde_repr",
@@ -4587,14 +4707,31 @@ dependencies = [
 [[package]]
 name = "near-mpc-crypto-types"
 version = "0.0.1"
+source = "git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a#9295cf29ee2761e44e00c67538859a1ef648285a"
+dependencies = [
+ "borsh",
+ "bs58 0.5.1",
+ "derive_more",
+ "mpc-primitives 3.13.0",
+ "near-account-id 2.6.0",
+ "near-mpc-bounded-collections 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
+ "serde",
+ "serde_with",
+ "sha3 0.10.8",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "near-mpc-crypto-types"
+version = "0.0.1"
 source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0#dcc9e042cad6784d33cfa736afb61b876a14ded0"
 dependencies = [
  "borsh",
  "bs58 0.5.1",
  "derive_more",
- "mpc-primitives",
+ "mpc-primitives 3.11.0",
  "near-account-id 2.6.0",
- "near-mpc-bounded-collections",
+ "near-mpc-bounded-collections 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
  "near-sdk",
  "schemars 0.8.22",
  "serde",
@@ -4610,8 +4747,8 @@ source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a
 dependencies = [
  "borsh",
  "derive_more",
- "near-mpc-bounded-collections",
- "near-mpc-contract-interface",
+ "near-mpc-bounded-collections 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
  "near-mpc-signature-verifier",
 ]
 
@@ -4620,7 +4757,7 @@ name = "near-mpc-signature-verifier"
 version = "0.0.1"
 source = "git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0#dcc9e042cad6784d33cfa736afb61b876a14ded0"
 dependencies = [
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=dcc9e042cad6784d33cfa736afb61b876a14ded0)",
  "near-sdk",
 ]
 
@@ -5112,7 +5249,7 @@ dependencies = [
  "near-contract-standards",
  "near-crypto 0.34.7",
  "near-jsonrpc-client",
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
  "near-primitives",
  "near-rpc-client",
  "near-sdk",
@@ -5129,6 +5266,7 @@ dependencies = [
  "solana-sdk",
  "starknet",
  "starknet-bridge-client",
+ "sui-bridge-client",
  "tracing",
  "utxo-bridge-client",
  "utxo-utils",
@@ -5141,8 +5279,8 @@ dependencies = [
 
 [[package]]
 name = "omni-types"
-version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=f499d46c2d58869e4cbb5d19cff703ff7d2731d6#f499d46c2d58869e4cbb5d19cff703ff7d2731d6"
+version = "3.3.4"
+source = "git+https://github.com/near-one/omni-bridge?rev=67b37e6c0277c42b5bc3ab76e202bec1ac4b4845#67b37e6c0277c42b5bc3ab76e202bec1ac4b4845"
 dependencies = [
  "alloy",
  "borsh",
@@ -5673,6 +5811,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "528ac67416ff8646872a3c02cad9cc4ee5dc9f9540c9b10771855c95cb2e5ae1"
+dependencies = [
+ "bytes",
+ "prost-derive",
+]
+
+[[package]]
+name = "prost-derive"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f94967dc7688f3054c7fac87473ffae4cc4c3904800e2d9f5b857246d8963b0a"
+dependencies = [
+ "prost",
+]
+
+[[package]]
 name = "qstring"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6068,6 +6238,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "roaring"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dedc5658c6ecb3bdb5ef5f3295bb9253f42dcf3fd1402c03f6b1f7659c3c4a9"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+]
+
+[[package]]
 name = "ruint"
 version = "1.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6168,6 +6348,7 @@ version = "0.23.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "758025cb5fccfd3bc2fd74708fd4682be41d99e5dff73c377c0646c6012c73a4"
 dependencies = [
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
@@ -8690,7 +8871,7 @@ version = "0.1.3"
 dependencies = [
  "async-trait",
  "hex",
- "near-mpc-contract-interface",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
  "omni-types",
  "reqwest",
  "serde",
@@ -8924,6 +9105,103 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "sui-bridge-client"
+version = "0.1.0"
+dependencies = [
+ "bcs",
+ "bs58 0.5.1",
+ "hex",
+ "near-mpc-contract-interface 0.0.1 (git+https://github.com/near/mpc?rev=9295cf29ee2761e44e00c67538859a1ef648285a)",
+ "omni-types",
+ "serde",
+ "sha3 0.10.8",
+ "sui-crypto",
+ "sui-rpc",
+ "sui-sdk-types",
+ "sui-transaction-builder",
+ "thiserror 2.0.18",
+ "tokio",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
+name = "sui-crypto"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7b8f54c4405002c9ece67cb848479f80837185a55a59d8c0a105240f737d0da"
+dependencies = [
+ "base64ct",
+ "bech32",
+ "ed25519-dalek",
+ "rand_core 0.6.4",
+ "signature",
+ "sui-sdk-types",
+]
+
+[[package]]
+name = "sui-rpc"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617504d5c6b748af0494b73db80fb893840522329788c48c826d8298e7edb0aa"
+dependencies = [
+ "base64 0.22.1",
+ "bcs",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "prost",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "sui-sdk-types",
+ "tap",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tower",
+]
+
+[[package]]
+name = "sui-sdk-types"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a22266119e43d3da1a8bc9945c8b569a513e7682f561265d70ef8b6e198dd664"
+dependencies = [
+ "base64ct",
+ "bcs",
+ "blake2",
+ "bnum",
+ "bs58 0.5.1",
+ "bytes",
+ "bytestring",
+ "itertools 0.14.0",
+ "roaring",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_with",
+ "winnow 0.7.15",
+]
+
+[[package]]
+name = "sui-transaction-builder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39697547ef9a6c03725dca449c33c3b47619b0a76ca5df827e4501944ebdaebb"
+dependencies = [
+ "async-trait",
+ "bcs",
+ "futures",
+ "serde",
+ "sui-rpc",
+ "sui-sdk-types",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "syn"
@@ -9262,6 +9540,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "h2",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-timeout",
+ "hyper-util",
+ "percent-encoding",
+ "pin-project",
+ "socket2",
+ "sync_wrapper",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tower",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+ "webpki-roots 1.0.6",
+ "zstd",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
+dependencies = [
+ "bytes",
+ "prost",
+ "tonic",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9269,11 +9590,15 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
+ "indexmap 2.13.0",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ use near_mpc_contract_interface::types::{
     EvmExtractedValue, EvmExtractor, EvmLog, EvmRpcRequest, EvmTxId, ExtractedValue,
     ForeignChainRpcRequest, ForeignTxSignPayload, ForeignTxSignPayloadV1, Hash160, Hash256,
     StarknetExtractedValue, StarknetExtractor, StarknetFelt, StarknetLog, StarknetRpcRequest,
-    StarknetTxId,
+    StarknetTxId, SuiAddress, SuiEvent, SuiExtractedValue, SuiExtractor, SuiRpcRequest, SuiTxId,
 };
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
@@ -52,6 +52,7 @@ use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
+use sui_bridge_client::{SuiBridgeClient, SuiInitTransferEvent};
 use utxo_bridge_client::{
     types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
@@ -90,6 +91,7 @@ pub struct OmniConnector {
     zcash_bridge_client: Option<UTXOBridgeClient<Zcash>>,
     starknet_bridge_client: Option<StarknetBridgeClient>,
     aptos_bridge_client: Option<AptosBridgeClient>,
+    sui_bridge_client: Option<SuiBridgeClient>,
     eth_light_client: Option<LightClient>,
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
@@ -184,6 +186,13 @@ pub enum DeployTokenArgs {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
+    SuiDeployToken {
+        event: OmniBridgeEvent,
+    },
+    SuiDeployTokenWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    },
 }
 
 pub enum BindTokenArgs {
@@ -269,6 +278,16 @@ pub enum InitTransferArgs {
         message: String,
     },
     AptosInitTransfer {
+        token: String,
+        amount: u128,
+        recipient: String,
+        fee: u128,
+        native_fee: u128,
+        message: String,
+    },
+    /// `token` is the Sui coin type, e.g. `0x2::sui::SUI` (Sui tokens are
+    /// types, not addresses).
+    SuiInitTransfer {
         token: String,
         amount: u128,
         recipient: String,
@@ -392,6 +411,13 @@ pub enum FinTransferArgs {
         event: OmniBridgeEvent,
     },
     AptosFinTransferWithTxHash {
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    },
+    SuiFinTransfer {
+        event: OmniBridgeEvent,
+    },
+    SuiFinTransferWithTxHash {
         near_tx_hash: CryptoHash,
         sender_id: Option<AccountId>,
     },
@@ -1998,6 +2024,48 @@ impl OmniConnector {
         })
     }
 
+    pub async fn build_sui_mpc_sign_payload(
+        &self,
+        tx_hash: String,
+        proof_kind: ProofKind,
+    ) -> Result<Vec<u8>> {
+        let sui_client = self.sui_bridge_client()?;
+        let finality = sui_client.check_mpc_finality(&tx_hash).await?;
+
+        let log = match proof_kind {
+            ProofKind::InitTransfer => sui_client.get_init_transfer_log(&tx_hash).await?,
+            ProofKind::DeployToken => sui_client.get_deploy_token_log(&tx_hash).await?,
+            ProofKind::FinTransfer => sui_client.get_fin_transfer_log(&tx_hash).await?,
+            ProofKind::LogMetadata => sui_client.get_log_metadata_log(&tx_hash).await?,
+        };
+
+        let tx_id = sui_bridge_client::parse_transaction_digest(&tx_hash)
+            .map_err(BridgeSdkError::InvalidArgument)?;
+
+        let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Sui(SuiRpcRequest {
+                tx_id: SuiTxId(tx_id),
+                finality,
+                extractors: vec![SuiExtractor::Event {
+                    event_index: log.event_index,
+                }],
+            }),
+            values: vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
+                SuiEvent {
+                    package_id: SuiAddress(log.package_id),
+                    transaction_module: log.transaction_module,
+                    sender: SuiAddress(log.sender),
+                    type_tag: log.type_tag,
+                    bcs: log.bcs,
+                },
+            ))],
+        });
+
+        borsh::to_vec(&sign_payload).map_err(|_| {
+            BridgeSdkError::EthProofError("Failed to serialize MPC sign payload".to_string())
+        })
+    }
+
     pub async fn near_claim_fee(
         &self,
         claim_fee_args: omni_types::locker_args::ClaimFeeArgs,
@@ -2986,6 +3054,11 @@ impl OmniConnector {
                 self.aptos_log_metadata(format!("0x{}", hex::encode(aptos_address.0)))
                     .await
             }
+            OmniAddress::Sui(_) => Err(BridgeSdkError::InvalidArgument(
+                "Sui token ids are keccak hashes of the coin type and cannot be reversed; \
+                 use sui_log_metadata with the coin type (e.g. 0x2::sui::SUI) instead"
+                    .to_string(),
+            )),
             OmniAddress::Btc(_) | OmniAddress::Zcash(_) => Err(BridgeSdkError::InvalidArgument(
                 "Log metadata is not supported for this chain".to_string(),
             )),
@@ -3045,6 +3118,10 @@ impl OmniConnector {
                         self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::LogMetadata)
                             .await?
                     }
+                    ChainKind::Sui => {
+                        self.build_sui_mpc_sign_payload(tx_hash, ProofKind::LogMetadata)
+                            .await?
+                    }
                     other => {
                         return Err(BridgeSdkError::InvalidArgument(format!(
                             "MPC proof deploy_token is not supported for chain {other:?}"
@@ -3094,6 +3171,16 @@ impl OmniConnector {
                 .starknet_deploy_token_with_tx_hash(near_tx_hash, sender_id)
                 .await
                 .map(|hash| format!("{hash:#066x}")),
+            DeployTokenArgs::SuiDeployToken { event } => {
+                self.sui_deploy_token_with_event(event).await
+            }
+            DeployTokenArgs::SuiDeployTokenWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => {
+                self.sui_deploy_token_with_tx_hash(near_tx_hash, sender_id)
+                    .await
+            }
             DeployTokenArgs::AptosDeployToken { event } => {
                 self.aptos_deploy_token_with_event(event).await
             }
@@ -3173,6 +3260,10 @@ impl OmniConnector {
                                 ))
                             })?;
                         self.build_strk_mpc_sign_payload(felt, ProofKind::DeployToken)
+                            .await?
+                    }
+                    ChainKind::Sui => {
+                        self.build_sui_mpc_sign_payload(tx_hash, ProofKind::DeployToken)
                             .await?
                     }
                     ChainKind::Aptos => {
@@ -3287,6 +3378,17 @@ impl OmniConnector {
                 message,
             } => {
                 self.aptos_init_transfer(token, amount, fee, native_fee, recipient, message)
+                    .await
+            }
+            InitTransferArgs::SuiInitTransfer {
+                token,
+                amount,
+                recipient,
+                fee,
+                native_fee,
+                message,
+            } => {
+                self.sui_init_transfer(token, amount, fee, native_fee, recipient, message)
                     .await
             }
             InitTransferArgs::HyperCoreTransfer {
@@ -3422,6 +3524,10 @@ impl OmniConnector {
                         self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::InitTransfer)
                             .await?
                     }
+                    ChainKind::Sui => {
+                        self.build_sui_mpc_sign_payload(tx_hash, ProofKind::InitTransfer)
+                            .await?
+                    }
                     other => {
                         return Err(BridgeSdkError::InvalidArgument(format!(
                             "MPC proof fin_transfer is not supported for chain {other:?}"
@@ -3515,6 +3621,16 @@ impl OmniConnector {
                 self.aptos_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
                     .await
             }
+            FinTransferArgs::SuiFinTransfer { event } => {
+                self.sui_fin_transfer_with_event(event).await
+            }
+            FinTransferArgs::SuiFinTransferWithTxHash {
+                near_tx_hash,
+                sender_id,
+            } => {
+                self.sui_fin_transfer_with_tx_hash(near_tx_hash, sender_id)
+                    .await
+            }
         }
     }
 
@@ -3561,6 +3677,10 @@ impl OmniConnector {
                     }
                     ChainKind::Aptos => {
                         self.build_aptos_mpc_sign_payload(tx_hash, ProofKind::FinTransfer)
+                            .await?
+                    }
+                    ChainKind::Sui => {
+                        self.build_sui_mpc_sign_payload(tx_hash, ProofKind::FinTransfer)
                             .await?
                     }
                     other => {
@@ -3611,6 +3731,7 @@ impl OmniConnector {
             ChainKind::Fogo => self.svm_is_transfer_finalised(ChainKind::Fogo, nonce).await,
             ChainKind::Strk => self.starknet_is_transfer_finalised(nonce).await,
             ChainKind::Aptos => self.aptos_is_transfer_finalised(nonce).await,
+            ChainKind::Sui => self.sui_is_transfer_finalised(nonce).await,
             ChainKind::Zcash | ChainKind::Btc => Err(BridgeSdkError::ConfigError(
                 "is_transfer_finalised is not supported for UTXO chains".to_string(),
             )),
@@ -3761,7 +3882,8 @@ impl OmniConnector {
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk
-            | ChainKind::Aptos => {
+            | ChainKind::Aptos
+            | ChainKind::Sui => {
                 return Err(BridgeSdkError::ConfigError(format!(
                     "EVM bridge client is not available for {chain_kind:?}"
                 )));
@@ -3995,6 +4117,92 @@ impl OmniConnector {
             .await?)
     }
 
+    pub fn sui_bridge_client(&self) -> Result<&SuiBridgeClient> {
+        self.sui_bridge_client
+            .as_ref()
+            .ok_or(BridgeSdkError::ConfigError(
+                "Sui bridge client is not configured".to_string(),
+            ))
+    }
+
+    /// `coin_type` is the Sui coin's Move type, e.g. `0x2::sui::SUI` (Sui
+    /// tokens are types, not addresses, so the `OmniAddress::Sui` keccak hash
+    /// cannot be used here).
+    pub async fn sui_log_metadata(&self, coin_type: String) -> Result<String> {
+        Ok(self.sui_bridge_client()?.log_metadata(&coin_type).await?)
+    }
+
+    pub async fn sui_deploy_token_with_event(&self, event: OmniBridgeEvent) -> Result<String> {
+        Ok(self.sui_bridge_client()?.deploy_token(event).await?)
+    }
+
+    pub async fn sui_deploy_token_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "LogMetadataEvent")
+            .await?;
+        self.sui_deploy_token_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sui_init_transfer(
+        &self,
+        token: String,
+        amount: u128,
+        fee: u128,
+        native_fee: u128,
+        recipient: String,
+        message: String,
+    ) -> Result<String> {
+        Ok(self
+            .sui_bridge_client()?
+            .init_transfer(
+                token,
+                amount,
+                fee,
+                native_fee,
+                recipient,
+                message.into_bytes(),
+            )
+            .await?)
+    }
+
+    pub async fn sui_fin_transfer_with_event(&self, event: OmniBridgeEvent) -> Result<String> {
+        Ok(self.sui_bridge_client()?.fin_transfer(event).await?)
+    }
+
+    pub async fn sui_fin_transfer_with_tx_hash(
+        &self,
+        near_tx_hash: CryptoHash,
+        sender_id: Option<AccountId>,
+    ) -> Result<String> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let transfer_log = near_bridge_client
+            .extract_transfer_log(near_tx_hash, sender_id, "SignTransferEvent")
+            .await?;
+        self.sui_fin_transfer_with_event(serde_json::from_str(&transfer_log)?)
+            .await
+    }
+
+    pub async fn sui_is_transfer_finalised(&self, nonce: u64) -> Result<bool> {
+        Ok(self
+            .sui_bridge_client()?
+            .is_transfer_finalised(nonce)
+            .await?)
+    }
+
+    pub async fn sui_get_transfer_event(&self, tx_hash: &str) -> Result<SuiInitTransferEvent> {
+        Ok(self
+            .sui_bridge_client()?
+            .get_transfer_event(tx_hash)
+            .await?)
+    }
+
     pub fn wormhole_bridge_client(&self) -> Result<&WormholeBridgeClient> {
         self.wormhole_bridge_client
             .as_ref()
@@ -4034,7 +4242,8 @@ impl OmniConnector {
             | ChainKind::Sol
             | ChainKind::Fogo
             | ChainKind::Strk
-            | ChainKind::Aptos => Err(BridgeSdkError::ConfigError(
+            | ChainKind::Aptos
+            | ChainKind::Sui => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
         }
@@ -4109,6 +4318,7 @@ impl OmniConnector {
                 self.get_storage_deposit_actions_for_aptos_tx(&tx_hash)
                     .await
             }
+            ChainKind::Sui => self.get_storage_deposit_actions_for_sui_tx(&tx_hash).await,
             ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
                 Err(BridgeSdkError::ConfigError(
                     "Storage deposit actions are not supported for this chain".to_string(),
@@ -4315,6 +4525,61 @@ impl OmniConnector {
 
         self.get_storage_deposit_actions(
             ChainKind::Aptos,
+            &recipient,
+            &fee_recipient,
+            &token_address,
+            transfer_event.fee,
+            transfer_event.native_fee,
+        )
+        .await
+    }
+
+    pub async fn get_storage_deposit_actions_for_sui_tx(
+        &self,
+        tx_hash: &str,
+    ) -> Result<Vec<StorageDepositAction>> {
+        let transfer_event = self.sui_get_transfer_event(tx_hash).await?;
+
+        let token_address =
+            OmniAddress::new_from_slice(ChainKind::Sui, &transfer_event.token_address).map_err(
+                |_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse token address: 0x{}",
+                        hex::encode(transfer_event.token_address)
+                    ))
+                },
+            )?;
+
+        let mut recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Failed to parse recipient: {}",
+                transfer_event.recipient
+            ))
+        })?;
+
+        let mut fee_recipient = self
+            .near_bridge_client()
+            .and_then(NearBridgeClient::account_id)
+            .map_err(|_| {
+                BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
+            })?;
+
+        let message = String::from_utf8_lossy(&transfer_event.message);
+        self.apply_fast_transfer_override(
+            ChainKind::Sui,
+            &token_address,
+            transfer_event.origin_nonce,
+            transfer_event.amount,
+            transfer_event.fee,
+            transfer_event.native_fee,
+            &message,
+            &mut recipient,
+            &mut fee_recipient,
+        )
+        .await?;
+
+        self.get_storage_deposit_actions(
+            ChainKind::Sui,
             &recipient,
             &fee_recipient,
             &token_address,
@@ -4683,5 +4948,46 @@ mod tests {
     fn rejects_memo_for_transparent_zcash() {
         let err = validate_zcash_memo_usage(ChainKind::Zcash, false, Some("memo")).unwrap_err();
         assert!(format!("{err:?}").contains("memo requires a shielded Zcash recipient"));
+    }
+
+    /// The Sui MPC sign payload must hash exactly as the MPC nodes compute it.
+    /// Values and expected hash mirror near/mpc's snapshot test
+    /// `foreign_tx_sign_payload_v1_sui__should_have_consistent_hash`.
+    #[test]
+    fn sui_mpc_sign_payload_matches_upstream_snapshot_hash() {
+        let log = sui_bridge_client::SuiEventLog {
+            package_id: [0x11; 32],
+            transaction_module: "omni_bridge".to_string(),
+            sender: [0x22; 32],
+            type_tag: format!("0x{}::omni_bridge::InitTransfer", "11".repeat(32)),
+            bcs: vec![0xde, 0xad, 0xbe, 0xef],
+            event_index: 0,
+        };
+
+        // Same assembly as `build_sui_mpc_sign_payload`.
+        let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
+            request: ForeignChainRpcRequest::Sui(SuiRpcRequest {
+                tx_id: SuiTxId([0xdd; 32]),
+                finality: near_mpc_contract_interface::types::SuiFinality::Checkpointed,
+                extractors: vec![SuiExtractor::Event {
+                    event_index: log.event_index,
+                }],
+            }),
+            values: vec![ExtractedValue::SuiExtractedValue(SuiExtractedValue::Event(
+                SuiEvent {
+                    package_id: SuiAddress(log.package_id),
+                    transaction_module: log.transaction_module,
+                    sender: SuiAddress(log.sender),
+                    type_tag: log.type_tag,
+                    bcs: log.bcs,
+                },
+            ))],
+        });
+
+        let hash = sign_payload.compute_msg_hash().unwrap();
+        assert_eq!(
+            hex::encode(hash.0),
+            "feb837d1f4a762a8a4faaa5d828be88c5b3427a5cc1e553ff27271a10caf15a6"
+        );
     }
 }
