@@ -74,6 +74,13 @@ pub const APTOS_RPC_MAINNET: &str = "https://fullnode.mainnet.aptoslabs.com/v1";
 pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xe4ec15f237e5a8c7daa7a34ece28e2bd2c079360763f181bf65862ec148b914a";
 
+pub const SUI_RPC_MAINNET: &str = "https://fullnode.mainnet.sui.io";
+// No mainnet deployment yet; placeholders until the Sui bridge ships on mainnet.
+pub const SUI_BRIDGE_ADDRESS_MAINNET: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+pub const SUI_STATE_OBJECT_ID_MAINNET: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+
 pub const FOGO_RPC_MAINNET: &str = "https://mainnet.fogo.io";
 pub const FOGO_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const FOGO_WORMHOLE_ADDRESS_MAINNET: &str = "worm2mrQkG1B1KTz37erMfWN8anHkSK24nzca7UD8BB";
@@ -151,6 +158,12 @@ pub const APTOS_RPC_TESTNET: &str = "https://fullnode.testnet.aptoslabs.com/v1";
 pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x904a7d620944eec42d5d46cf4fe12463f713c8a705d581c10a010672228f967c";
 
+pub const SUI_RPC_TESTNET: &str = "https://fullnode.testnet.sui.io";
+pub const SUI_BRIDGE_ADDRESS_TESTNET: &str =
+    "0x587d69879cb01f62a88526a7448424c37cf767387473c1e610bd007dc95fa6ba";
+pub const SUI_STATE_OBJECT_ID_TESTNET: &str =
+    "0xcbe9d3824224eaa23e2ef70667fff857ddd0929b7c0e42935d509347505fe858";
+
 pub const FOGO_RPC_TESTNET: &str = "https://testnet.fogo.io";
 // pub const FOGO_BRIDGE_ADDRESS_TESTNET: &str = "";
 pub const FOGO_WORMHOLE_ADDRESS_TESTNET: &str = "BhnQyKoQQgpuRTRo6D8Emz93PvXCYfVgHhnrR4T3qhw4";
@@ -227,6 +240,12 @@ pub const STARKNET_CHAIN_ID_DEVNET: &str = "SN_SEPOLIA";
 pub const APTOS_RPC_DEVNET: &str = "https://fullnode.testnet.aptoslabs.com/v1";
 pub const APTOS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+pub const SUI_RPC_DEVNET: &str = "https://fullnode.testnet.sui.io";
+pub const SUI_BRIDGE_ADDRESS_DEVNET: &str =
+    "0x587d69879cb01f62a88526a7448424c37cf767387473c1e610bd007dc95fa6ba";
+pub const SUI_STATE_OBJECT_ID_DEVNET: &str =
+    "0xcbe9d3824224eaa23e2ef70667fff857ddd0929b7c0e42935d509347505fe858";
 
 pub const FOGO_RPC_DEVNET: &str = "https://testnet.fogo.io";
 // pub const FOGO_BRIDGE_ADDRESS_DEVNET: &str = "";

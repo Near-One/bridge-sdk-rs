@@ -11,6 +11,7 @@ use solana_bridge_client::error::SolanaBridgeClientError;
 use solana_rpc_client_api::client_error::Error as ClientError;
 use starknet_bridge_client::error::StarknetBridgeClientError;
 use std::result;
+use sui_bridge_client::error::SuiBridgeClientError;
 use utxo_bridge_client::{self, error::UtxoClientError};
 
 pub type Result<T> = result::Result<T, BridgeSdkError>;
@@ -71,6 +72,10 @@ pub enum BridgeSdkError {
     AptosRpcError(String),
     #[error("Error working with Aptos: {0}")]
     AptosOtherError(String),
+    #[error("Error communicating with Sui RPC: {0}")]
+    SuiRpcError(String),
+    #[error("Error working with Sui: {0}")]
+    SuiOtherError(String),
     #[error("Transaction has not reached the required MPC finality")]
     MpcFinalityNotReached,
     #[error("Error working with HyperCore: {0}")]
@@ -157,6 +162,20 @@ impl From<AptosBridgeClientError> for BridgeSdkError {
             AptosBridgeClientError::ConfigError(e) => Self::ConfigError(e),
             AptosBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
             AptosBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
+        }
+    }
+}
+
+impl From<SuiBridgeClientError> for BridgeSdkError {
+    fn from(error: SuiBridgeClientError) -> Self {
+        match error {
+            SuiBridgeClientError::RpcError(e) => Self::SuiRpcError(e),
+            SuiBridgeClientError::TransactionError(e) => Self::SuiOtherError(e),
+            SuiBridgeClientError::BlockchainDataError(e) => Self::SuiOtherError(e),
+            SuiBridgeClientError::BytecodeError(e) => Self::SuiOtherError(e),
+            SuiBridgeClientError::ConfigError(e) => Self::ConfigError(e),
+            SuiBridgeClientError::InvalidArgument(e) => Self::InvalidArgument(e),
+            SuiBridgeClientError::MpcFinalityNotReached => Self::MpcFinalityNotReached,
         }
     }
 }
