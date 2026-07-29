@@ -129,18 +129,13 @@ fn to_block_height(height: u64) -> BlockHeight {
     BlockHeight::from_u32(height.try_into().unwrap_or(u32::MAX))
 }
 
-/// How the transparent → Orchard transaction fee is set when building a bundle.
 enum OrchardFee {
-    /// Standard zip317 fee; the leftover value is absorbed by a transparent change
-    /// output supplied by the caller (used for withdrawals/RBF).
+    /// Standard zip317 fee, absorbed by the caller's transparent change output.
     Zip317,
-    /// Exact fee in zatoshis, with no transparent change. Used for refunds, where
-    /// the contract reconstructs the broadcast tx as `input − orchard_output = fee`.
+    /// Exact fee in zatoshis, with no transparent change (refunds).
     Fixed(u64),
 }
 
-/// Parse a Zcash address and extract its Orchard receiver, erroring if the
-/// address carries no Orchard receiver (e.g. a transparent-only t-address).
 fn extract_orchard_recipient(recipient: &str) -> Result<orchard::Address> {
     utxo_utils::extract_orchard_address(recipient)
         .map_err(|err| {
@@ -156,7 +151,6 @@ fn extract_orchard_recipient(recipient: &str) -> Result<orchard::Address> {
         })
 }
 
-/// Encode an optional text memo into `MemoBytes` (empty when `None`).
 fn parse_memo_bytes(memo: Option<String>) -> Result<MemoBytes> {
     match memo {
         Some(m) => Memo::from_str(&m).map(MemoBytes::from).map_err(|err| {
@@ -424,8 +418,6 @@ impl OmniConnector {
             .get_current_height()
             .await?;
 
-        // Withdrawal/RBF: expiry = current height + the contract's expiry gap, with the
-        // zip317 fee absorbed via the caller-supplied transparent change output.
         let expiry_delta = self
             .near_bridge_client()?
             .get_expiry_height_gap(ChainKind::Zcash)
@@ -451,15 +443,8 @@ impl OmniConnector {
         Ok((res, expiry_height.into()))
     }
 
-    /// Shared Orchard-bundle builder for shielded Zcash payouts. Spends the
-    /// transparent `input_points` into a single Orchard output of `amount` to
-    /// `recipient`, then extracts and serializes the v5 Orchard bundle.
-    ///
-    /// `expiry_height` and `fee` must match the transaction the counterparty will
-    /// reconstruct and broadcast, because the Orchard binding signature is bound
-    /// to the sighash (which covers both). Withdrawals use the contract's expiry
-    /// gap + zip317 + a transparent change output; refunds use `expiry_height = 0`
-    /// + a fixed fee equal to the request's `gas_fee` + no change.
+    /// `expiry_height` and `fee` must match the transaction the contract will
+    /// reconstruct and broadcast — the Orchard binding signature covers both.
     #[allow(clippy::too_many_arguments)]
     async fn build_orchard_bundle(
         &self,
@@ -624,15 +609,10 @@ impl OmniConnector {
     }
 
     /// Build the `ChainSpecificData` (Orchard bundle) for a shielded Zcash refund
-    /// from a pending `RefundRequest`, identified by its UTXO storage key
-    /// (`{tx_id}@{vout}`).
-    ///
-    /// The bundle spends the single deposit UTXO and pays `amount − gas_fee` to the
-    /// request's `refund_address`, with no transparent change and `expiry_height = 0`
-    /// — matching the transaction the contract reconstructs in `execute_refund` and
-    /// broadcasts, so the Orchard binding signature is valid on-network. The
-    /// `refund_address` must carry an Orchard receiver; for a transparent refund
-    /// pass `chain_specific_data = None` to `btc_execute_refund` instead.
+    /// identified by its UTXO storage key (`{tx_id}@{vout}`). The bundle pays
+    /// `amount − gas_fee` to the request's `refund_address`, with no transparent
+    /// change and `expiry_height = 0` — matching the transaction the contract
+    /// reconstructs in `execute_refund`.
     pub async fn build_refund_chain_specific_data(
         &self,
         utxo_storage_key: &str,
@@ -658,9 +638,7 @@ impl OmniConnector {
             ));
         }
 
-        // The deposit address path is `sha256(deposit_msg_json)`; the contract stores
-        // `deposit_msg_json` as exactly the bytes it hashes, so this reproduces the
-        // path needed to derive the input's MPC public key.
+        // Matches the contract's key-derivation path: sha256(deposit_msg_json).
         let path = hex::encode(sha2::Sha256::digest(
             refund_request.deposit_msg_json.as_bytes(),
         ));

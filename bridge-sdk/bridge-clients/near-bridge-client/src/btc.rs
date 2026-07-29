@@ -212,12 +212,10 @@ pub struct ChainSpecificData {
     pub expiry_height: u32,
 }
 
-/// A pending refund request stored by the UTXO connector (`request_refund`),
-/// returned by the `get_refund_requests_paged` view. Mirrors the contract's
-/// `RefundRequest`; `execute_refund` consumes it to build the refund tx.
+/// Mirrors the UTXO connector's `RefundRequest`, as returned by the
+/// `get_refund_requests_paged` view.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct RefundRequest {
-    /// The original deposit message, as the JSON string the contract stored.
     pub deposit_msg_json: String,
     pub utxo_storage_key: String,
     pub tx_bytes: Base64VecU8,
@@ -571,8 +569,7 @@ impl NearBridgeClient {
         Ok(btc_pending_info)
     }
 
-    /// Fetch a single pending refund request by its UTXO storage key
-    /// (`{tx_id}@{vout}`) from the UTXO connector (Bitcoin/Zcash).
+    /// Fetch a pending refund request by its UTXO storage key (`{tx_id}@{vout}`).
     pub async fn get_refund_request(
         &self,
         chain: ChainKind,
@@ -824,8 +821,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Query the deposit the UTXO connector requires to be attached to a
-    /// `request_refund` call (Bitcoin/Zcash).
     pub async fn required_balance_for_request_refund(
         &self,
         chain: ChainKind,
@@ -846,12 +841,8 @@ impl NearBridgeClient {
         Ok(serde_json::from_slice::<near_sdk::NearToken>(&response)?)
     }
 
-    /// Execute a previously requested refund: send the deposit UTXO back to the
-    /// original `refund_address` via the MPC sign pipeline (Bitcoin/Zcash).
-    ///
-    /// Requires the request's timelock to have passed (bypassed for a privileged
-    /// caller). `chain_specific_data` is Zcash-only: `Some` with an Orchard bundle
-    /// for a shielded refund, `None` for a transparent one; it is ignored on Bitcoin.
+    /// Execute a previously requested refund (Bitcoin/Zcash). `chain_specific_data`
+    /// is Zcash-only: an Orchard bundle for a shielded refund, `None` for a transparent one.
     #[tracing::instrument(skip_all, name = "NEAR BTC EXECUTE REFUND")]
     pub async fn btc_execute_refund(
         &self,
@@ -863,10 +854,6 @@ impl NearBridgeClient {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
-        // `execute_refund` is `#[payable]`: it stores a pending-verify entry and requires
-        // an attached deposit of at least `required_balance_for_execute_refund()` (NOT
-        // refunded — storage + anti-spam fee on this permissionless entrypoint). The amount
-        // is contract-defined and chain-dependent, so query it instead of hardcoding.
         let deposit = self
             .required_balance_for_execute_refund(chain)
             .await?
@@ -900,8 +887,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Query the deposit the UTXO connector requires to be attached to an
-    /// `execute_refund` call (Bitcoin/Zcash).
     pub async fn required_balance_for_execute_refund(
         &self,
         chain: ChainKind,

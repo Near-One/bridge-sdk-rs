@@ -956,12 +956,9 @@ impl OmniConnector {
             .await
     }
 
-    /// Execute a previously requested refund: send the deposit UTXO back to the
-    /// original refund address via the MPC sign pipeline (Bitcoin/Zcash).
-    ///
-    /// `utxo_storage_key` is the refund request key (`{tx_id}@{vout}`).
-    /// `chain_specific_data` is Zcash-only (Orchard bundle for a shielded refund);
-    /// pass `None` for Bitcoin or a transparent Zcash refund.
+    /// Execute a previously requested refund, identified by `utxo_storage_key`
+    /// (`{tx_id}@{vout}`). `chain_specific_data` is Zcash-only: an Orchard bundle
+    /// for a shielded refund, `None` for a transparent one.
     pub async fn btc_execute_refund(
         &self,
         chain: ChainKind,
@@ -1071,10 +1068,9 @@ impl OmniConnector {
     }
 
     /// Resolve the deposit `vout` by matching outputs of the BTC/Zcash tx
-    /// `tx_hash` against the deposit address derived from `deposit_args` —
-    /// via the `get_user_deposit_address` view call on the UTXO connector
-    /// contract when `from_contract` is `true`, via the bridge indexer
-    /// otherwise.
+    /// `tx_hash` against the deposit address derived from `deposit_args`
+    /// (via the UTXO connector contract when `from_contract` is `true`,
+    /// via the bridge indexer otherwise).
     ///
     /// Returns `InvalidArgument` if no output matches or if multiple outputs
     /// match (in which case the candidate vouts are listed in the message).

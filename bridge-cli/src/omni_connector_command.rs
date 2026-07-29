@@ -221,9 +221,9 @@ struct ManualDepositInput {
 ///
 /// - When `manual` is `Some`, builds `BtcDepositArgs` from the supplied
 ///   recipient/fee/msg/refund and resolves `vout` either from the explicit
-///   value or by matching it against the derived deposit address (fetched
-///   from the UTXO connector contract when `from_contract` is set, from the
-///   bridge indexer otherwise).
+///   value or by matching it against the derived deposit address (from the
+///   UTXO connector contract when `from_contract` is set, from the bridge
+///   indexer otherwise).
 /// - When `manual` is `None`, asks the bridge indexer (via
 ///   `resolve_deposit_from_tx`) which output is a tracked deposit address;
 ///   the recovered `DepositMsg` is wrapped as `BtcDepositArgs::DepositMsg`.
@@ -2192,8 +2192,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             let connector = omni_connector(network, config_cli);
 
-            // Zcash defaults to a shielded refund (auto-generated Orchard bundle);
-            // `--transparent` and Bitcoin refunds carry no bundle.
             let chain_specific_data = if transparent || chain_kind != ChainKind::Zcash {
                 None
             } else {

@@ -19,9 +19,8 @@ use tokio::time;
 
 pub const DEFAULT_WAIT_FINAL_OUTCOME_TIMEOUT_SEC: u64 = 500;
 
-// Total request timeout. Generous on purpose: UTXO-chain calls like
-// `request_refund` carry the raw deposit tx + merkle proof in `args`, and
-// uploading that payload to a slow (archival) RPC can far exceed 30s.
+// Generous timeout: calls like `request_refund` upload the raw deposit tx +
+// merkle proof, which can far exceed 30s on slow RPCs.
 static DEFAULT_CONNECTOR: LazyLock<JsonRpcClientConnector> = LazyLock::new(|| {
     JsonRpcClient::with(new_near_rpc_client(Some(std::time::Duration::from_secs(
         120,
@@ -90,8 +89,7 @@ fn new_near_rpc_client(timeout: Option<std::time::Duration>) -> reqwest::Client 
 
     let mut builder = reqwest::Client::builder().default_headers(headers);
     if let Some(timeout) = timeout {
-        // `timeout` bounds the whole request (upload + server processing);
-        // connecting should still fail fast when the host is unreachable.
+        // Connecting should still fail fast even when the overall timeout is long.
         let connect_timeout = std::cmp::min(timeout, std::time::Duration::from_secs(10));
         builder = builder.timeout(timeout).connect_timeout(connect_timeout);
     }
@@ -256,13 +254,8 @@ pub async fn change(
                 "Broadcasting NEAR transaction"
             );
 
-            // `send_tx` (unlike `broadcast_tx_async`) reports transaction-pool
-            // rejections — oversized transaction, not enough balance for the
-            // attached deposit, invalid nonce — back to the caller instead of
-            // silently dropping the transaction and leaving its status UNKNOWN
-            // forever. `Included` returns as soon as the transaction is
-            // accepted into a block; callers that need a stronger guarantee
-            // keep polling in `wait_for_tx`.
+            // Unlike `broadcast_tx_async`, `send_tx` reports transaction-pool
+            // rejections to the caller instead of silently dropping the transaction.
             client
                 .call(methods::send_tx::RpcSendTransactionRequest {
                     signed_transaction,
