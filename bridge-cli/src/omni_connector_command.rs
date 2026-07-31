@@ -2,7 +2,10 @@ use clap::Subcommand;
 use core::panic;
 use near_mpc_contract_interface::types::{AptosFinality, EvmFinality, StarknetFinality};
 use std::collections::HashMap;
-use std::{path::Path, str::FromStr};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use alloy::primitives::{Address as EvmH160, TxHash};
 use alloy::signers::local::PrivateKeySigner;
@@ -386,7 +389,7 @@ pub enum OmniConnectorSubCommand {
         token: AccountId,
         #[clap(short, long, help = "Amount to deposit")]
         amount: u128,
-        #[clap(short, long, help = "Account to deposit storage for")]
+        #[clap(long, help = "Account to deposit storage for")]
         account_id: AccountId,
         #[command(flatten)]
         config_cli: CliConfig,
@@ -867,6 +870,42 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(
+        about = "Verify a deposit migrated from the legacy bridge in btc_connector (requires the MigrationOperator role). Either a single deposit via --btc-tx-hash/--vout, or a batch via --input-file"
+    )]
+    BtcVerifyMigrateDeposit {
+        #[clap(short, long, help = "Chain the deposits were made on (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(
+            short,
+            long,
+            help = "Bitcoin/Zcash deposit tx hash",
+            requires = "vout",
+            conflicts_with = "input_file"
+        )]
+        btc_tx_hash: Option<String>,
+        #[clap(
+            short,
+            long,
+            help = "Index of the deposit output in the Bitcoin/Zcash transaction"
+        )]
+        vout: Option<usize>,
+        #[clap(
+            long,
+            help = "JSON file with the deposits to migrate: [{\"tx_hash\": \"...\", \"vout\": 0}, ...]. Each entry is submitted as its own NEAR transaction; failures are recorded and don't stop the batch.",
+            conflicts_with_all = ["btc_tx_hash", "vout"],
+            required_unless_present = "btc_tx_hash"
+        )]
+        input_file: Option<PathBuf>,
+        #[clap(
+            long,
+            help = "Where to write the per-deposit results (NEAR tx hash or error) as JSON. Defaults to <input-file>.near.json. Only used with --input-file",
+            requires = "input_file"
+        )]
+        output_file: Option<PathBuf>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
     #[clap(about = "Request a refund for a never-finalized UTXO-chain deposit (Bitcoin/Zcash)")]
     BtcRequestRefund {
         #[clap(short, long, help = "Chain the deposit was made on (Bitcoin/Zcash)")]
@@ -1070,6 +1109,103 @@ pub(crate) enum InternalSubCommand {
     },
 }
 
+#[derive(serde::Deserialize)]
+struct MigrateDepositEntry {
+    tx_hash: String,
+    vout: usize,
+}
+
+#[derive(serde::Serialize)]
+struct MigrateDepositResult {
+    tx_hash: String,
+    vout: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    near_tx_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Submits `verify_migrate_deposit` for every entry of `input_file`, one NEAR
+/// transaction per entry. A failed entry is recorded and the batch continues;
+/// the results file is rewritten after every entry so progress survives an
+/// interruption. Exits non-zero if any entry failed.
+async fn batch_verify_migrate_deposits(
+    connector: &OmniConnector,
+    chain: ChainKind,
+    input_file: &Path,
+    output_file: Option<PathBuf>,
+) {
+    let input = std::fs::read_to_string(input_file)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", input_file.display()));
+    let entries: Vec<MigrateDepositEntry> = serde_json::from_str(&input).unwrap_or_else(|e| {
+        panic!(
+            "Failed to parse {}; expected [{{\"tx_hash\": \"...\", \"vout\": 0}}, ...]: {e}",
+            input_file.display()
+        )
+    });
+    let output_file = output_file.unwrap_or_else(|| {
+        let mut path = input_file.as_os_str().to_owned();
+        path.push(".near.json");
+        PathBuf::from(path)
+    });
+
+    let total = entries.len();
+    let mut results: Vec<MigrateDepositResult> = Vec::with_capacity(total);
+    for (i, entry) in entries.into_iter().enumerate() {
+        tracing::info!(
+            "Verifying migrate deposit {}/{total}: {}@{}",
+            i + 1,
+            entry.tx_hash,
+            entry.vout
+        );
+        let result = match connector
+            .near_btc_verify_migrate_deposit(
+                chain,
+                entry.tx_hash.clone(),
+                entry.vout,
+                TransactionOptions::default(),
+            )
+            .await
+        {
+            Ok(near_tx_hash) => MigrateDepositResult {
+                tx_hash: entry.tx_hash,
+                vout: entry.vout,
+                near_tx_hash: Some(near_tx_hash.to_string()),
+                error: None,
+            },
+            Err(e) => {
+                tracing::error!(
+                    "Failed to verify migrate deposit {}@{}: {e}",
+                    entry.tx_hash,
+                    entry.vout
+                );
+                MigrateDepositResult {
+                    tx_hash: entry.tx_hash,
+                    vout: entry.vout,
+                    near_tx_hash: None,
+                    error: Some(e.to_string()),
+                }
+            }
+        };
+        results.push(result);
+        std::fs::write(
+            &output_file,
+            serde_json::to_string_pretty(&results).expect("results are always serializable"),
+        )
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", output_file.display()));
+    }
+
+    let failed = results.iter().filter(|r| r.error.is_some()).count();
+    println!(
+        "Results written to {}: {} succeeded, {failed} failed",
+        output_file.display(),
+        total - failed
+    );
+    if failed > 0 {
+        std::process::exit(1);
+    }
+}
+
 /// `--dry-run` builds and prints an unsigned transaction instead of
 /// broadcasting. It is supported for NEAR commands and for SVM (Solana/Fogo)
 /// commands — the latter require the target chain's fee-payer public key.
@@ -1189,6 +1325,7 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::BtcRBFIncreaseGasFee { .. }
         | Cmd::BtcCancelWithdraw { .. }
         | Cmd::BtcVerifyActiveUtxoManagement { .. }
+        | Cmd::BtcVerifyMigrateDeposit { .. }
         | Cmd::BtcRequestRefund { .. }
         | Cmd::BtcVerifyRefundFinalize { .. }
         | Cmd::BtcExecuteRefund { .. }
@@ -2073,6 +2210,40 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 )
                 .await
                 .unwrap();
+        }
+        OmniConnectorSubCommand::BtcVerifyMigrateDeposit {
+            chain,
+            btc_tx_hash,
+            vout,
+            input_file,
+            output_file,
+            config_cli,
+        } => {
+            let connector = omni_connector(network, config_cli);
+            match (btc_tx_hash, input_file) {
+                (Some(tx_hash), None) => {
+                    let vout = vout.expect("--vout is required with --btc-tx-hash");
+                    connector
+                        .near_btc_verify_migrate_deposit(
+                            chain.into(),
+                            tx_hash,
+                            vout,
+                            TransactionOptions::default(),
+                        )
+                        .await
+                        .unwrap();
+                }
+                (None, Some(input_file)) => {
+                    batch_verify_migrate_deposits(
+                        &connector,
+                        chain.into(),
+                        &input_file,
+                        output_file,
+                    )
+                    .await;
+                }
+                _ => panic!("Provide either --btc-tx-hash with --vout, or --input-file"),
+            }
         }
         OmniConnectorSubCommand::BtcRequestRefund {
             chain,

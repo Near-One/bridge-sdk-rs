@@ -24,6 +24,7 @@ const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_GAS: u64 = 300_000_000_000_000;
+const BTC_VERIFY_MIGRATE_DEPOSIT_GAS: u64 = 300_000_000_000_000;
 const BTC_VERIFY_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_CANCEL_WITHDRAW_GAS: u64 = 300_000_000_000_000;
 const BTC_RBF_INCREASE_GAS_FEE_GAS: u64 = 300_000_000_000_000;
@@ -38,6 +39,7 @@ const ACTIVE_UTXO_MANAGEMENT_DEPOSIT: u128 = 1;
 const SIGN_BTC_TRANSACTION_DEPOSIT: u128 = 1;
 const BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT: u128 = 1_200_000_000_000_000_000_000;
 const BTC_VERIFY_DEPOSIT_DEPOSIT: u128 = 0;
+const BTC_VERIFY_MIGRATE_DEPOSIT_DEPOSIT: u128 = 0;
 const BTC_VERIFY_WITHDRAW_DEPOSIT: u128 = 0;
 const BTC_CANCEL_WITHDRAW_DEPOSIT: u128 = 1;
 const BTC_RBF_INCREASE_GAS_FEE_DEPOSIT: u128 = 0;
@@ -182,6 +184,15 @@ pub struct FinBtcTransferArgs {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct BtcVerifyWithdrawArgs {
     pub tx_id: String,
+    pub proof: TxInclusionProof,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BtcVerifyMigrateDepositArgs {
+    // The contract's `verify_migrate_deposit` expects `tx_bytes` as a base64
+    // string (`Base64VecU8`), not a JSON array of bytes.
+    pub tx_bytes: Base64VecU8,
+    pub vout: usize,
     pub proof: TxInclusionProof,
 }
 
@@ -677,6 +688,41 @@ impl NearBridgeClient {
         tracing::info!(
             tx_hash = tx_hash.to_string(),
             "Sent BTC finalize transfer transaction"
+        );
+        Ok(tx_hash)
+    }
+
+    /// Verifies a migration deposit by calling `verify_migrate_deposit` on the
+    /// BTC connector contract. Requires the signer to hold the
+    /// `MigrationOperator` (or `DAO`) role on the contract.
+    #[tracing::instrument(skip_all, name = "NEAR BTC VERIFY MIGRATE DEPOSIT")]
+    pub async fn btc_verify_migrate_deposit(
+        &self,
+        chain: ChainKind,
+        args: BtcVerifyMigrateDepositArgs,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        let tx_hash = near_rpc_client::change_and_wait(
+            endpoint,
+            ChangeRequest {
+                signer: self.signer()?,
+                nonce: transaction_options.nonce,
+                receiver_id: btc_connector,
+                method_name: "verify_migrate_deposit".to_string(),
+                args: serde_json::json!(args).to_string().into_bytes(),
+                gas: BTC_VERIFY_MIGRATE_DEPOSIT_GAS,
+                deposit: BTC_VERIFY_MIGRATE_DEPOSIT_DEPOSIT,
+            },
+            transaction_options.wait_until,
+            transaction_options.wait_final_outcome_timeout_sec,
+        )
+        .await?;
+
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            "Sent BTC Verify Migrate Deposit transaction"
         );
         Ok(tx_hash)
     }

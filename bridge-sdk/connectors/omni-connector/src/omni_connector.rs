@@ -35,9 +35,9 @@ use hypercore_bridge_client::{
     encode_init_transfer_action, encode_transfer_action, format_amount, HyperCoreBridgeClient,
 };
 use near_bridge_client::btc::{
-    BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
-    BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
-    NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
+    BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyMigrateDepositArgs,
+    BtcVerifyRefundFinalizeArgs, BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg,
+    FinBtcTransferArgs, NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -754,6 +754,55 @@ impl OmniConnector {
 
         self.near_bridge_client()?
             .fin_btc_transfer(chain, args, transaction_options)
+            .await
+    }
+
+    /// Verifies a deposit migrated from the legacy bridge by submitting the
+    /// UTXO-chain tx together with its inclusion proof to the connector's
+    /// `verify_migrate_deposit`. The signer must hold the `MigrationOperator`
+    /// (or `DAO`) role on the connector contract.
+    pub async fn near_btc_verify_migrate_deposit(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        vout: usize,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let utxo_bridge_client = self.utxo_bridge_client(chain)?;
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let proof_data = utxo_bridge_client.extract_btc_proof(&tx_hash).await?;
+
+        let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
+            BridgeSdkError::InvalidArgument(format!(
+                "vout {vout} out of range; tx has {} outputs",
+                proof_data.outputs.len()
+            ))
+        })?;
+        let deposit_amount = u128::from(deposit_output.value_sat);
+
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            deposit_amount,
+            false,
+        )
+        .await?;
+
+        let args = BtcVerifyMigrateDepositArgs {
+            tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
+            vout,
+            proof: TxInclusionProof {
+                tx_block_blockhash: proof_data.tx_block_blockhash,
+                tx_index: proof_data.tx_index,
+                merkle_proof: proof_data.merkle_proof,
+                coinbase_tx_id: proof_data.coinbase_tx_id,
+                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
+            },
+        };
+
+        near_bridge_client
+            .btc_verify_migrate_deposit(chain, args, transaction_options)
             .await
     }
 
