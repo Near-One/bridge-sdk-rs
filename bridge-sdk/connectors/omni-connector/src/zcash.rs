@@ -105,10 +105,10 @@ impl ShieldedPool {
 }
 
 /// Returns the shielded pool and the Orchard circuit version mandated by the
-/// consensus branch active at the given height (e.g. the legacy Orchard pool
-/// with the `FixedPostNu6_2` circuit on mainnet; the Ironwood pool with the
-/// `PostNu6_3` circuit on testnet after the NU6.3 activation at height
-/// 4,134,000).
+/// consensus branch active at the given height (the legacy Orchard pool with
+/// the `FixedPostNu6_2` circuit before NU6.3; the Ironwood pool with the
+/// `PostNu6_3` circuit after the NU6.3 activation — height 3,428,143 on
+/// mainnet, 4,134,000 on testnet).
 fn shielded_pool_and_circuit(
     params: &zcash_protocol::consensus::Network,
     height: BlockHeight,
@@ -165,8 +165,7 @@ fn parse_memo_bytes(memo: Option<String>) -> Result<MemoBytes> {
 impl OmniConnector {
     /// Returns the Zcash consensus parameters matching the configured bridge
     /// network. The activation heights (and thus the consensus branch ID used
-    /// in sighashes) differ between mainnet and testnet, e.g. NU6.3 is only
-    /// activated on testnet.
+    /// in sighashes) differ between mainnet and testnet.
     fn zcash_params(&self) -> Result<zcash_protocol::consensus::Network> {
         Ok(match self.network()? {
             Network::Mainnet => zcash_protocol::consensus::Network::MainNetwork,
@@ -202,7 +201,8 @@ impl OmniConnector {
                 // Unpadded: the withdrawal shape is public anyway (transparent
                 // inputs, public value balance), and a single-action bundle is
                 // what `utxo_utils::get_gas_fee` prices in (+1 ZIP-317 action).
-                orchard_pool_bundle_type: orchard::builder::BundleType::UNPADDED,
+                orchard_padding: zcash_primitives::transaction::builder::BundlePadding::UNPADDED,
+                ironwood_padding: zcash_primitives::transaction::builder::BundlePadding::UNPADDED,
             },
         );
 
@@ -917,16 +917,21 @@ mod tests {
 
     /// The consensus branch (and thus the target shielded pool, transaction
     /// version and Orchard circuit version) must follow the configured
-    /// network: NU6.3 is activated on testnet at height 4,134,000 but is not
-    /// scheduled on mainnet.
+    /// network: NU6.3 activates at height 3,428,143 on mainnet and 4,134,000
+    /// on testnet.
     #[test]
     fn test_shielded_pool_and_circuit_by_network() {
         use zcash_protocol::consensus::Network;
 
         assert_eq!(
-            shielded_pool_and_circuit(&Network::MainNetwork, BlockHeight::from_u32(4_200_000))
+            shielded_pool_and_circuit(&Network::MainNetwork, BlockHeight::from_u32(3_428_142))
                 .unwrap(),
             (ShieldedPool::Orchard, OrchardCircuitVersion::FixedPostNu6_2)
+        );
+        assert_eq!(
+            shielded_pool_and_circuit(&Network::MainNetwork, BlockHeight::from_u32(3_428_143))
+                .unwrap(),
+            (ShieldedPool::Ironwood, OrchardCircuitVersion::PostNu6_3)
         );
         assert_eq!(
             shielded_pool_and_circuit(&Network::TestNetwork, BlockHeight::from_u32(4_133_999))
