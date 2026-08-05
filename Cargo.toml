@@ -14,7 +14,8 @@ members = [
     "bridge-sdk/bridge-clients/hypercore-bridge-client",
     "bridge-sdk/crypto-utils",
     "bridge-sdk/utxo-utils",
-    "bridge-sdk/light-client"
+    "bridge-sdk/light-client",
+    "bridge-sdk/btc-utils"
 ]
 exclude = ["vendor/bip32"]
 
