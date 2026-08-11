@@ -315,15 +315,19 @@ pub struct BtcConfirmationContext {
 }
 
 impl BtcConfirmationContext {
-    /// Compute required confirmations for a contract call.
+    /// Required confirmations by the per-transaction amount tier. Exact for
+    /// `verify_withdraw`, `verify_active_utxo_management` and
+    /// `verify_refund_finalize` on every contract version; for deposits it is
+    /// only the fallback for contracts without the `get_required_confirmations`
+    /// view, which tier by the block-cumulative amount instead.
     ///
     /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
-    /// to `get_extra_msg_confirmations` — that is, the SDK is calling
+    /// to the extra-msg confirmation delta — that is, the SDK is calling
     /// `verify_deposit` AND `deposit_msg.extra_msg.is_some()`. All other paths
     /// (`safe_verify_deposit`, `verify_withdraw`, `verify_active_utxo_management`,
-    /// and `verify_deposit` without `extra_msg`) dispatch to `get_confirmations`
-    /// and must pass `false` here, even if the surrounding `DepositMsg` happens
-    /// to carry an `extra_msg` field.
+    /// and `verify_deposit` without `extra_msg`) use the plain delta and must
+    /// pass `false` here, even if the surrounding `DepositMsg` happens to carry
+    /// an `extra_msg` field.
     pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
         let base = base_confirmations(&self.confirmations_strategy, amount)?;
 
@@ -340,6 +344,28 @@ impl BtcConfirmationContext {
         };
 
         Ok(u64::from(base) + u64::from(delta))
+    }
+
+    /// Mirrors `Config::max_required_confirmations` from the satoshi-bridge
+    /// contract: the largest strategy tier plus the larger delta. Refund
+    /// requests must reach this depth unconditionally — no whitelist discount.
+    pub fn max_required_confirmations(&self) -> Result<u64> {
+        let max_tier = self
+            .confirmations_strategy
+            .values()
+            .max()
+            .copied()
+            .ok_or_else(|| {
+                BridgeSdkError::ContractConfigurationError(
+                    "confirmations_strategy is empty".to_string(),
+                )
+            })?;
+
+        Ok(u64::from(max_tier)
+            + u64::from(max(
+                self.confirmations_delta,
+                self.extra_msg_confirmations_delta,
+            )))
     }
 }
 
@@ -1343,6 +1369,51 @@ impl NearBridgeClient {
         })
     }
 
+    /// Required confirmations for a deposit (`verify_deposit` /
+    /// `safe_verify_deposit`), asked from the connector contract via the
+    /// `get_required_confirmations` view; the result reflects live
+    /// block-cumulative ring state and must not be cached. Falls back to the
+    /// local amount-tier formula only when the contract predates the view
+    /// (`MethodNotFound`); any other error is propagated, since falling back
+    /// would underestimate against a newer contract. `has_extra_msg` follows
+    /// the dispatch rule of [`BtcConfirmationContext::required_confirmations`].
+    pub async fn get_required_confirmations_for_deposit(
+        &self,
+        chain: ChainKind,
+        block_height: u64,
+        amount: u128,
+        has_extra_msg: bool,
+    ) -> Result<u64> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+        // The view has no predecessor; pass the account that will sign the real call.
+        let relayer_account_id = self.account_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_required_confirmations".to_string(),
+                args: json!({
+                    "block_height": block_height,
+                    "amount": U128(amount),
+                    "relayer_account_id": relayer_account_id,
+                    "has_extra_msg": has_extra_msg,
+                }),
+            },
+        )
+        .await;
+
+        match response {
+            Ok(response) => Ok(serde_json::from_slice::<u64>(&response)?),
+            Err(err) if err.is_method_not_found() => self
+                .get_btc_confirmation_context(chain)
+                .await?
+                .required_confirmations(amount, has_extra_msg),
+            Err(err) => Err(err.into()),
+        }
+    }
+
     async fn get_whitelist_metadata(&self, chain: ChainKind) -> Result<WhitelistMetadata> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
@@ -1906,6 +1977,53 @@ mod tests {
         s.insert("not-a-number".to_string(), 3);
         assert!(matches!(
             base_confirmations(&s, 0),
+            Err(BridgeSdkError::ContractConfigurationError(_))
+        ));
+    }
+
+    fn confirmation_context(
+        strategy_entries: &[(&str, u8)],
+        confirmations_delta: u8,
+        extra_msg_confirmations_delta: u8,
+    ) -> BtcConfirmationContext {
+        BtcConfirmationContext {
+            confirmations_strategy: strategy(strategy_entries),
+            confirmations_delta,
+            extra_msg_confirmations_delta,
+            is_relayer_whitelisted: true,
+            is_extra_msg_relayer_whitelisted: true,
+        }
+    }
+
+    #[test]
+    fn max_required_confirmations_takes_max_tier_and_max_delta() {
+        let ctx = confirmation_context(
+            &[("100000000", 2), ("1000000000", 4), ("10000000000", 6)],
+            3,
+            5,
+        );
+        assert_eq!(ctx.max_required_confirmations().unwrap(), 6 + 5);
+    }
+
+    #[test]
+    fn max_required_confirmations_with_equal_deltas() {
+        let ctx = confirmation_context(&[("100000000", 2), ("1000000000", 4)], 3, 3);
+        assert_eq!(ctx.max_required_confirmations().unwrap(), 4 + 3);
+    }
+
+    #[test]
+    fn max_required_confirmations_ignores_whitelists() {
+        let mut ctx = confirmation_context(&[("100000000", 2)], 1, 4);
+        ctx.is_relayer_whitelisted = true;
+        ctx.is_extra_msg_relayer_whitelisted = true;
+        assert_eq!(ctx.max_required_confirmations().unwrap(), 2 + 4);
+    }
+
+    #[test]
+    fn max_required_confirmations_empty_strategy_errors() {
+        let ctx = confirmation_context(&[], 3, 5);
+        assert!(matches!(
+            ctx.max_required_confirmations(),
             Err(BridgeSdkError::ContractConfigurationError(_))
         ));
     }
