@@ -1990,8 +1990,8 @@ mod tests {
             confirmations_strategy: strategy(strategy_entries),
             confirmations_delta,
             extra_msg_confirmations_delta,
-            is_relayer_whitelisted: true,
-            is_extra_msg_relayer_whitelisted: true,
+            is_relayer_whitelisted: false,
+            is_extra_msg_relayer_whitelisted: false,
         }
     }
 
