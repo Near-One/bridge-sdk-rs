@@ -415,6 +415,31 @@ pub enum BtcDepositArgs {
         msg: DepositMsg,
     },
 }
+
+/// UTXO-chain transaction type whose verification on the BTC connector
+/// contract requires a light-client confirmation depth. Carries the data each
+/// verification path needs to compute its requirement.
+#[derive(Clone, Copy, Debug)]
+pub enum BtcTxType {
+    /// `verify_deposit` / `safe_verify_deposit`. `uses_extra_msg_path` must be
+    /// `true` only when the contract will dispatch to the extra-msg
+    /// confirmation delta — see [`BtcConfirmationContext::required_confirmations`].
+    Deposit {
+        amount: u128,
+        uses_extra_msg_path: bool,
+    },
+    /// `verify_withdraw`.
+    Withdraw { amount: u128 },
+    /// `verify_active_utxo_management`.
+    ActiveUtxoManagement { amount: u128 },
+    /// `request_refund`: newer contracts demand the maximum confirmation depth
+    /// unconditionally. Against older versions, which tier refund requests by
+    /// amount, this over-waits slightly — never premature.
+    RefundRequest,
+    /// `verify_refund_finalize`.
+    RefundFinalize { amount: u128 },
+}
+
 impl OmniConnector {
     pub fn new() -> Self {
         Self::default()
@@ -717,11 +742,13 @@ impl OmniConnector {
         // even if `extra_msg` is also present.
         let uses_extra_msg_path =
             deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
-        self.ensure_sufficient_btc_confirmations_for_deposit(
+        self.ensure_sufficient_btc_confirmations(
             chain,
             proof_data.block_height,
-            deposit_amount,
-            uses_extra_msg_path,
+            BtcTxType::Deposit {
+                amount: deposit_amount,
+                uses_extra_msg_path,
+            },
         )
         .await?;
 
@@ -775,8 +802,9 @@ impl OmniConnector {
         self.ensure_sufficient_btc_confirmations(
             chain,
             proof_data.block_height,
-            pending_info.actual_received_amount,
-            false,
+            BtcTxType::Withdraw {
+                amount: pending_info.actual_received_amount,
+            },
         )
         .await?;
 
@@ -827,8 +855,9 @@ impl OmniConnector {
         self.ensure_sufficient_btc_confirmations(
             chain,
             proof_data.block_height,
-            pending_info.actual_received_amount,
-            false,
+            BtcTxType::ActiveUtxoManagement {
+                amount: pending_info.actual_received_amount,
+            },
         )
         .await?;
 
@@ -884,8 +913,12 @@ impl OmniConnector {
             ))
         })?;
 
-        self.ensure_sufficient_btc_confirmations_for_refund_request(chain, proof_data.block_height)
-            .await?;
+        self.ensure_sufficient_btc_confirmations(
+            chain,
+            proof_data.block_height,
+            BtcTxType::RefundRequest,
+        )
+        .await?;
 
         let deposit_msg = match deposit_args {
             BtcDepositArgs::DepositMsg { msg } => msg,
@@ -990,8 +1023,9 @@ impl OmniConnector {
         self.ensure_sufficient_btc_confirmations(
             chain,
             proof_data.block_height,
-            pending_info.actual_received_amount,
-            false,
+            BtcTxType::RefundFinalize {
+                amount: pending_info.actual_received_amount,
+            },
         )
         .await?;
 
@@ -3741,85 +3775,83 @@ impl OmniConnector {
         Ok(ctx)
     }
 
-    /// Shared depth check for the UTXO-chain pre-checks. Returns
-    /// `LightClientNotSynced` (carrying the current tip) when more blocks are
-    /// needed — consumers key their retries on it.
-    async fn ensure_btc_light_client_depth(
+    /// Confirmations required to verify `tx_type` on the BTC connector
+    /// contract. Deposits ask the contract's `get_required_confirmations` view
+    /// (live block-cumulative ring state — a fresh call every time, falling
+    /// back to the local amount-tier formula on contracts without the view);
+    /// the other paths use the amount-tier formula, which is the same on every
+    /// contract version.
+    pub async fn get_required_btc_confirmations(
         &self,
         chain: ChainKind,
         tx_block_height: u64,
-        required_confirmations: u64,
-    ) -> Result<()> {
-        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
-
-        if tx_block_height + required_confirmations > light_client_last_block + 1 {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                light_client_last_block,
-            ));
+        tx_type: BtcTxType,
+    ) -> Result<u64> {
+        match tx_type {
+            BtcTxType::Deposit {
+                amount,
+                uses_extra_msg_path,
+            } => {
+                self.near_bridge_client()?
+                    .get_required_confirmations_for_deposit(
+                        chain,
+                        tx_block_height,
+                        amount,
+                        uses_extra_msg_path,
+                    )
+                    .await
+            }
+            BtcTxType::Withdraw { amount }
+            | BtcTxType::ActiveUtxoManagement { amount }
+            | BtcTxType::RefundFinalize { amount } => self
+                .confirmation_context(chain)
+                .await?
+                .required_confirmations(amount, false),
+            BtcTxType::RefundRequest => self
+                .confirmation_context(chain)
+                .await?
+                .max_required_confirmations(),
         }
-        Ok(())
     }
 
-    /// Pre-check for the amount-tier paths (`verify_withdraw`,
-    /// `verify_active_utxo_management`, `verify_refund_finalize`), whose
-    /// formula is the same on every contract version. Deposits and refund
-    /// requests have dedicated variants below.
+    /// Confirmations the light client still lacks before `tx_type` can be
+    /// verified; 0 means [`Self::ensure_sufficient_btc_confirmations`] would
+    /// pass right now.
+    pub async fn get_remaining_btc_confirmations(
+        &self,
+        chain: ChainKind,
+        tx_block_height: u64,
+        tx_type: BtcTxType,
+    ) -> Result<u64> {
+        let required_confirmations = self
+            .get_required_btc_confirmations(chain, tx_block_height, tx_type)
+            .await?;
+        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
+
+        Ok((tx_block_height + required_confirmations).saturating_sub(light_client_last_block + 1))
+    }
+
+    /// Pre-check shared by the UTXO-chain verification paths. Returns
+    /// `LightClientNotSynced` (carrying the current tip and the height to wait
+    /// for) when more blocks are needed — consumers key their retries on it.
     pub async fn ensure_sufficient_btc_confirmations(
         &self,
         chain: ChainKind,
         tx_block_height: u64,
-        amount: u128,
-        uses_extra_msg_path: bool,
+        tx_type: BtcTxType,
     ) -> Result<()> {
         let required_confirmations = self
-            .confirmation_context(chain)
-            .await?
-            .required_confirmations(amount, uses_extra_msg_path)?;
-
-        self.ensure_btc_light_client_depth(chain, tx_block_height, required_confirmations)
-            .await
-    }
-
-    /// Pre-check for `verify_deposit`/`safe_verify_deposit`: the requirement
-    /// comes from the contract's `get_required_confirmations` view (live
-    /// block-cumulative ring state — a fresh call every time), falling back to
-    /// the local amount-tier formula on contracts without the view.
-    pub async fn ensure_sufficient_btc_confirmations_for_deposit(
-        &self,
-        chain: ChainKind,
-        tx_block_height: u64,
-        amount: u128,
-        uses_extra_msg_path: bool,
-    ) -> Result<()> {
-        let required_confirmations = self
-            .near_bridge_client()?
-            .get_required_confirmations_for_deposit(
-                chain,
-                tx_block_height,
-                amount,
-                uses_extra_msg_path,
-            )
+            .get_required_btc_confirmations(chain, tx_block_height, tx_type)
             .await?;
+        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
 
-        self.ensure_btc_light_client_depth(chain, tx_block_height, required_confirmations)
-            .await
-    }
-
-    /// Pre-check for `request_refund`: newer contracts demand the maximum
-    /// confirmation depth unconditionally. Against older versions, which tier
-    /// refund requests by amount, this over-waits slightly — never premature.
-    pub async fn ensure_sufficient_btc_confirmations_for_refund_request(
-        &self,
-        chain: ChainKind,
-        tx_block_height: u64,
-    ) -> Result<()> {
-        let required_confirmations = self
-            .confirmation_context(chain)
-            .await?
-            .max_required_confirmations()?;
-
-        self.ensure_btc_light_client_depth(chain, tx_block_height, required_confirmations)
-            .await
+        if tx_block_height + required_confirmations > light_client_last_block + 1 {
+            return Err(BridgeSdkError::LightClientNotSynced {
+                current_height: light_client_last_block,
+                target_height: (tx_block_height + required_confirmations).saturating_sub(1),
+            });
+        }
+        Ok(())
     }
 
     pub fn hypercore_bridge_client(&self) -> Result<&HyperCoreBridgeClient> {
@@ -4136,9 +4168,10 @@ impl OmniConnector {
         let tx_block_number = evm_bridge_client.get_tx_block_number(tx_hash).await?;
 
         if last_eth_block_number_on_near < tx_block_number {
-            return Err(BridgeSdkError::LightClientNotSynced(
-                last_eth_block_number_on_near,
-            ));
+            return Err(BridgeSdkError::LightClientNotSynced {
+                current_height: last_eth_block_number_on_near,
+                target_height: tx_block_number,
+            });
         }
 
         let evm_proof = evm_bridge_client
