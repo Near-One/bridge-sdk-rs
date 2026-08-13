@@ -315,17 +315,13 @@ pub struct BtcConfirmationContext {
 }
 
 impl BtcConfirmationContext {
-    /// Required confirmations by the per-transaction amount tier. For deposits
-    /// this is only the fallback: contracts with the `get_required_confirmations`
-    /// view tier deposits by block-cumulative amount instead.
+    /// Required confirmations without the block-cumulative amount rules.
     ///
     /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
     /// to the extra-msg confirmation delta — that is, the SDK is calling
-    /// `verify_deposit` AND `deposit_msg.extra_msg.is_some()`. All other paths
-    /// (`safe_verify_deposit`, `verify_withdraw`, `verify_active_utxo_management`,
-    /// and `verify_deposit` without `extra_msg`) use the plain delta and must
-    /// pass `false` here, even if the surrounding `DepositMsg` happens to carry
-    /// an `extra_msg` field.
+    /// `verify_deposit_v2` with `extra_msg` set and no `safe_deposit`. All other
+    /// paths (`verify_withdraw_v2`,  and deposits without `extra_msg`) 
+    /// use the plain delta and must pass `false` here.
     pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
         let base = base_confirmations(&self.confirmations_strategy, amount)?;
 
@@ -667,7 +663,7 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Finalizes a BTC transfer by calling `verify_deposit` or `verify_safe_deposit` on the BTC connector contract.
+    /// Finalizes a BTC transfer by calling `verify_deposit_v2` on the BTC connector contract.
     #[tracing::instrument(skip_all, name = "NEAR FIN BTC TRANSFER")]
     pub async fn fin_btc_transfer(
         &self,

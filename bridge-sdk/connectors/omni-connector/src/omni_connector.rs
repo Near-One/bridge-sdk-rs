@@ -420,16 +420,16 @@ pub enum BtcDepositArgs {
 /// contract requires a light-client confirmation depth.
 #[derive(Clone, Copy, Debug)]
 pub enum BtcTxType {
-    /// `verify_deposit` / `safe_verify_deposit`. `uses_extra_msg_path` must be
-    /// `true` only when the contract will dispatch to the extra-msg
-    /// confirmation delta — see [`BtcConfirmationContext::required_confirmations`].
+    /// `verify_deposit_v2`. `uses_extra_msg_path` must be `true` only when the
+    /// contract will dispatch to the extra-msg confirmation delta — see
+    /// [`BtcConfirmationContext::required_confirmations`].
     Deposit {
         amount: u128,
         uses_extra_msg_path: bool,
     },
-    /// `verify_withdraw`.
+    /// `verify_withdraw_v2`.
     Withdraw { amount: u128 },
-    /// `verify_active_utxo_management`.
+    /// `verify_active_utxo_management_v2`.
     ActiveUtxoManagement { amount: u128 },
     /// `request_refund`: newer contracts demand the maximum confirmation depth
     /// unconditionally. Against older versions, which tier refund requests by
