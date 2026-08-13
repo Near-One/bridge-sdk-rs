@@ -34,6 +34,7 @@ use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use hypercore_bridge_client::{
     encode_init_transfer_action, encode_transfer_action, format_amount, HyperCoreBridgeClient,
 };
+pub use near_bridge_client::btc::BtcTxType;
 use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
@@ -51,7 +52,6 @@ use solana_sdk::transaction::Transaction;
 use starknet_bridge_client::{StarknetBridgeClient, StarknetInitTransferEvent};
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::OnceLock;
 use utxo_bridge_client::{
     types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
@@ -94,10 +94,6 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
-    #[builder(default)]
-    btc_confirmation_context: OnceLock<BtcConfirmationContext>,
-    #[builder(default)]
-    zcash_confirmation_context: OnceLock<BtcConfirmationContext>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -414,29 +410,6 @@ pub enum BtcDepositArgs {
     DepositMsg {
         msg: DepositMsg,
     },
-}
-
-/// UTXO-chain transaction type whose verification on the BTC connector
-/// contract requires a light-client confirmation depth.
-#[derive(Clone, Copy, Debug)]
-pub enum BtcTxType {
-    /// `verify_deposit_v2`. `uses_extra_msg_path` must be `true` only when the
-    /// contract will dispatch to the extra-msg confirmation delta — see
-    /// [`BtcConfirmationContext::required_confirmations`].
-    Deposit {
-        amount: u128,
-        uses_extra_msg_path: bool,
-    },
-    /// `verify_withdraw_v2`.
-    Withdraw { amount: u128 },
-    /// `verify_active_utxo_management_v2`.
-    ActiveUtxoManagement { amount: u128 },
-    /// `request_refund`: newer contracts demand the maximum confirmation depth
-    /// unconditionally. Against older versions, which tier refund requests by
-    /// amount, this over-waits slightly — never premature.
-    RefundRequest,
-    /// `verify_refund_finalize`.
-    RefundFinalize { amount: u128 },
 }
 
 impl OmniConnector {
@@ -3730,68 +3703,25 @@ impl OmniConnector {
             })
     }
 
-    /// Returns the BTC connector confirmation context for `chain`, fetching it
-    /// from the contract on the first call per chain and reusing the stored
-    /// snapshot for the lifetime of this `OmniConnector`.
+    /// Returns the BTC connector confirmation context for `chain`; see
+    /// [`NearBridgeClient::cached_btc_confirmation_context`].
     pub async fn confirmation_context(&self, chain: ChainKind) -> Result<BtcConfirmationContext> {
-        let cell = match chain {
-            ChainKind::Btc => &self.btc_confirmation_context,
-            ChainKind::Zcash => &self.zcash_confirmation_context,
-            _ => {
-                return Err(BridgeSdkError::InvalidArgument(format!(
-                    "confirmation_context called with non-UTXO chain: {chain:?}"
-                )));
-            }
-        };
-
-        if let Some(ctx) = cell.get() {
-            return Ok(ctx.clone());
-        }
-
-        let ctx = self
-            .near_bridge_client()?
-            .get_btc_confirmation_context(chain)
-            .await?;
-
-        let _ = cell.set(ctx.clone());
-
-        Ok(ctx)
+        self.near_bridge_client()?
+            .cached_btc_confirmation_context(chain)
+            .await
     }
 
     /// Confirmations required to verify `tx_type` on the BTC connector
-    /// contract. Deposits ask the contract's live `get_required_confirmations`
-    /// view; the other paths use the amount-tier formula.
+    /// contract; see [`NearBridgeClient::get_required_btc_confirmations`].
     pub async fn get_required_btc_confirmations(
         &self,
         chain: ChainKind,
         tx_block_height: u64,
         tx_type: BtcTxType,
     ) -> Result<u64> {
-        match tx_type {
-            BtcTxType::Deposit {
-                amount,
-                uses_extra_msg_path,
-            } => {
-                self.near_bridge_client()?
-                    .get_required_confirmations_for_deposit(
-                        chain,
-                        tx_block_height,
-                        amount,
-                        uses_extra_msg_path,
-                    )
-                    .await
-            }
-            BtcTxType::Withdraw { amount }
-            | BtcTxType::ActiveUtxoManagement { amount }
-            | BtcTxType::RefundFinalize { amount } => self
-                .confirmation_context(chain)
-                .await?
-                .required_confirmations(amount, false),
-            BtcTxType::RefundRequest => self
-                .confirmation_context(chain)
-                .await?
-                .max_required_confirmations(),
-        }
+        self.near_bridge_client()?
+            .get_required_btc_confirmations(chain, tx_block_height, tx_type)
+            .await
     }
 
     /// Confirmations the light client still lacks before `tx_type` can be

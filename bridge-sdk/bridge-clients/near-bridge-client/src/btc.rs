@@ -18,6 +18,7 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use utxo_utils::UTXO;
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
@@ -320,7 +321,7 @@ impl BtcConfirmationContext {
     /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
     /// to the extra-msg confirmation delta — that is, the SDK is calling
     /// `verify_deposit_v2` with `extra_msg` set and no `safe_deposit`. All other
-    /// paths (`verify_withdraw_v2`,  and deposits without `extra_msg`) 
+    /// paths (`verify_withdraw_v2` and deposits without `extra_msg`)
     /// use the plain delta and must pass `false` here.
     pub fn required_confirmations(&self, amount: u128, uses_extra_msg_path: bool) -> Result<u64> {
         let base = base_confirmations(&self.confirmations_strategy, amount)?;
@@ -361,6 +362,29 @@ impl BtcConfirmationContext {
                 self.extra_msg_confirmations_delta,
             )))
     }
+}
+
+/// UTXO-chain transaction type whose verification on the BTC connector
+/// contract requires a light-client confirmation depth.
+#[derive(Clone, Copy, Debug)]
+pub enum BtcTxType {
+    /// `verify_deposit_v2`. `uses_extra_msg_path` must be `true` only when the
+    /// contract will dispatch to the extra-msg confirmation delta — see
+    /// [`BtcConfirmationContext::required_confirmations`].
+    Deposit {
+        amount: u128,
+        uses_extra_msg_path: bool,
+    },
+    /// `verify_withdraw_v2`.
+    Withdraw { amount: u128 },
+    /// `verify_active_utxo_management_v2`.
+    ActiveUtxoManagement { amount: u128 },
+    /// `request_refund`: newer contracts demand the maximum confirmation depth
+    /// unconditionally. Against older versions, which tier refund requests by
+    /// amount, this over-waits slightly — never premature.
+    RefundRequest,
+    /// `verify_refund_finalize`.
+    RefundFinalize { amount: u128 },
 }
 
 #[derive(Clone, Debug)]
@@ -1401,6 +1425,73 @@ impl NearBridgeClient {
                 .await?
                 .required_confirmations(amount, has_extra_msg),
             Err(err) => Err(err.into()),
+        }
+    }
+
+    fn btc_confirmation_context_cell(
+        &self,
+        chain: ChainKind,
+    ) -> Result<&OnceLock<BtcConfirmationContext>> {
+        match chain {
+            ChainKind::Btc => Ok(&self.btc_confirmation_context),
+            ChainKind::Zcash => Ok(&self.zcash_confirmation_context),
+            _ => Err(BridgeSdkError::InvalidArgument(format!(
+                "cached_btc_confirmation_context called with non-UTXO chain: {chain:?}"
+            ))),
+        }
+    }
+
+    /// The BTC connector confirmation context for `chain`, fetched from the
+    /// contract on the first call per chain and reused for the lifetime of
+    /// this client.
+    pub async fn cached_btc_confirmation_context(
+        &self,
+        chain: ChainKind,
+    ) -> Result<BtcConfirmationContext> {
+        let cell = self.btc_confirmation_context_cell(chain)?;
+
+        if let Some(ctx) = cell.get() {
+            return Ok(ctx.clone());
+        }
+
+        let ctx = self.get_btc_confirmation_context(chain).await?;
+        let _ = cell.set(ctx.clone());
+
+        Ok(ctx)
+    }
+
+    /// Confirmations required to verify `tx_type` on the BTC connector
+    /// contract. Deposits ask the contract's live `get_required_confirmations`
+    /// view; the other paths use the amount-tier formula.
+    pub async fn get_required_btc_confirmations(
+        &self,
+        chain: ChainKind,
+        block_height: u64,
+        tx_type: BtcTxType,
+    ) -> Result<u64> {
+        match tx_type {
+            BtcTxType::Deposit {
+                amount,
+                uses_extra_msg_path,
+            } => {
+                self.get_required_confirmations_for_deposit(
+                    chain,
+                    block_height,
+                    amount,
+                    uses_extra_msg_path,
+                )
+                .await
+            }
+            BtcTxType::Withdraw { amount }
+            | BtcTxType::ActiveUtxoManagement { amount }
+            | BtcTxType::RefundFinalize { amount } => self
+                .cached_btc_confirmation_context(chain)
+                .await?
+                .required_confirmations(amount, false),
+            BtcTxType::RefundRequest => self
+                .cached_btc_confirmation_context(chain)
+                .await?
+                .max_required_confirmations(),
         }
     }
 

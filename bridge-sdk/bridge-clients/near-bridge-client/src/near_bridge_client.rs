@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
@@ -114,6 +115,10 @@ pub struct NearBridgeClient {
     utxo_bridges: HashMap<ChainKind, UTXOChainAccounts>,
     #[doc = r"Bridge Indexer API base URL"]
     bridge_indexer_api_url: Option<Url>,
+    #[builder(setter(skip), default)]
+    btc_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
+    #[builder(setter(skip), default)]
+    zcash_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
 }
 
 impl NearBridgeClient {
