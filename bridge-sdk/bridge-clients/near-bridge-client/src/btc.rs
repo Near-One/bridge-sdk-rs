@@ -315,11 +315,9 @@ pub struct BtcConfirmationContext {
 }
 
 impl BtcConfirmationContext {
-    /// Required confirmations by the per-transaction amount tier. Exact for
-    /// `verify_withdraw`, `verify_active_utxo_management` and
-    /// `verify_refund_finalize` on every contract version; for deposits it is
-    /// only the fallback for contracts without the `get_required_confirmations`
-    /// view, which tier by the block-cumulative amount instead.
+    /// Required confirmations by the per-transaction amount tier. For deposits
+    /// this is only the fallback: contracts with the `get_required_confirmations`
+    /// view tier deposits by block-cumulative amount instead.
     ///
     /// `uses_extra_msg_path` must be `true` only when the contract will dispatch
     /// to the extra-msg confirmation delta — that is, the SDK is calling
@@ -347,8 +345,8 @@ impl BtcConfirmationContext {
     }
 
     /// Mirrors `Config::max_required_confirmations` from the satoshi-bridge
-    /// contract: the largest strategy tier plus the larger delta. Refund
-    /// requests must reach this depth unconditionally — no whitelist discount.
+    /// contract: the depth refund requests must reach unconditionally — no
+    /// whitelist discount.
     pub fn max_required_confirmations(&self) -> Result<u64> {
         let max_tier = self
             .confirmations_strategy
@@ -1369,14 +1367,11 @@ impl NearBridgeClient {
         })
     }
 
-    /// Required confirmations for a deposit (`verify_deposit` /
-    /// `safe_verify_deposit`), asked from the connector contract via the
-    /// `get_required_confirmations` view; the result reflects live
-    /// block-cumulative ring state and must not be cached. Falls back to the
-    /// local amount-tier formula only when the contract predates the view
-    /// (`MethodNotFound`); any other error is propagated, since falling back
-    /// would underestimate against a newer contract. `has_extra_msg` follows
-    /// the dispatch rule of [`BtcConfirmationContext::required_confirmations`].
+    /// Required confirmations for a deposit, from the contract's live
+    /// `get_required_confirmations` view — do not cache the result. Falls back
+    /// to the local amount-tier formula only when the contract predates the
+    /// view; any other error is propagated, since falling back would
+    /// underestimate against a newer contract.
     pub async fn get_required_confirmations_for_deposit(
         &self,
         chain: ChainKind,

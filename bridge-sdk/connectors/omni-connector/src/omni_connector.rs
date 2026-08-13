@@ -417,8 +417,7 @@ pub enum BtcDepositArgs {
 }
 
 /// UTXO-chain transaction type whose verification on the BTC connector
-/// contract requires a light-client confirmation depth. Carries the data each
-/// verification path needs to compute its requirement.
+/// contract requires a light-client confirmation depth.
 #[derive(Clone, Copy, Debug)]
 pub enum BtcTxType {
     /// `verify_deposit` / `safe_verify_deposit`. `uses_extra_msg_path` must be
@@ -3760,11 +3759,8 @@ impl OmniConnector {
     }
 
     /// Confirmations required to verify `tx_type` on the BTC connector
-    /// contract. Deposits ask the contract's `get_required_confirmations` view
-    /// (live block-cumulative ring state — a fresh call every time, falling
-    /// back to the local amount-tier formula on contracts without the view);
-    /// the other paths use the amount-tier formula, which is the same on every
-    /// contract version.
+    /// contract. Deposits ask the contract's live `get_required_confirmations`
+    /// view; the other paths use the amount-tier formula.
     pub async fn get_required_btc_confirmations(
         &self,
         chain: ChainKind,
@@ -3816,8 +3812,7 @@ impl OmniConnector {
     }
 
     /// Pre-check shared by the UTXO-chain verification paths. Returns
-    /// `LightClientNotSynced` (carrying the current tip and the height to wait
-    /// for) when more blocks are needed — consumers key their retries on it.
+    /// `LightClientNotSynced` when more blocks are needed.
     pub async fn ensure_sufficient_btc_confirmations(
         &self,
         chain: ChainKind,
