@@ -728,29 +728,13 @@ impl OmniConnector {
             } => near_bridge_client.get_deposit_msg_for_near_account(recipient_id, refund_address),
         };
 
-        let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
+        // Bounds-check vout early; the contract would only panic on it later.
+        proof_data.outputs.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
                 proof_data.outputs.len()
             ))
         })?;
-        let deposit_amount = u128::from(deposit_output.value_sat);
-
-        // The contract dispatches to `get_extra_msg_confirmations` only when
-        // calling `verify_deposit` with `extra_msg` set. `safe_verify_deposit`
-        // (chosen when `safe_deposit.is_some()`) always uses `get_confirmations`,
-        // even if `extra_msg` is also present.
-        let uses_extra_msg_path =
-            deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
-        self.ensure_sufficient_btc_confirmations(
-            chain,
-            proof_data.block_height,
-            BtcTxType::Deposit {
-                amount: deposit_amount,
-                uses_extra_msg_path,
-            },
-        )
-        .await?;
 
         Ok(FinBtcTransferArgs {
             deposit_msg,
