@@ -1377,7 +1377,6 @@ impl NearBridgeClient {
     ) -> Result<u64> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        // The view has no predecessor; pass the account that will sign the real call.
         let relayer_account_id = self.account_id()?;
 
         let response = near_rpc_client::view(
