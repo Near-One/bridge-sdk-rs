@@ -871,7 +871,7 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
     #[clap(
-        about = "Verify a deposit migrated from the legacy bridge in btc_connector (requires the MigrationOperator role). Either a single deposit via --btc-tx-hash/--vout, or a batch via --input-file"
+        about = "Verify a deposit migrated from the legacy bridge in btc_connector (requires the MigrationOperator role). Either a single deposit via --btc-tx-hash, or a batch via --input-file. The deposit output index is always 0"
     )]
     BtcVerifyMigrateDeposit {
         #[clap(short, long, help = "Chain the deposits were made on (Bitcoin/Zcash)")]
@@ -880,20 +880,12 @@ pub enum OmniConnectorSubCommand {
             short,
             long,
             help = "Bitcoin/Zcash deposit tx hash",
-            requires = "vout",
             conflicts_with = "input_file"
         )]
         btc_tx_hash: Option<String>,
         #[clap(
-            short,
             long,
-            help = "Index of the deposit output in the Bitcoin/Zcash transaction"
-        )]
-        vout: Option<usize>,
-        #[clap(
-            long,
-            help = "JSON file with the deposits to migrate: [{\"tx_hash\": \"...\", \"vout\": 0}, ...]. Each entry is submitted as its own NEAR transaction; failures are recorded and don't stop the batch.",
-            conflicts_with_all = ["btc_tx_hash", "vout"],
+            help = "File with the deposit tx hashes to migrate, one per line. Each entry is submitted as its own NEAR transaction; failures are recorded and don't stop the batch.",
             required_unless_present = "btc_tx_hash"
         )]
         input_file: Option<PathBuf>,
@@ -1109,16 +1101,12 @@ pub(crate) enum InternalSubCommand {
     },
 }
 
-#[derive(serde::Deserialize)]
-struct MigrateDepositEntry {
-    tx_hash: String,
-    vout: usize,
-}
+/// Migrated deposits always sit at output index 0.
+const MIGRATE_DEPOSIT_VOUT: usize = 0;
 
 #[derive(serde::Serialize)]
 struct MigrateDepositResult {
     tx_hash: String,
-    vout: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     near_tx_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1137,12 +1125,12 @@ async fn batch_verify_migrate_deposits(
 ) {
     let input = std::fs::read_to_string(input_file)
         .unwrap_or_else(|e| panic!("Failed to read {}: {e}", input_file.display()));
-    let entries: Vec<MigrateDepositEntry> = serde_json::from_str(&input).unwrap_or_else(|e| {
-        panic!(
-            "Failed to parse {}; expected [{{\"tx_hash\": \"...\", \"vout\": 0}}, ...]: {e}",
-            input_file.display()
-        )
-    });
+    let entries: Vec<String> = input
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect();
     let output_file = output_file.unwrap_or_else(|| {
         let mut path = input_file.as_os_str().to_owned();
         path.push(".near.json");
@@ -1151,37 +1139,26 @@ async fn batch_verify_migrate_deposits(
 
     let total = entries.len();
     let mut results: Vec<MigrateDepositResult> = Vec::with_capacity(total);
-    for (i, entry) in entries.into_iter().enumerate() {
-        tracing::info!(
-            "Verifying migrate deposit {}/{total}: {}@{}",
-            i + 1,
-            entry.tx_hash,
-            entry.vout
-        );
+    for (i, tx_hash) in entries.into_iter().enumerate() {
+        tracing::info!("Verifying migrate deposit {}/{total}: {tx_hash}", i + 1);
         let result = match connector
             .near_btc_verify_migrate_deposit(
                 chain,
-                entry.tx_hash.clone(),
-                entry.vout,
+                tx_hash.clone(),
+                MIGRATE_DEPOSIT_VOUT,
                 TransactionOptions::default(),
             )
             .await
         {
             Ok(near_tx_hash) => MigrateDepositResult {
-                tx_hash: entry.tx_hash,
-                vout: entry.vout,
+                tx_hash,
                 near_tx_hash: Some(near_tx_hash.to_string()),
                 error: None,
             },
             Err(e) => {
-                tracing::error!(
-                    "Failed to verify migrate deposit {}@{}: {e}",
-                    entry.tx_hash,
-                    entry.vout
-                );
+                tracing::error!("Failed to verify migrate deposit {tx_hash}: {e}");
                 MigrateDepositResult {
-                    tx_hash: entry.tx_hash,
-                    vout: entry.vout,
+                    tx_hash,
                     near_tx_hash: None,
                     error: Some(e.to_string()),
                 }
@@ -2214,7 +2191,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         OmniConnectorSubCommand::BtcVerifyMigrateDeposit {
             chain,
             btc_tx_hash,
-            vout,
             input_file,
             output_file,
             config_cli,
@@ -2222,12 +2198,11 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             let connector = omni_connector(network, config_cli);
             match (btc_tx_hash, input_file) {
                 (Some(tx_hash), None) => {
-                    let vout = vout.expect("--vout is required with --btc-tx-hash");
                     connector
                         .near_btc_verify_migrate_deposit(
                             chain.into(),
                             tx_hash,
-                            vout,
+                            MIGRATE_DEPOSIT_VOUT,
                             TransactionOptions::default(),
                         )
                         .await
@@ -2242,7 +2217,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     )
                     .await;
                 }
-                _ => panic!("Provide either --btc-tx-hash with --vout, or --input-file"),
+                _ => panic!("Provide either --btc-tx-hash or --input-file"),
             }
         }
         OmniConnectorSubCommand::BtcRequestRefund {
