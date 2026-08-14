@@ -6,7 +6,7 @@ use reqwest::{
     Client, ClientBuilder,
 };
 use serde_json::{json, Value};
-use std::{marker::PhantomData, str::FromStr};
+use std::{marker::PhantomData, str::FromStr, time::Duration};
 
 use crate::error::UtxoClientError;
 use crate::types::{TxOutputView, TxProof, UTXOChain, UTXOChainBlock, UtxoBridgeTransactionData};
@@ -20,13 +20,11 @@ pub enum AuthOptions {
     BasicAuth(String, String),
 }
 
-#[allow(dead_code)]
-#[derive(serde::Deserialize, Debug)]
-struct JsonRpcResponse<T> {
-    jsonrpc: String,
-    id: u64,
-    result: T,
-}
+/// How many times a rate-limited RPC request is retried before giving up.
+/// A 75s delay outlasts a full per-minute quota window (e.g. Tatum's free
+/// tier of 5 requests/minute), so a single retry usually goes through.
+const RATE_LIMIT_RETRIES: u32 = 6;
+const RATE_LIMIT_RETRY_DELAY: Duration = Duration::from_secs(75);
 
 pub struct UTXOBridgeClient<T: UTXOChain> {
     endpoint_url: String,
@@ -60,6 +58,63 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         }
     }
 
+    /// Sends a JSON-RPC request and returns the parsed response body.
+    /// Managed RPC providers (e.g. Tatum) throttle with HTTP 429 and a
+    /// `{"statusCode": 429, ...}` body that carries no `result` field; such
+    /// responses are retried with a delay instead of being misread as a null
+    /// result ("transaction not found").
+    async fn rpc_call(&self, method: &str, params: Value) -> Result<Value, UtxoClientError> {
+        let request_body = json!({
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        });
+
+        let mut attempt = 0;
+        loop {
+            let response = self
+                .http_client
+                .post(&self.endpoint_url)
+                .json(&request_body)
+                .send()
+                .await
+                .map_err(|e| {
+                    UtxoClientError::RpcError(format!("Failed to send {method} request: {e}"))
+                })?;
+
+            let status = response.status();
+            let response_text = response.text().await.map_err(|e| {
+                UtxoClientError::RpcError(format!("Failed to read {method} response: {e}"))
+            })?;
+
+            let body = serde_json::from_str::<Value>(&response_text).map_err(|_| {
+                UtxoClientError::RpcError(format!(
+                    "Failed to parse {method} response. Response: {response_text}"
+                ))
+            });
+
+            let rate_limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                || body
+                    .as_ref()
+                    .is_ok_and(|body| body["statusCode"].as_u64() == Some(429));
+            if !rate_limited {
+                return body;
+            }
+            if attempt >= RATE_LIMIT_RETRIES {
+                return Err(UtxoClientError::RpcError(format!(
+                    "{method} still rate-limited by the RPC node after {RATE_LIMIT_RETRIES} retries. Response: {response_text}"
+                )));
+            }
+            attempt += 1;
+            tracing::warn!(
+                "{method} rate-limited by the RPC node, retrying in {}s ({attempt}/{RATE_LIMIT_RETRIES})",
+                RATE_LIMIT_RETRY_DELAY.as_secs()
+            );
+            tokio::time::sleep(RATE_LIMIT_RETRY_DELAY).await;
+        }
+    }
+
     pub async fn get_block_hash_by_tx_hash(
         &self,
         tx_hash: &str,
@@ -72,40 +127,12 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
         &self,
         block_hash: &str,
     ) -> Result<u64, UtxoClientError> {
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "getblockheader",
-                "params": [block_hash.to_string(), true],
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to send getblock request: {e}"))
-            })?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to read getblock response: {e}"))
-            })?;
+        let response = self
+            .rpc_call("getblockheader", json!([block_hash.to_string(), true]))
+            .await?;
 
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to send getblock. Response: {response_text}"
-            ))
-        })?;
-
-        let result: Value = serde_json::from_value(response["result"].clone()).map_err(|e| {
-            UtxoClientError::RpcError(format!(
-                "Failed to parse send getblock result: {e}. Response: {response_text}"
-            ))
-        })?;
-
-        let block_height = result["height"].as_u64().ok_or_else(|| {
-            UtxoClientError::RpcError(format!("Block height not found. Response: {response_text}"))
+        let block_height = response["result"]["height"].as_u64().ok_or_else(|| {
+            UtxoClientError::RpcError(format!("Block height not found. Response: {response}"))
         })?;
 
         Ok(block_height)
@@ -171,35 +198,13 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .get_block_height_by_block_hash(&block_hash.to_string())
             .await?;
 
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "getblock",
-                "params": [block_hash.to_string(), 0],
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to send getblock request: {e}"))
-            })?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to read getblock response: {e}"))
-            })?;
-
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to read getblock. Response: {response_text}"
-            ))
-        })?;
+        let response = self
+            .rpc_call("getblock", json!([block_hash.to_string(), 0]))
+            .await?;
 
         let result: String = serde_json::from_value(response["result"].clone()).map_err(|e| {
             UtxoClientError::RpcError(format!(
-                "Failed to parse read getblock result: {e}. Response: {response_text}"
+                "Failed to parse getblock result: {e}. Response: {response}"
             ))
         })?;
 
@@ -245,36 +250,12 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             return Ok(1000);
         }
 
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "estimatesmartfee",
-                "params": [2]
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to send estimatesmartfee request: {e}"))
-            })?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to read estimatesmartfee response: {e}"))
-            })?;
-
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to read estimatesmartfee. Response: {response_text}"
-            ))
-        })?;
+        let response = self.rpc_call("estimatesmartfee", json!([2])).await?;
 
         let result: EstimateSmartFeeResult = serde_json::from_value(response["result"].clone())
             .map_err(|e| {
                 UtxoClientError::RpcError(format!(
-                    "Failed to parse estimatesmartfee result: {e}. Response: {response_text}"
+                    "Failed to parse estimatesmartfee result: {e}. Response: {response}"
                 ))
             })?;
 
@@ -289,35 +270,13 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
     pub async fn send_tx(&self, tx_bytes: &[u8]) -> Result<String, UtxoClientError> {
         let hex_str = hex::encode(tx_bytes);
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "sendrawtransaction",
-                "params": [hex_str]
-            }))
-            .send()
-            .await
-            .map_err(|e| UtxoClientError::RpcError(format!("Failed to send transaction: {e}")))?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!(
-                    "Failed to read sendrawtransaction response: {e}"
-                ))
-            })?;
-
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to read sendrawtransaction. Response: {response_text}"
-            ))
-        })?;
+        let response = self
+            .rpc_call("sendrawtransaction", json!([hex_str]))
+            .await?;
 
         let result: String = serde_json::from_value(response["result"].clone()).map_err(|e| {
             UtxoClientError::RpcError(format!(
-                "Failed to parse sendrawtransaction result: {e}. Response: {response_text}"
+                "Failed to parse sendrawtransaction result: {e}. Response: {response}"
             ))
         })?;
 
@@ -325,30 +284,15 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
     }
 
     pub async fn get_current_height(&self) -> Result<u64, UtxoClientError> {
-        let count_response: JsonRpcResponse<Value> = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
+        let response = self.rpc_call("getblockcount", json!([])).await?;
 
-                        "method": "getblockcount",
-                "params": []
-            }))
-            .send()
-            .await
-            .map_err(|e| UtxoClientError::RpcError(format!("Failed to send getblockcount: {e}")))?
-            .json()
-            .await
-            .map_err(|e| UtxoClientError::Other(format!("Failed to parse getblockcount: {e}")))?;
-
-        let last_block_height = count_response
-            .result
+        let last_block_height = response["result"]
             .as_u64()
             .ok_or_else(|| UtxoClientError::Other("Invalid getblockcount result".to_string()))?;
 
         Ok(last_block_height)
     }
+
     async fn get_raw_transaction(&self, tx_hash: &str) -> Result<Value, UtxoClientError> {
         let args = if T::is_zcash() {
             json!([tx_hash, 1])
@@ -356,31 +300,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             json!([tx_hash, true])
         };
 
-        let response_text = self
-            .http_client
-            .post(&self.endpoint_url)
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "getrawtransaction",
-                "params": args
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to send getrawtransaction request: {e}"))
-            })?
-            .text()
-            .await
-            .map_err(|e| {
-                UtxoClientError::RpcError(format!("Failed to read getrawtransaction response: {e}"))
-            })?;
-
-        let response = serde_json::from_str::<Value>(&response_text).map_err(|_| {
-            UtxoClientError::RpcError(format!(
-                "Failed to read getrawtransaction. Response: {response_text}"
-            ))
-        })?;
+        let response = self.rpc_call("getrawtransaction", args).await?;
 
         if !response["error"].is_null() {
             return Err(UtxoClientError::RpcError(format!(
@@ -397,7 +317,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
 
         serde_json::from_value(response["result"].clone()).map_err(|e| {
             UtxoClientError::RpcError(format!(
-                "Failed to parse getrawtransaction result: {e}. Response: {response_text}"
+                "Failed to parse getrawtransaction result: {e}. Response: {response}"
             ))
         })
     }

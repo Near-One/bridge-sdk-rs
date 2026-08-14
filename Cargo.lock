@@ -9559,6 +9559,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "zcash_encoding",
  "zcash_primitives",
  "zcash_protocol",
