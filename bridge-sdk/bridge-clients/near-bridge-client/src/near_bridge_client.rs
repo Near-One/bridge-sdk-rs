@@ -119,6 +119,11 @@ pub struct NearBridgeClient {
     btc_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
     #[builder(setter(skip), default)]
     zcash_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
+    #[doc = r"Set once the BTC connector is seen to predate the `get_required_confirmations` view; skips the doomed RPC call afterwards"]
+    #[builder(setter(skip), default)]
+    btc_missing_required_confirmations_view: OnceLock<()>,
+    #[builder(setter(skip), default)]
+    zcash_missing_required_confirmations_view: OnceLock<()>,
 }
 
 impl NearBridgeClient {

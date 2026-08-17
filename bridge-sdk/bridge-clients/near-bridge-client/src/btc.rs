@@ -1388,10 +1388,12 @@ impl NearBridgeClient {
     }
 
     /// Required confirmations for a deposit, from the contract's live
-    /// `get_required_confirmations` view — do not cache the result. Falls back
-    /// to the local amount-tier formula only when the contract predates the
-    /// view; any other error is propagated, since falling back would
-    /// underestimate against a newer contract.
+    /// `get_required_confirmations` view. If the contract predates the view
+    /// (method not found), that fact is remembered for the lifetime of this
+    /// client and the cached local amount-tier formula is used instead —
+    /// restart the relayer to pick up a contract upgrade. Any other error is
+    /// propagated, since falling back would underestimate against a newer
+    /// contract.
     pub async fn get_required_confirmations_for_deposit(
         &self,
         chain: ChainKind,
@@ -1399,32 +1401,49 @@ impl NearBridgeClient {
         amount: u128,
         has_extra_msg: bool,
     ) -> Result<u64> {
-        let endpoint = self.endpoint()?;
-        let btc_connector = self.utxo_chain_connector(chain)?;
-        let relayer_account_id = self.account_id()?;
+        let missing_view = self.missing_required_confirmations_view_cell(chain)?;
 
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: btc_connector,
-                method_name: "get_required_confirmations".to_string(),
-                args: json!({
-                    "block_height": block_height,
-                    "amount": U128(amount),
-                    "relayer_account_id": relayer_account_id,
-                    "has_extra_msg": has_extra_msg,
-                }),
-            },
-        )
-        .await;
+        if missing_view.get().is_none() {
+            let endpoint = self.endpoint()?;
+            let btc_connector = self.utxo_chain_connector(chain)?;
+            let relayer_account_id = self.account_id()?;
 
-        match response {
-            Ok(response) => Ok(serde_json::from_slice::<u64>(&response)?),
-            Err(err) if err.is_method_not_found() => self
-                .get_btc_confirmation_context(chain)
-                .await?
-                .required_confirmations(amount, has_extra_msg),
-            Err(err) => Err(err.into()),
+            let response = near_rpc_client::view(
+                endpoint,
+                ViewRequest {
+                    contract_account_id: btc_connector,
+                    method_name: "get_required_confirmations".to_string(),
+                    args: json!({
+                        "block_height": block_height,
+                        "amount": U128(amount),
+                        "relayer_account_id": relayer_account_id,
+                        "has_extra_msg": has_extra_msg,
+                    }),
+                },
+            )
+            .await;
+
+            match response {
+                Ok(response) => return Ok(serde_json::from_slice::<u64>(&response)?),
+                Err(err) if err.is_method_not_found() => {
+                    let _ = missing_view.set(());
+                }
+                Err(err) => return Err(err.into()),
+            }
+        }
+
+        self.cached_btc_confirmation_context(chain)
+            .await?
+            .required_confirmations(amount, has_extra_msg)
+    }
+
+    fn missing_required_confirmations_view_cell(&self, chain: ChainKind) -> Result<&OnceLock<()>> {
+        match chain {
+            ChainKind::Btc => Ok(&self.btc_missing_required_confirmations_view),
+            ChainKind::Zcash => Ok(&self.zcash_missing_required_confirmations_view),
+            _ => Err(BridgeSdkError::InvalidArgument(format!(
+                "missing_required_confirmations_view_cell called with non-UTXO chain: {chain:?}"
+            ))),
         }
     }
 
