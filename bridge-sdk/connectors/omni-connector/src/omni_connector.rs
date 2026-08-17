@@ -3733,10 +3733,10 @@ impl OmniConnector {
         tx_block_height: u64,
         tx_type: BtcTxType,
     ) -> Result<u64> {
-        let required_confirmations = self
-            .get_required_btc_confirmations(chain, tx_block_height, tx_type)
-            .await?;
-        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
+        let (required_confirmations, light_client_last_block) = futures::try_join!(
+            self.get_required_btc_confirmations(chain, tx_block_height, tx_type),
+            self.light_client(chain)?.get_last_block_number()
+        )?;
 
         Ok((tx_block_height + required_confirmations).saturating_sub(light_client_last_block + 1))
     }
@@ -3749,10 +3749,10 @@ impl OmniConnector {
         tx_block_height: u64,
         tx_type: BtcTxType,
     ) -> Result<()> {
-        let required_confirmations = self
-            .get_required_btc_confirmations(chain, tx_block_height, tx_type)
-            .await?;
-        let light_client_last_block = self.light_client(chain)?.get_last_block_number().await?;
+        let (required_confirmations, light_client_last_block) = futures::try_join!(
+            self.get_required_btc_confirmations(chain, tx_block_height, tx_type),
+            self.light_client(chain)?.get_last_block_number()
+        )?;
 
         if tx_block_height + required_confirmations > light_client_last_block + 1 {
             return Err(BridgeSdkError::LightClientNotSynced {

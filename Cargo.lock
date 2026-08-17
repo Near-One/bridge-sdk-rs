@@ -5106,6 +5106,7 @@ dependencies = [
  "derive_builder",
  "eth-proof",
  "evm-bridge-client",
+ "futures",
  "hex",
  "hypercore-bridge-client",
  "light-client",
