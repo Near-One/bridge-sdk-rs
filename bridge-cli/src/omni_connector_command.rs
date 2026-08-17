@@ -2012,15 +2012,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             // `--dry-run` (if set) is honored at the NEAR client: the verify_deposit
             // transaction is printed as an unsigned payload instead of broadcast.
+            // The `_checked` variant pre-checks light-client confirmations, giving
+            // a clear error instead of a contract panic.
             connector
-                .fin_transfer(FinTransferArgs::NearFinTransferBTC {
-                    chain_kind: chain.into(),
+                .near_fin_transfer_btc_checked(
+                    chain.into(),
                     btc_tx_hash,
-                    vout: resolved_vout,
-                    btc_deposit_args: deposit_args,
+                    resolved_vout,
+                    deposit_args,
                     prefetched,
-                    transaction_options: TransactionOptions::default(),
-                })
+                    TransactionOptions::default(),
+                )
                 .await
                 .unwrap();
         }

@@ -662,13 +662,14 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn build_fin_btc_transfer_args(
+    async fn build_fin_btc_transfer_args(
         &self,
         chain: ChainKind,
         tx_hash: String,
         vout: usize,
         deposit_args: BtcDepositArgs,
         prefetched: Option<PrefetchedTxData>,
+        ensure_confirmations: bool,
     ) -> Result<FinBtcTransferArgs> {
         let near_bridge_client = self.near_bridge_client()?;
 
@@ -701,12 +702,26 @@ impl OmniConnector {
         };
 
         // Bounds-check vout early; the contract would only panic on it later.
-        proof_data.outputs.get(vout).ok_or_else(|| {
+        let deposit_output = proof_data.outputs.get(vout).ok_or_else(|| {
             BridgeSdkError::InvalidArgument(format!(
                 "vout {vout} out of range; tx has {} outputs",
                 proof_data.outputs.len()
             ))
         })?;
+
+        if ensure_confirmations {
+            let uses_extra_msg_path =
+                deposit_msg.safe_deposit.is_none() && deposit_msg.extra_msg.is_some();
+            self.ensure_sufficient_btc_confirmations(
+                chain,
+                proof_data.block_height,
+                BtcTxType::Deposit {
+                    amount: u128::from(deposit_output.value_sat),
+                    uses_extra_msg_path,
+                },
+            )
+            .await?;
+        }
 
         Ok(FinBtcTransferArgs {
             deposit_msg,
@@ -732,7 +747,25 @@ impl OmniConnector {
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let args = self
-            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args, prefetched)
+            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args, prefetched, false)
+            .await?;
+
+        self.near_bridge_client()?
+            .fin_btc_transfer(chain, args, transaction_options)
+            .await
+    }
+
+    pub async fn near_fin_transfer_btc_checked(
+        &self,
+        chain: ChainKind,
+        tx_hash: String,
+        vout: usize,
+        deposit_args: BtcDepositArgs,
+        prefetched: Option<PrefetchedTxData>,
+        transaction_options: TransactionOptions,
+    ) -> Result<CryptoHash> {
+        let args = self
+            .build_fin_btc_transfer_args(chain, tx_hash, vout, deposit_args, prefetched, true)
             .await?;
 
         self.near_bridge_client()?
