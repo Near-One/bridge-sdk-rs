@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
@@ -119,11 +119,9 @@ pub struct NearBridgeClient {
     btc_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
     #[builder(setter(skip), default)]
     zcash_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
-    #[doc = r"Set once the BTC connector is seen to predate the `get_required_confirmations` view; skips the doomed RPC call afterwards"]
+    #[doc = r"UTXO connector methods observed to be missing on-chain; once seen missing, the doomed call is skipped in favor of the fallback. Shared across clones; restart to re-probe"]
     #[builder(setter(skip), default)]
-    btc_missing_required_confirmations_view: OnceLock<()>,
-    #[builder(setter(skip), default)]
-    zcash_missing_required_confirmations_view: OnceLock<()>,
+    missing_connector_methods: Arc<RwLock<HashSet<(ChainKind, &'static str)>>>,
 }
 
 impl NearBridgeClient {
