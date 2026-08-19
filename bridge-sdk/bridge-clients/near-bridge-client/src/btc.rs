@@ -49,6 +49,13 @@ pub const MAX_RATIO: u32 = 10000;
 
 pub const UTXO_BATCH_SIZE: u32 = 200;
 
+const VERIFY_WITHDRAW_METHOD: &str = "verify_withdraw_v2";
+// Removed from newer BTC connector contracts, which serve these verifications
+// through the unified `verify_withdraw_v2`; old deployments are probed first.
+const LEGACY_VERIFY_ACTIVE_UTXO_MANAGEMENT_METHOD: &str = "verify_active_utxo_management_v2";
+const LEGACY_VERIFY_REFUND_FINALIZE_METHOD: &str = "verify_refund_finalize";
+const GET_REQUIRED_CONFIRMATIONS_METHOD: &str = "get_required_confirmations";
+
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub enum VUTXO {
@@ -377,13 +384,13 @@ pub enum BtcTxType {
     },
     /// `verify_withdraw_v2`.
     Withdraw { amount: u128 },
-    /// `verify_active_utxo_management_v2`.
+    /// `verify_active_utxo_management_v2` (or `verify_withdraw_v2` on newer contracts).
     ActiveUtxoManagement { amount: u128 },
     /// `request_refund`: newer contracts demand the maximum confirmation depth
     /// unconditionally. Against older versions, which tier refund requests by
     /// amount, this over-waits slightly — never premature.
     RefundRequest,
-    /// `verify_refund_finalize`.
+    /// `verify_refund_finalize` (or `verify_withdraw_v2` on newer contracts).
     RefundFinalize { amount: u128 },
 }
 
@@ -743,7 +750,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_withdraw_v2".to_string(),
+                method_name: VERIFY_WITHDRAW_METHOD.to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_WITHDRAW_GAS,
                 deposit: BTC_VERIFY_WITHDRAW_DEPOSIT,
@@ -801,6 +808,9 @@ impl NearBridgeClient {
         args: BtcVerifyWithdrawArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let method_name = self
+            .resolve_legacy_verify_method(chain, LEGACY_VERIFY_ACTIVE_UTXO_MANAGEMENT_METHOD)
+            .await?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
@@ -809,7 +819,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_active_utxo_management_v2".to_string(),
+                method_name: method_name.to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_GAS,
                 deposit: BTC_VERIFY_ACTIVE_UTXO_MANAGEMENT_DEPOSIT,
@@ -959,6 +969,9 @@ impl NearBridgeClient {
         args: BtcVerifyRefundFinalizeArgs,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
+        let method_name = self
+            .resolve_legacy_verify_method(chain, LEGACY_VERIFY_REFUND_FINALIZE_METHOD)
+            .await?;
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
         let tx_hash = near_rpc_client::change_and_wait(
@@ -967,7 +980,7 @@ impl NearBridgeClient {
                 signer: self.signer()?,
                 nonce: transaction_options.nonce,
                 receiver_id: btc_connector,
-                method_name: "verify_refund_finalize".to_string(),
+                method_name: method_name.to_string(),
                 args: serde_json::json!(args).to_string().into_bytes(),
                 gas: BTC_VERIFY_REFUND_FINALIZE_GAS,
                 deposit: BTC_VERIFY_REFUND_FINALIZE_DEPOSIT,
@@ -982,6 +995,92 @@ impl NearBridgeClient {
             "Sent BTC Verify Refund Finalize transaction"
         );
         Ok(tx_hash)
+    }
+
+    /// Prefer the legacy verify method while the connector still exports it
+    /// (deployments are upgraded independently). The probe result is cached
+    /// both ways — restart the relayer after a connector upgrade.
+    async fn resolve_legacy_verify_method(
+        &self,
+        chain: ChainKind,
+        legacy_method: &'static str,
+    ) -> Result<&'static str> {
+        let exists = match self.cached_connector_method_exists(chain, legacy_method) {
+            Some(exists) => exists,
+            None => {
+                let exists = self
+                    .utxo_connector_exports_method(chain, legacy_method)
+                    .await?;
+                self.cache_connector_method_exists(chain, legacy_method, exists);
+                if !exists {
+                    tracing::info!(
+                        legacy_method,
+                        "Legacy verify method is gone from the BTC connector; switching to {VERIFY_WITHDRAW_METHOD}"
+                    );
+                }
+                exists
+            }
+        };
+
+        Ok(if exists {
+            legacy_method
+        } else {
+            VERIFY_WITHDRAW_METHOD
+        })
+    }
+
+    fn cached_connector_method_exists(
+        &self,
+        chain: ChainKind,
+        method_name: &'static str,
+    ) -> Option<bool> {
+        self.connector_method_exists
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&(chain, method_name))
+            .copied()
+    }
+
+    fn cache_connector_method_exists(
+        &self,
+        chain: ChainKind,
+        method_name: &'static str,
+        exists: bool,
+    ) {
+        self.connector_method_exists
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert((chain, method_name), exists);
+    }
+
+    /// `true` when the BTC connector exports `method_name`, probed with a free
+    /// view call: an existing change method fails inside the contract (e.g.
+    /// `ProhibitedInView`), a missing one with `MethodNotFound`. Transport
+    /// errors are propagated rather than guessed over.
+    async fn utxo_connector_exports_method(
+        &self,
+        chain: ChainKind,
+        method_name: &str,
+    ) -> Result<bool> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: method_name.to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await;
+
+        match response {
+            Ok(_) => Ok(true),
+            Err(err) if err.is_method_not_found() => Ok(false),
+            Err(err) if err.is_contract_execution_error() => Ok(true),
+            Err(err) => Err(err.into()),
+        }
     }
 
     #[tracing::instrument(skip_all, name = "ACTIVE UTXO MANAGEMENT")]
@@ -1401,9 +1500,11 @@ impl NearBridgeClient {
         amount: u128,
         has_extra_msg: bool,
     ) -> Result<u64> {
-        let missing_view = self.missing_required_confirmations_view_cell(chain)?;
-
-        if missing_view.get().is_none() {
+        // Only the negative result is cached here: a successful view call is
+        // itself the data fetch, so there is nothing to skip when it exists.
+        if self.cached_connector_method_exists(chain, GET_REQUIRED_CONFIRMATIONS_METHOD)
+            != Some(false)
+        {
             let endpoint = self.endpoint()?;
             let btc_connector = self.utxo_chain_connector(chain)?;
             let relayer_account_id = self.account_id()?;
@@ -1412,7 +1513,7 @@ impl NearBridgeClient {
                 endpoint,
                 ViewRequest {
                     contract_account_id: btc_connector,
-                    method_name: "get_required_confirmations".to_string(),
+                    method_name: GET_REQUIRED_CONFIRMATIONS_METHOD.to_string(),
                     args: json!({
                         "block_height": block_height,
                         "amount": U128(amount),
@@ -1426,7 +1527,11 @@ impl NearBridgeClient {
             match response {
                 Ok(response) => return Ok(serde_json::from_slice::<u64>(&response)?),
                 Err(err) if err.is_method_not_found() => {
-                    let _ = missing_view.set(());
+                    self.cache_connector_method_exists(
+                        chain,
+                        GET_REQUIRED_CONFIRMATIONS_METHOD,
+                        false,
+                    );
                 }
                 Err(err) => return Err(err.into()),
             }
@@ -1435,16 +1540,6 @@ impl NearBridgeClient {
         self.cached_btc_confirmation_context(chain)
             .await?
             .required_confirmations(amount, has_extra_msg)
-    }
-
-    fn missing_required_confirmations_view_cell(&self, chain: ChainKind) -> Result<&OnceLock<()>> {
-        match chain {
-            ChainKind::Btc => Ok(&self.btc_missing_required_confirmations_view),
-            ChainKind::Zcash => Ok(&self.zcash_missing_required_confirmations_view),
-            _ => Err(BridgeSdkError::InvalidArgument(format!(
-                "missing_required_confirmations_view_cell called with non-UTXO chain: {chain:?}"
-            ))),
-        }
     }
 
     fn btc_confirmation_context_cell(

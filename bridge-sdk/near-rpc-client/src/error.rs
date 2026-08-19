@@ -44,6 +44,19 @@ impl NearRpcError {
             ))) if vm_error.contains("MethodNotFound")
         )
     }
+
+    /// `true` when the error was produced by executing code on the contract,
+    /// as opposed to a transport/RPC failure. Includes the method-not-found
+    /// case — check [`Self::is_method_not_found`] first when that matters.
+    #[must_use]
+    pub fn is_contract_execution_error(&self) -> bool {
+        matches!(
+            self,
+            Self::RpcQueryError(JsonRpcError::ServerError(JsonRpcServerError::HandlerError(
+                RpcQueryError::ContractExecutionError { .. },
+            )))
+        )
+    }
 }
 
 #[cfg(test)]
@@ -89,5 +102,27 @@ mod tests {
     #[test]
     fn unrelated_error_is_not_method_not_found() {
         assert!(!NearRpcError::ResultError.is_method_not_found());
+    }
+
+    #[test]
+    fn prohibited_in_view_is_contract_execution_error() {
+        let err = contract_execution_error(
+            "wasm execution failed with error: HostError(ProhibitedInView { method_name: \"attached_deposit\" })",
+        );
+        assert!(err.is_contract_execution_error());
+        assert!(!err.is_method_not_found());
+    }
+
+    #[test]
+    fn non_handler_server_error_is_not_contract_execution_error() {
+        let err = NearRpcError::RpcQueryError(JsonRpcError::ServerError(
+            JsonRpcServerError::InternalError { info: None },
+        ));
+        assert!(!err.is_contract_execution_error());
+    }
+
+    #[test]
+    fn unrelated_error_is_not_contract_execution_error() {
+        assert!(!NearRpcError::ResultError.is_contract_execution_error());
     }
 }
