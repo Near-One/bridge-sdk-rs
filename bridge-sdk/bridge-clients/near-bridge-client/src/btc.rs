@@ -998,43 +998,59 @@ impl NearBridgeClient {
     }
 
     /// Prefer the legacy verify method while the connector still exports it
-    /// (deployments are upgraded independently); once seen gone, that is
-    /// cached and the unified `verify_withdraw_v2` is used directly.
+    /// (deployments are upgraded independently). The probe result is cached
+    /// both ways — restart the relayer after a connector upgrade.
     async fn resolve_legacy_verify_method(
         &self,
         chain: ChainKind,
         legacy_method: &'static str,
     ) -> Result<&'static str> {
-        if !self.is_connector_method_missing(chain, legacy_method) {
-            if self
-                .utxo_connector_exports_method(chain, legacy_method)
-                .await?
-            {
-                return Ok(legacy_method);
+        let exists = match self.cached_connector_method_exists(chain, legacy_method) {
+            Some(exists) => exists,
+            None => {
+                let exists = self
+                    .utxo_connector_exports_method(chain, legacy_method)
+                    .await?;
+                self.cache_connector_method_exists(chain, legacy_method, exists);
+                if !exists {
+                    tracing::info!(
+                        legacy_method,
+                        "Legacy verify method is gone from the BTC connector; switching to {VERIFY_WITHDRAW_METHOD}"
+                    );
+                }
+                exists
             }
+        };
 
-            self.mark_connector_method_missing(chain, legacy_method);
-            tracing::info!(
-                legacy_method,
-                "Legacy verify method is gone from the BTC connector; switching to {VERIFY_WITHDRAW_METHOD}"
-            );
-        }
-
-        Ok(VERIFY_WITHDRAW_METHOD)
+        Ok(if exists {
+            legacy_method
+        } else {
+            VERIFY_WITHDRAW_METHOD
+        })
     }
 
-    fn is_connector_method_missing(&self, chain: ChainKind, method_name: &'static str) -> bool {
-        self.missing_connector_methods
+    fn cached_connector_method_exists(
+        &self,
+        chain: ChainKind,
+        method_name: &'static str,
+    ) -> Option<bool> {
+        self.connector_method_exists
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .contains(&(chain, method_name))
+            .get(&(chain, method_name))
+            .copied()
     }
 
-    fn mark_connector_method_missing(&self, chain: ChainKind, method_name: &'static str) {
-        self.missing_connector_methods
+    fn cache_connector_method_exists(
+        &self,
+        chain: ChainKind,
+        method_name: &'static str,
+        exists: bool,
+    ) {
+        self.connector_method_exists
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert((chain, method_name));
+            .insert((chain, method_name), exists);
     }
 
     /// `true` when the BTC connector exports `method_name`, probed with a free
@@ -1484,7 +1500,11 @@ impl NearBridgeClient {
         amount: u128,
         has_extra_msg: bool,
     ) -> Result<u64> {
-        if !self.is_connector_method_missing(chain, GET_REQUIRED_CONFIRMATIONS_METHOD) {
+        // Only the negative result is cached here: a successful view call is
+        // itself the data fetch, so there is nothing to skip when it exists.
+        if self.cached_connector_method_exists(chain, GET_REQUIRED_CONFIRMATIONS_METHOD)
+            != Some(false)
+        {
             let endpoint = self.endpoint()?;
             let btc_connector = self.utxo_chain_connector(chain)?;
             let relayer_account_id = self.account_id()?;
@@ -1507,7 +1527,11 @@ impl NearBridgeClient {
             match response {
                 Ok(response) => return Ok(serde_json::from_slice::<u64>(&response)?),
                 Err(err) if err.is_method_not_found() => {
-                    self.mark_connector_method_missing(chain, GET_REQUIRED_CONFIRMATIONS_METHOD);
+                    self.cache_connector_method_exists(
+                        chain,
+                        GET_REQUIRED_CONFIRMATIONS_METHOD,
+                        false,
+                    );
                 }
                 Err(err) => return Err(err.into()),
             }

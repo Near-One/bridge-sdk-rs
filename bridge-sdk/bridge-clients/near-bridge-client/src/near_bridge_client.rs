@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -119,9 +119,9 @@ pub struct NearBridgeClient {
     btc_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
     #[builder(setter(skip), default)]
     zcash_confirmation_context: OnceLock<btc::BtcConfirmationContext>,
-    #[doc = r"UTXO connector methods observed to be missing on-chain; once seen missing, the doomed call is skipped in favor of the fallback. Shared across clones; restart to re-probe"]
+    #[doc = r"Whether the deployed UTXO connector exports a given method, probed on first use and cached both ways. Shared across clones; stale after a connector upgrade — restart the relayer to re-probe"]
     #[builder(setter(skip), default)]
-    missing_connector_methods: Arc<RwLock<HashSet<(ChainKind, &'static str)>>>,
+    connector_method_exists: Arc<RwLock<HashMap<(ChainKind, &'static str), bool>>>,
 }
 
 impl NearBridgeClient {
