@@ -598,7 +598,7 @@ pub fn choose_utxos_for_active_management(
         Ok((out_points, tx_outs))
     } else if utxo_list.len() > active_management_limit.1 {
         let utxo_amount = std::cmp::min(
-            utxo_list.len() - active_management_limit.1,
+            utxo_list.len() - active_management_limit.1 + 1,
             max_active_utxo_management_input_number,
         );
         if merge_largest {
