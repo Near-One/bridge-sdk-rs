@@ -5,15 +5,57 @@
 
 A command-line interface for interacting with the Omni Bridge protocol, enabling seamless cross-chain token transfers and management.
 
-> [!IMPORTANT]  
+> [!IMPORTANT]
 > This CLI is in beta and approaching production readiness. While core functionality is stable, some features may still change. We recommend thorough testing before using in production environments.
 
-## Features
+## Command overview
 
-- 🌉 Cross-chain token transfers and management
-- 🌐 Network support for both Mainnet and Testnet
-- ⚡ Fast and efficient command-line operations
-- 🔧 Flexible configuration via CLI, environment variables, or config files
+```
+bridge-cli [-n <mainnet|testnet|devnet>] [--dry-run] [--config <PATH>] <COMMAND>
+
+transfer   Cross-chain transfers: start, sign, finalize, inspect
+  init                Start a transfer (source chain = the token's chain prefix)
+  hypercore           HyperCore -> any destination
+  finalize            Finalize a transfer from its proof tx (destination auto-detected)
+  sign                Sign an initialized transfer on NEAR
+  status              Show a transfer's status
+
+token      Token deployment and management
+  log-metadata        Log a token's metadata on its chain
+  deploy              Deploy a bridged token on a destination chain
+  bind                Bind a deployed token on NEAR
+  storage-deposit     Deposit NEP-141 storage for an account
+
+utxo       Bitcoin/Zcash connector operations
+  deposit-address     Get a deposit address for BTC/ZEC -> NEAR
+  finalize-deposit    Finalize a BTC/ZEC deposit on NEAR
+  fast-finalize-deposit
+  submit-transfer     Build the withdrawal tx for a signed NEAR transfer
+  sign                Request the MPC signature for a pending withdrawal
+  broadcast           Broadcast the signed withdrawal to the UTXO chain
+  verify-withdraw     Verify a withdrawal is confirmed on the UTXO chain
+  bump-fee            Bump the fee of an RBF withdrawal tx
+  cancel-withdraw     Cancel a pending withdrawal
+  rebalance           Rebalance connector UTXOs
+  verify-rebalance    Verify a rebalancing tx
+  refund request|execute|verify
+
+svm        Solana/Fogo bridge program administration
+  initialize | version | set-admin | pause | update-metadata
+
+config     Inspect configuration
+  show                Print the resolved config for the selected network
+  vars                List every override flag / env var
+```
+
+The network is selected with `-n/--network` or the `BRIDGE_NETWORK` env var and
+**defaults to testnet** — mainnet operations always require an explicit
+`-n mainnet` (or `BRIDGE_NETWORK=mainnet`).
+
+Chains, tokens, and transactions are written with chain prefixes throughout:
+`near:usdt.tether-token.near`, `eth:0x123...`, `sol:8xPxz...`,
+`btc:cb9...36b`. The CLI dispatches on the prefix, so there is one `transfer
+init` for every source chain and one `transfer finalize` for every proof.
 
 ## Installation
 
@@ -38,19 +80,23 @@ cargo build --release
 cargo install --locked --path ./bridge-cli
 ```
 
-
 ## Configuration
 
-The CLI can be configured in multiple ways (in order of precedence):
+Connection, key, and contract settings are resolved in order of precedence:
 
-1. Command-line arguments
-2. Environment variables (preferred way)
-3. Configuration file
-4. Default values
+1. Command-line flags (hidden from help to keep it readable — `bridge-cli config vars` lists them all)
+2. Environment variables (preferred way; a `.env` file in the working directory is loaded automatically)
+3. JSON configuration file (`--config <PATH>` or `BRIDGE_CONFIG`)
+4. Per-network defaults (`bridge-cli/src/defaults.rs`)
+
+`bridge-cli -n testnet config show` prints the fully resolved configuration
+(secrets redacted) so you can verify what a command would use.
 
 ### Setting up env file
 
 ```.env
+BRIDGE_NETWORK=testnet
+
 NEAR_SIGNER=<signer-account-id>
 NEAR_PRIVATE_KEY=<signer-private-key>
 
@@ -69,14 +115,6 @@ STARKNET_ACCOUNT_ADDRESS=<starknet-account-address>
 STARKNET_PRIVATE_KEY=<starknet-private-key>
 ```
 
-### Configuration File
-
-You can create a configuration file with your preferred settings. The CLI will look for it in the default location or you can specify it using the `--config` flag.
-
-### Default file
-
-You can manually modify `bridge-cli/src/defaults.rs` file
-
 ### Offline / hardware-wallet signing (NEAR)
 
 Any command that submits a NEAR transaction supports `--dry-run`. Instead of
@@ -84,16 +122,15 @@ signing and broadcasting, the CLI builds the transaction (fetching the current
 nonce and a recent block hash) and prints it as a base64-encoded borsh payload,
 ready to be signed externally — e.g. on a hardware wallet — and submitted by you.
 
-`--dry-run` is valid for NEAR commands and, per the section below, for SVM
-(Solana/Fogo) commands; using it on a command that submits to any other chain
-(EVM/Starknet, `btc-fin-transfer`, or `deploy-token`/`log-metadata` targeting a
-non-Near, non-SVM chain) exits with an error rather than broadcasting.
+`--dry-run` is valid for commands that submit to NEAR and, per the section
+below, to SVM chains (Solana/Fogo); using it on a command that submits to any
+other chain exits with an error rather than broadcasting.
 
 In this mode **no private key is needed**; supply the signer account and the
 public key that will sign (the access key must exist on the account):
 
 ```bash
-bridge-cli mainnet log-metadata \
+bridge-cli -n mainnet token log-metadata \
     --token near:wrap.near \
     --near-signer omni-relayer.near \
     --near-public-key ed25519:Hb... \
@@ -122,25 +159,23 @@ prints the unsigned transaction as base64-encoded bincode (the same wire format
 required — supply the fee payer's public key instead:
 
 ```bash
-bridge-cli testnet svm-init-transfer \
-  --chain sol \
-  --token <MINT> --amount 1000000 --recipient near:alice.testnet \
+bridge-cli -n testnet transfer init \
+  --token sol:<MINT> --amount 1000000 --recipient near:alice.testnet \
   --fee 0 --native-fee 10000 \
   --solana-public-key <PAYER_PUBKEY_BASE58> \
   --dry-run
 ```
 
-Environment variables: `SOLANA_PUBLIC_KEY`, `FOGO_PUBLIC_KEY` (for `--chain fogo`).
+Environment variables: `SOLANA_PUBLIC_KEY`, `FOGO_PUBLIC_KEY` (for `fogo:` tokens).
 
 **Important:** unlike NEAR (whose block hash stays valid for ~24 h), a Solana/Fogo
 blockhash expires after ~60-90 seconds. Sign and submit immediately, and pass
-`--fee`/`--native-fee` explicitly to skip the fee-indexer round-trip. `svm-initialize`
+`--fee`/`--native-fee` explicitly to skip the fee-indexer round-trip. `svm initialize`
 does not support `--dry-run` (the program keypair must sign for real).
 
-Note: for token transfers (`svm-init-transfer`), the sender's associated token
-account is derived from the supplied public key — pass the public key of the
-wallet that actually holds the tokens, or the transaction will reference the
-wrong token account.
+Note: for token transfers, the sender's associated token account is derived
+from the supplied public key — pass the public key of the wallet that actually
+holds the tokens, or the transaction will reference the wrong token account.
 
 #### Using the SDK without an RPC stack (`no-default-features`)
 
@@ -161,130 +196,100 @@ a caller-supplied blockhash.
 
 ## Quick Start
 
-### Example 1: Deploy an ERC20 Token to NEAR
+The examples run on testnet (the default network); pass `-n mainnet` for mainnet.
 
-This example shows how to deploy an existing ERC20 token from Ethereum to NEAR:
+### Example 1: Deploy an ERC20 Token to NEAR
 
 ```bash
 # 1. Log token metadata on Ethereum
-bridge-cli testnet log-metadata --token eth:0x123...789
+bridge-cli token log-metadata --token eth:0x123...789
 
-# 2. Wait for the transaction to be confirmed, then deploy token on Near
-bridge-cli testnet deploy-token --source-chain Eth --chain Near --tx-hash 0x123...456
+# 2. Wait for the transaction to be confirmed, then deploy the token on NEAR
+bridge-cli token deploy --tx eth:0x123...456 --on near
 ```
 
-### Example 2: Transfer token from Ethereum to NEAR
-
-This example demonstrates a complete flow of transferring token from Ethereum to NEAR:
+### Example 2: Transfer a token from Ethereum to NEAR
 
 ```bash
-# 1. Initialize the transfer on Ethereum
-bridge-cli testnet evm-init-transfer \
-    --chain eth \
-    --token 0x123...789 \
+# 1. Initialize the transfer on Ethereum (fees auto-fetched from the indexer)
+bridge-cli transfer init \
+    --token eth:0x123...789 \
     --amount 1000000 \
-    --recipient near:alice.near \
-    --fee 0 \
-    --native-fee 10000 \
-    --message ""
+    --recipient near:alice.near
 
-# 2. Wait for the transaction to be confirmed, then finalize on NEAR
-bridge-cli testnet near-fin-transfer \
-    --chain eth \
-    --tx-hash 0xabc...def \
+# 2. Wait for confirmation, then finalize on NEAR. The destination chain is
+#    read from the transfer event; storage deposits are computed automatically.
+bridge-cli transfer finalize --tx eth:0xabc...def
 ```
 
-### Example 3: Transfer token from NEAR to Solana
-
-This example shows how to transfer tokens from NEAR to Solana:
+### Example 3: Transfer a token from NEAR to Solana
 
 ```bash
 # 1. Initialize the transfer on NEAR
-bridge-cli testnet near-init-transfer \
-    --token wrap.testnet \
+bridge-cli transfer init \
+    --token near:wrap.testnet \
     --amount 5000000000000000000 \
     --recipient sol:123...789
 
-# 2. Sign the transfer on NEAR
-bridge-cli testnet near-sign-transfer \
-    --origin-chain-id 1 \
-    --origin-nonce 42 \
-    --fee 0 \
-    --native-fee 10000000000000000
+# 2. Sign the transfer on NEAR (fees default to the transfer's stored values)
+bridge-cli transfer sign --transfer near:42
 
-# 3. Finalize the transfer on Solana
-bridge-cli testnet svm-finalize-transfer \
-    --chain sol \
-    --tx-hash 8xPxz... \
-    --sender-id alice.near \
-    --svm-token 11111111111111111111111111111111
+# 3. Finalize on Solana. The destination chain and the SPL mint are read from
+#    the signed payload.
+bridge-cli transfer finalize --tx near:8xPxz...
+
+# At any point, check where the transfer is:
+bridge-cli transfer status --tx 8xPxz...
 ```
 
 ### Example 4: Transfer BTC from Bitcoin to NEAR
 
-This example shows how to transfer BTC to NEAR:
-
 ```bash
-# 1. Get deterministically calculated deposit address
-bridge-cli testnet get-bitcoin-address \
-    --chain btc \
-    --amount 50000 \
-    --recipient alice.near
+# 1. Get the deterministically calculated deposit address
+bridge-cli utxo deposit-address --chain btc --recipient near:alice.near
 
 # Example output:
-# BTC Address: tb1q.....q4g
-# Amount you need to transfer, including the fee: 52000
+# Deposit address: tb1q.....q4g
 
-# 2. Send the specified amount to the generated address using your Bitcoin wallet.
+# 2. Send the amount to the generated address using your Bitcoin wallet.
 # ATTENTION: Transactions with non-zero lock time are not supported. Make sure to set it to 0 in your wallet of choice.
 
-# 3. Finalize and mint tokens on NEAR
-#
-# Minimal invocation — the CLI looks up the original DepositMsg from the
-# bridge indexer by the tx's deposit-address output:
-bridge-cli testnet near-fin-transfer-btc \
-    --chain btc \
-    --btc-tx-hash cb9.....36b
+# 3. Finalize and mint tokens on NEAR. The deposit message and output index
+#    are looked up from the bridge indexer:
+bridge-cli transfer finalize --tx btc:cb9.....36b
 
 # To override the indexer lookup (or if the tx has multiple tracked deposit
-# outputs), pass --recipient-id and friends manually, or pass --vout to pick a
-# specific output:
-bridge-cli testnet near-fin-transfer-btc \
+# outputs), use the utxo command with --recipient and friends, or --vout to
+# pick a specific output:
+bridge-cli utxo finalize-deposit \
     --chain btc \
-    --btc-tx-hash cb9.....36b \
-    --recipient-id alice.near
+    --tx cb9.....36b \
+    --recipient alice.near
 ```
 
 ### Example 5: Transfer BTC from NEAR to Bitcoin
 
-This example shows how to transfer BTC back to Bitcoin:
-
 ```bash
-# 1. Initialize the transfer normally
-bridge-cli testnet near-init-transfer \
-    --token nbtc.n-bridge.testnet \
+# 1. Initialize the transfer normally (the MaxGasFee message is set from the
+#    indexer's gas estimate)
+bridge-cli transfer init \
+    --token near:nbtc.n-bridge.testnet \
     --amount 50000 \
     --recipient btc:tb1q3....
 
-# 2. Submit transfer operation builds bitcoin transaction to send funds to the recipient
-bridge-cli testnet near-submit-btc-transfer \
-    --chain btc \
-    --near-tx-hash 4Ss....ux
+# 2. Finalize: builds the bitcoin transaction, requests the MPC signature for
+#    every input, and broadcasts it — logging each step's tx hash
+bridge-cli transfer finalize --tx near:4Ss....ux
 
-# 3. Request MPC to sign bitcoin transaction
-bridge-cli testnet near-sign-btc-transaction \
-    --chain btc \
-    --near-tx-hash 88f.....RM
+# (The same leg is available as granular steps, for recovery or when a step
+#  was already performed by the relayer:
+#    bridge-cli utxo submit-transfer --chain btc --near-tx 4Ss....ux
+#    bridge-cli utxo sign --chain btc --near-tx 88f.....RM
+#    bridge-cli utxo broadcast --chain btc --near-tx 2V6....3P )
 
-# 4. Send the signed transaction on bitcoin
-bridge-cli testnet btc-fin-transfer \
-    --chain btc \
-    --near-tx-hash 2V6....3P
-
-# 5. Once transaction is confirmed, update UTXOs on the Near contract to keep it up-to-date
-bridge-cli testnet btc-verify-withdraw \
-    --chain btc \
-    --btc-tx-hash 5d...a6
+# 3. Once confirmed, update UTXOs on the NEAR contract to keep it up-to-date
+#    (normally done by the relayer)
+bridge-cli utxo verify-withdraw --chain btc --tx 5d...a6
 ```
 
 ### Example 6: Refund a never-finalized BTC deposit
@@ -300,9 +305,9 @@ The pipeline has three on-chain steps. Steps 1 and 3 go through `bridge-cli`. St
 # the bridge indexer which output of the tx is a tracked deposit address,
 # recovers the original DepositMsg, and uses its refund_address as the refund
 # destination:
-bridge-cli mainnet btc-request-refund \
+bridge-cli -n mainnet utxo refund request \
     --chain btc \
-    --btc-tx-hash cb9.....36b
+    --tx cb9.....36b
 
 # Optional arguments:
 #   --vout N            — pick a specific output if the tx has more than one
@@ -311,7 +316,7 @@ bridge-cli mainnet btc-request-refund \
 #   --refund-address X  — only used when the original DepositMsg has no
 #                         refund_address. If the deposit message carries one,
 #                         that address is used as the refund destination.
-#   --recipient-id, --fee, --msg, --no-deposit-refund-address
+#   --recipient, --fee, --msg, --no-deposit-refund-address
 #                       — supply the original deposit args manually instead of
 #                         relying on the indexer lookup. These must match the
 #                         values used at deposit time; the contract recomputes
@@ -323,10 +328,10 @@ bridge-cli mainnet btc-request-refund \
 #
 # Example with manual args (safe_deposit.msg path; `receiver_id` inside --msg
 # is the intents account the deposit was routed to):
-bridge-cli mainnet btc-request-refund \
+bridge-cli -n mainnet utxo refund request \
     --chain btc \
-    --btc-tx-hash cb9.....36b \
-    --recipient-id intents.near \
+    --tx cb9.....36b \
+    --recipient intents.near \
     --refund-address bc1q.... \
     --msg '{"receiver_id":"your_account.near"}'
 
@@ -350,15 +355,18 @@ near contract call-function as-transaction btc-connector.bridge.near \
     sign-as your-account.near \
     network-config mainnet sign-with-keychain send
 
+# (Alternatively, `bridge-cli utxo refund execute --chain btc --tx cb9...36b --vout 0`
+# performs the same call through the CLI.)
+
 # 3. Trigger MPC signing of the refund BTC transaction.
 #
 # `execute_refund` creates a `BTCPendingInfo` and emits a
 # `GenerateBtcPendingInfo` event. Find `btc_pending_id` in the event logs of
 # the `execute_refund` tx (NEAR explorer or `near tx-status`) and pass it
 # below. Once signed, the relayer broadcasts the BTC tx to Bitcoin.
-bridge-cli mainnet near-sign-btc-transaction \
+bridge-cli -n mainnet utxo sign \
     --chain btc \
-    --btc-pending-id <btc_pending_id from execute_refund logs>
+    --pending-id <btc_pending_id from execute_refund logs>
 ```
 
 > [!NOTE]
@@ -374,107 +382,9 @@ bridge-cli mainnet near-sign-btc-transaction \
 > - Ensure you have sufficient funds for gas fees and storage deposits
 > - If you run these operations on testnet and mainnet and attach a sufficient fee, there is a good chance our relayer will handle it starting from step 2.
 
-## Usage
-
-The Bridge CLI supports various commands organized by network. Here's an overview of the main commands:
-
-### Global Network Subcommand
-
-```bash
-# calling method on testnet
-bridge-cli testnet log-metadata ...
-
-# calling method on mainnet
-bridge-cli mainnet log-metadata ...
-```
-
-#### NEAR Operations
-
-```bash
-# Deposit storage for a token on NEAR
-
-bridge-cli near-storage-deposit \
-    --token <TOKEN_ADDRESS> \
-    --amount <AMOUNT>
-
-# Initialize a transfer from NEAR
-bridge-cli near-init-transfer \
-    --token <TOKEN_ADDRESS> \
-    --amount <AMOUNT> \
-    --recipient <RECIPIENT_ADDRESS>
-
-# Sign a transfer on NEAR
-bridge-cli near-sign-transfer \
-    --origin-chain-id <CHAIN_ID> \
-    --origin-nonce <NONCE> \
-    [--fee-recipient <ACCOUNT_ID>] \
-    --fee <FEE_AMOUNT> \
-    --native-fee <NATIVE_FEE_AMOUNT>
-
-# Finalize a transfer on NEAR
-bridge-cli near-fin-transfer \
-    --chain <SOURCE_CHAIN> \
-    --tx-hash <TX_HASH> \
-```
-
-#### EVM Chain Operations
-```bash
-# Initialize a transfer from EVM chain
-bridge-cli evm-init-transfer \
-    --chain <EVM_CHAIN> \
-    --token <TOKEN_ADDRESS> \
-    --amount <AMOUNT> \
-    --recipient <NEAR_RECIPIENT> \
-    --fee <FEE_AMOUNT> \
-    --native-fee <NATIVE_FEE_AMOUNT>
-
-# Finalize a transfer on EVM chain
-bridge-cli evm-fin-transfer \
-    --chain <EVM_CHAIN> \
-    --tx-hash <NEAR_TX_HASH>
-```
-
-#### SVM Operations (Solana / Fogo)
-
-Every SVM command takes `--chain <sol|fogo>` selecting the target chain.
-
-```bash
-# Initialize the SVM bridge
-bridge-cli svm-initialize \
-    --chain sol \
-    --program-keypair <KEYPAIR>
-
-# Initialize a token transfer from Solana/Fogo
-bridge-cli svm-init-transfer \
-    --chain sol \
-    --token <TOKEN_ADDRESS> \
-    --amount <AMOUNT> \
-    --recipient <RECIPIENT_ADDRESS>
-
-# Initialize a SOL transfer
-bridge-cli svm-init-transfer-sol \
-    --chain sol \
-    --amount <AMOUNT> \
-    --recipient <RECIPIENT_ADDRESS>
-
-# Finalize a token transfer on Solana/Fogo
-bridge-cli svm-finalize-transfer \
-    --chain sol \
-    --tx-hash <NEAR_TX_HASH> \
-    [--sender-id <NEAR_SENDER_ID>] \
-    --svm-token <TOKEN_ADDRESS>
-
-# Finalize a SOL transfer
-bridge-cli svm-finalize-transfer-sol \
-    --chain sol \
-    --tx-hash <NEAR_TX_HASH> \
-    [--sender-id <NEAR_SENDER_ID>]
-```
-
 ## Development Status
 
 This CLI is under active development. Features and commands may be added, modified, or removed. Please report any issues or suggestions on our GitHub repository.
-
 
 ## License
 

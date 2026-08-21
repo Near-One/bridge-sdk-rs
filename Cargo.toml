@@ -50,7 +50,7 @@ near-crypto = "0.34.2"
 # for that; pulls near-crypto / near-primitives-core interop). Not a source patch.
 near-sdk = { version = "5.28.1", features = ["non-contract-usage"] }
 derive_builder = "0.20.0"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 dotenv = { version = "0.15" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
