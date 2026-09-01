@@ -422,8 +422,9 @@ impl OmniConnector {
             .near_bridge_client()?
             .get_expiry_height_gap(ChainKind::Zcash)
             .await?;
-        let expiry_height =
-            BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX)) + expiry_delta;
+        let expiry_height = BlockHeight::from_u32(current_height.try_into().unwrap_or(u32::MAX))
+            + expiry_delta
+            + expiry_delta / 2;
 
         let memo_bytes = parse_memo_bytes(memo)?;
 
