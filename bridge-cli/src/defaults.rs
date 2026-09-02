@@ -62,7 +62,7 @@ pub const SATOSHI_RELAYER_MAINNET: &str = "satoshi_optwo.near";
 
 pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io/";
 pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
-pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
+pub const ZCASH_MAINNET: &str = "zec.omft.near";
 pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
