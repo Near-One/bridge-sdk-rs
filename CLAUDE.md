@@ -44,9 +44,9 @@ bridge-sdk/
 The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as examples):
 
 1. **`omni-types` dependency** (`Cargo.toml`): Bump the rev to include the new `ChainKind::Xxx` and `OmniAddress::Xxx` variants
-2. **`bridge-cli/src/defaults.rs`**: Add RPC URL and bridge token factory address constants for mainnet/testnet/devnet
-3. **`bridge-cli/src/main.rs`**: Add fields to `CliConfig` struct, `or()` merge method, `env_config()`, and `default_config()` for all 3 networks
-4. **`bridge-cli/src/omni_connector_command.rs`**: Add to `derive_evm_sender()`, deploy token match, `NearFinTransfer` match (wormhole arm or unsupported arm), build bridge client in `omni_connector()`, add to `OmniConnectorBuilder`
+2. **`bridge-cli/src/defaults.rs`**: Add RPC URL and bridge token factory address constants to all three network modules (`mainnet`/`testnet`/`devnet`)
+3. **`bridge-cli/src/config.rs`**: Add the fields to the `cli_config!` macro invocation (flag + env var) and to the `network_defaults!` macro body
+4. **`bridge-cli/src/commands/`**: Add to `derive_evm_sender()` and the explicit EVM-chain match arms in `transfer.rs` (init dispatch, finalize proof-type dispatch, `finalize_from_near`); build the bridge client in `connector.rs` and add it to `OmniConnectorBuilder`
 5. **`bridge-sdk/connectors/omni-connector/src/omni_connector.rs`**: Add `xxx_bridge_client: Option<EvmBridgeClient>` field, update `evm_bridge_client()`, `log_metadata()`, `is_transfer_finalised()`, `utxo_bridge_client()`, `get_storage_deposit_actions_for_tx()`
 6. **`bridge-sdk/bridge-clients/evm-bridge-client/src/evm_bridge_client.rs`**: Add `OmniAddress::Xxx` to `convert_omni_address()`
 
@@ -57,7 +57,8 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 - **One `EvmBridgeClient` per EVM chain**: Each EVM chain (Eth, Arb, Base, HyperEVM, Abstract) gets its own `EvmBridgeClient` instance with different config (RPC, keys, bridge address, optional wormhole address).
 - **Wormhole**: Some chains use Wormhole VAAs for proof verification (Arb, Base, Bnb, Pol, HyperEVM, Sol).
 - **MPC Proof**: Starknet and Abstract use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_abs_mpc_sign_payload()` / `build_strk_mpc_sign_payload()`, using types from `mpc-contract-interface` (`github.com/near/mpc`).
-- **CLI config precedence**: CLI args > env vars > config file > defaults (defined in `defaults.rs`)
+- **CLI structure**: noun-grouped subcommands (`transfer`, `token`, `utxo`, `svm`, `config`) with chain-prefixed arguments (`--token near:wrap.near`, `--tx eth:0x...`) — the chain prefix drives dispatch, so there is one chain-agnostic command per operation. Connection/key/contract overrides are hidden global flags declared once in the `cli_config!` macro (`bridge-cli config vars` lists them).
+- **CLI config precedence**: CLI args > env vars > config file (`--config`) > per-network defaults (defined in `defaults.rs`)
 
 ### External Dependencies
 
