@@ -29,7 +29,13 @@ mod signing;
 sol! {
     #[allow(missing_docs)]
     interface HlBridgeToken {
-        event CoreReceived(address indexed sender, uint8 indexed action, uint256 amount, bytes data);
+        event CoreReceived(
+            address indexed sender,
+            uint8 indexed action,
+            uint64 indexed coreNonce,
+            uint256 amount,
+            bytes data
+        );
     }
 }
 
@@ -59,6 +65,7 @@ pub struct HyperCoreBridgeClient {
 pub struct CoreReceivedLog {
     pub sender: Address,
     pub action: u8,
+    pub core_nonce: u64,
     pub amount: U256,
     pub data: alloy::primitives::Bytes,
     pub transaction_hash: TxHash,
@@ -134,8 +141,9 @@ impl HyperCoreBridgeClient {
     }
 
     /// Detailed variant returning the full `CoreReceivedLog` (sender, action
-    /// tag, amount, data, tx hash, block). The single source of truth for
-    /// action construction; [`send_to_evm_with_data`] is a thin wrapper.
+    /// tag, core nonce, amount, data, tx hash, block). The single source of
+    /// truth for action construction; [`send_to_evm_with_data`] is a thin
+    /// wrapper.
     #[tracing::instrument(skip_all, name = "HYPERCORE SEND TO EVM WITH DATA")]
     pub async fn send_to_evm_with_data_detailed(
         &self,
@@ -302,12 +310,14 @@ impl HyperCoreBridgeClient {
                     let HlBridgeToken::CoreReceived {
                         sender,
                         action,
+                        coreNonce,
                         amount,
                         data,
                     } = decoded.data;
                     return Ok(CoreReceivedLog {
                         sender,
                         action,
+                        core_nonce: coreNonce,
                         amount,
                         data,
                         transaction_hash: tx_hash,
@@ -335,4 +345,25 @@ fn current_ms_nonce() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `topic0` is the whole log filter, so drift against `HlBridgeToken.sol`
+    /// is silent: the poll just never matches and the transfer ends in
+    /// `PollTimeout` after the funds already moved. Hash taken from the
+    /// deployed mainnet implementation's bytecode.
+    #[test]
+    fn core_received_signature_matches_deployed_contract() {
+        assert_eq!(
+            HlBridgeToken::CoreReceived::SIGNATURE,
+            "CoreReceived(address,uint8,uint64,uint256,bytes)"
+        );
+        assert_eq!(
+            hex::encode(keccak256(HlBridgeToken::CoreReceived::SIGNATURE.as_bytes())),
+            "8f5a9d30f19dadbffce9682bf99ba986ea51506ec006f3e67cda363c55840b12"
+        );
+    }
 }
