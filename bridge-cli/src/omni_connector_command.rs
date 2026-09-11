@@ -1116,7 +1116,6 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
     let submits_to_unsupported_chain = match cmd {
         Cmd::EvmInitTransfer { config_cli, .. }
         | Cmd::EvmFinTransfer { config_cli, .. }
-        // An ordinary HyperEVM transaction, like the two above.
         | Cmd::HyperCoreTriggerPendingInitTransfer { config_cli, .. }
         | Cmd::AptosInitTransfer { config_cli, .. }
         | Cmd::AptosFinTransfer { config_cli, .. }
