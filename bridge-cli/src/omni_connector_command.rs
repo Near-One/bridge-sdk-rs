@@ -564,16 +564,13 @@ pub enum OmniConnectorSubCommand {
     },
 
     #[clap(
-        about = "Submit a HyperCore-originated transfer that the HyperCore callback only \
-                 committed on the bridge. Run this when the second phase of hyper-core-transfer \
-                 failed (bridge paused, out of gas, missing Wormhole fee); the commitment \
-                 survives and submitting is permissionless, so anyone can clear a stuck \
-                 transfer."
+        about = "Submit a HyperCore transfer the callback only committed on the bridge. \
+                 Retries the second phase of hyper-core-transfer; permissionless."
     )]
     HyperCoreTriggerPendingInitTransfer {
         #[clap(
             long,
-            help = "HyperEVM tx hash of the HyperCore callback that emitted PreInitTransfer"
+            help = "HyperEVM tx hash of the callback that emitted PreInitTransfer"
         )]
         tx_hash: String,
         #[command(flatten)]

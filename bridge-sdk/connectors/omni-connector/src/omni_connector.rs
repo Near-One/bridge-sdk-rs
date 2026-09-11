@@ -31,8 +31,7 @@ use omni_types::{
 
 use aptos_bridge_client::{AptosBridgeClient, AptosInitTransferEvent};
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
-// In the signature of `hypercore_trigger_pending_init_transfer`, so callers
-// can build one from indexer data without depending on evm-bridge-client.
+// In a public signature below, so callers need no direct evm-bridge-client dep.
 pub use evm_bridge_client::PreInitTransferFilter;
 use hypercore_bridge_client::{
     encode_init_transfer_action, encode_transfer_action, format_amount, HyperCoreBridgeClient,
@@ -282,12 +281,10 @@ pub enum InitTransferArgs {
     ///   directly from `HlBridgeToken._systemAddress` to `addr` on HyperEVM;
     ///   `fee` and `message` are unused. One transaction.
     /// - any other variant → `ACTION_INIT_TRANSFER`. Two transactions: the
-    ///   HyperCore callback only *commits* the transfer on the bridge
-    ///   (`PreInitTransfer`), and the connector then submits it with
-    ///   `triggerPendingInitTransfer`, which is what burns and emits
-    ///   `InitTransfer`. `fee` is paid out of `amount`, `message` is forwarded
-    ///   with the bridge event. The returned hash is the second transaction's;
-    ///   if it fails, the commitment survives and
+    ///   callback only commits the transfer, then `triggerPendingInitTransfer`
+    ///   burns and emits `InitTransfer`. `fee` is paid out of `amount`. The
+    ///   returned hash is the second transaction's; if it fails the commitment
+    ///   survives, and
     ///   [`OmniConnector::hypercore_trigger_pending_init_transfer_from_tx`]
     ///   resubmits it.
     ///
@@ -3380,12 +3377,10 @@ impl OmniConnector {
     /// Hyperliquid action, posts to `/exchange`, and blocks on the HyperEVM
     /// `CoreReceived` log.
     ///
-    /// The bridging path takes a second transaction: the HyperCore callback
-    /// runs as a system transaction whose logs never reach the block's
-    /// `logsBloom`, so an `InitTransfer` published from it would be invisible
-    /// to Wormhole guardians and to the indexer. The callback therefore only
-    /// commits the payload, and this method submits it — returning the
-    /// submitting transaction's hash, which is the one that carries
+    /// The bridging path takes a second transaction: the callback is a system
+    /// transaction outside the block's `logsBloom`, so an `InitTransfer`
+    /// published from it would be invisible to Wormhole guardians and the
+    /// indexer. Returns the submitting transaction's hash — the one carrying
     /// `InitTransfer`.
     ///
     /// `hl_bridge_token` and `decimals` are resolved from Hyperliquid's
@@ -3435,9 +3430,8 @@ impl OmniConnector {
             .get_pre_init_transfer_events(queue_tx_hash)
             .await?
             .into_iter()
-            // Our own commitment, not a neighbour's, should the system
-            // transaction ever batch several deliveries. `CoreReceived` and
-            // `PreInitTransfer` report the same pair for one delivery.
+            // Ours, not a neighbour's, should the system transaction ever
+            // batch several deliveries.
             .find(|pre_init| {
                 pre_init.sender == core_received.sender
                     && pre_init.core_nonce == core_received.core_nonce
@@ -3453,12 +3447,10 @@ impl OmniConnector {
             .await
     }
 
-    /// Reads the commitment that a HyperCore callback left in `queue_tx_hash`
-    /// and submits it — the second phase of [`Self::hypercore_transfer`],
-    /// separated out because it is permissionless on-chain and retryable: a
-    /// failure there (paused bridge, missing gas, missing Wormhole fee) leaves
-    /// the commitment standing, and calling this with that transaction's hash
-    /// resubmits it.
+    /// Submits the commitment a HyperCore callback left in `queue_tx_hash` —
+    /// phase two of [`Self::hypercore_transfer`], separate because it is
+    /// retryable: a failure there (paused bridge, missing gas or Wormhole fee)
+    /// leaves the commitment standing.
     ///
     /// Errors if the transaction holds more than one commitment; feed those to
     /// [`Self::hypercore_trigger_pending_init_transfer`] individually.
@@ -3476,19 +3468,16 @@ impl OmniConnector {
             .await
     }
 
-    /// Submits a committed HyperCore-originated transfer from a payload you
-    /// already have — the indexer's `PreInitTransfer` record, for instance.
-    ///
-    /// The fields must match the commitment byte for byte; in particular
-    /// `recipient` and `message` are the raw on-chain strings, not a reprinted
-    /// `OmniAddress`.
+    /// Submits from a payload you already have — the indexer's
+    /// `PreInitTransfer` record, say. Fields must match the commitment byte for
+    /// byte: `recipient` and `message` are the raw on-chain strings.
     pub async fn hypercore_trigger_pending_init_transfer(
         &self,
         pre_init: &PreInitTransferFilter,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        // Logged before sending: on a revert this is the whole payload needed
-        // to retry, and it exists nowhere else on the caller's side.
+        // Before sending: on a revert this is the whole payload needed to
+        // retry, and it exists nowhere else on the caller's side.
         tracing::info!(
             origin_nonce = pre_init.origin_nonce,
             core_nonce = pre_init.core_nonce,

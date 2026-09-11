@@ -20,11 +20,9 @@ pub fn encode_transfer_action(recipient: Address) -> Vec<u8> {
 /// `data` payload for HlBridgeToken `ACTION_INIT_TRANSFER`:
 /// bridge `amount` out to `recipient` with `fee`.
 ///
-/// The callback only commits this payload on the bridge
-/// (`queueInitTransfer` -> `PreInitTransfer`); `triggerPendingInitTransfer`
-/// submits it afterwards and is what emits `InitTransfer`. The bridge
-/// re-hashes these exact bytes as its commitment, so `recipient` and
-/// `message` must reach the submitter unmodified.
+/// The callback only commits this payload; `triggerPendingInitTransfer` submits
+/// it later. The bridge re-hashes these exact bytes as its commitment, so
+/// `recipient` and `message` must reach the submitter unmodified.
 ///
 /// Layout: `0x01 || abi.encode(uint128 fee, string recipient, string message)`.
 #[must_use]

@@ -97,15 +97,11 @@ sol! {
 sol! {
     /// HyperEVM-only `OmniBridgeWormhole` subclass (`HlOmniBridgeWormhole`).
     ///
-    /// The HyperCore -> HyperEVM callback runs as a system transaction whose
-    /// logs never reach the block's `logsBloom`, so a Wormhole guardian (and
-    /// any bloom-gated watcher) would never see a message published from it.
-    /// HyperCore-originated transfers are therefore split in two: the token
-    /// *commits* the payload via `queueInitTransfer` — emitting only
-    /// `PreInitTransfer` — and anyone submits it afterwards from an ordinary
-    /// transaction with [`EvmBridgeClient::trigger_pending_init_transfer`],
-    /// which burns, publishes to Wormhole and emits the regular `InitTransfer`
-    /// under the same `originNonce`.
+    /// The HyperCore callback is a system transaction whose logs never reach
+    /// the block's `logsBloom`, so nothing published from it would be visible
+    /// to Wormhole guardians. It therefore only *commits* the payload
+    /// (`PreInitTransfer`); `triggerPendingInitTransfer` submits it later from
+    /// an ordinary transaction, under the same `originNonce`.
     #[allow(missing_docs)]
     #[allow(clippy::too_many_arguments)]
     #[sol(rpc)]
@@ -138,25 +134,19 @@ pub struct InitTransferFilter {
 pub struct CoreReceivedFilter {
     pub sender: Address,
     pub action: u8,
-    /// HyperCore's own nonce for the originating action. Sequenced per
-    /// sender, so it identifies a delivery only together with `sender`.
+    /// Sequenced per sender, so it identifies a delivery only with `sender`.
     pub core_nonce: u64,
     pub amount: U256,
     pub data: Bytes,
 }
 
-/// Decoded `HlOmniBridge.PreInitTransfer` event — the commitment phase of a
-/// HyperCore-originated transfer. Doubles as the argument list for
-/// [`EvmBridgeClient::trigger_pending_init_transfer`], which hashes these
-/// fields back into the bridge's commitment.
-///
-/// `recipient` and `message` stay raw strings for that reason: re-normalising
-/// them (parsing `recipient` into an `OmniAddress` and printing it back)
-/// would change the bytes and strand the transfer.
+/// Decoded `HlOmniBridge.PreInitTransfer`, and the argument list
+/// [`EvmBridgeClient::trigger_pending_init_transfer`] hashes back into the
+/// bridge's commitment — hence the raw strings: re-printing `recipient` as an
+/// `OmniAddress` would change the bytes and strand the transfer.
 #[derive(Debug, Clone)]
 pub struct PreInitTransferFilter {
-    /// Bridge-assigned commitment key, and the `originNonce` the later
-    /// `InitTransfer` carries.
+    /// Commitment key, and the `originNonce` the later `InitTransfer` carries.
     pub origin_nonce: u64,
     pub token_address: Address,
     /// The originating HyperCore user, unlike `InitTransfer`'s `sender`.
@@ -169,16 +159,10 @@ pub struct PreInitTransferFilter {
     pub message: String,
 }
 
-/// Pair of events emitted in the same HyperEVM tx when a HyperCore user
-/// triggers `ACTION_INIT_TRANSFER` on an HlBridgeToken:
-/// - `CoreReceived` is emitted by the token.
-/// - `PreInitTransfer` is emitted by `HlOmniBridge` and carries the
-///   `originNonce` plus the exact payload needed to submit phase two.
-///
-/// There is no `InitTransfer` in this transaction: it only appears once
-/// [`EvmBridgeClient::trigger_pending_init_transfer`] runs, and its `sender`
-/// is the HlBridgeToken contract rather than the Core user — which is why the
-/// originating account has to be read from these two events.
+/// The two events an `ACTION_INIT_TRANSFER` callback emits. No `InitTransfer`
+/// here — that comes with `triggerPendingInitTransfer`, and its `sender` is
+/// the token contract, so the originating Core user is only recoverable from
+/// these.
 #[derive(Debug, Clone)]
 pub struct CoreInitiatedTransfer {
     pub pre_init_transfer: PreInitTransferFilter,
@@ -604,14 +588,10 @@ impl EvmBridgeClient {
             )))
     }
 
-    /// The single `HlOmniBridge.PreInitTransfer` commitment in `tx_hash` — the
-    /// HyperEVM transaction that a HyperCore `ACTION_INIT_TRANSFER` callback
-    /// landed in. The returned payload is exactly what
-    /// [`Self::trigger_pending_init_transfer`] must be given back.
-    ///
-    /// Errors rather than guessing if the transaction turns out to carry
-    /// several commitments; use [`Self::get_pre_init_transfer_events`] and
-    /// pick by `sender` + `core_nonce` in that case.
+    /// The single commitment in `tx_hash`, ready to hand back to
+    /// [`Self::trigger_pending_init_transfer`]. Errors rather than guessing if
+    /// the transaction carries several; pick by `sender` + `core_nonce` from
+    /// [`Self::get_pre_init_transfer_events`] then.
     pub async fn get_pre_init_transfer_event(
         &self,
         tx_hash: TxHash,
@@ -629,11 +609,9 @@ impl EvmBridgeClient {
         }
     }
 
-    /// Every `PreInitTransfer` the bridge emitted in `tx_hash`, in log order.
-    ///
-    /// Matches on the emitter address as well as `topic0`: the event is only a
-    /// commitment when the bridge itself emitted it, and any contract can emit
-    /// a log with the same signature.
+    /// Every `PreInitTransfer` in `tx_hash`, in log order. Matches the emitter
+    /// address too — any contract can emit a log with this signature, but only
+    /// the bridge's is a commitment.
     pub async fn get_pre_init_transfer_events(
         &self,
         tx_hash: TxHash,
@@ -674,14 +652,11 @@ impl EvmBridgeClient {
             .collect()
     }
 
-    /// Submits a transfer that the HyperCore callback committed under
-    /// `origin_nonce`, burning the parked tokens and publishing the Wormhole
-    /// message. Permissionless on-chain, so a stuck transfer is never
-    /// operator-gated.
+    /// Submits a committed transfer: burns the parked tokens and publishes the
+    /// Wormhole message. Permissionless on-chain.
     ///
     /// Pass the payload exactly as `PreInitTransfer` reported it — the bridge
-    /// checks it against `keccak256(abi.encode(...))` and reverts with
-    /// `PayloadMismatch` on any re-encoding.
+    /// re-hashes it and reverts with `PayloadMismatch` on any re-encoding.
     #[tracing::instrument(skip_all, name = "EVM TRIGGER PENDING INIT TRANSFER")]
     pub async fn trigger_pending_init_transfer(
         &self,
@@ -701,7 +676,7 @@ impl EvmBridgeClient {
                 pre_init.message.clone(),
             ),
             tx_nonce,
-            // Covers the Wormhole message fee; `nativeFee` is 0 on this path.
+            // Wormhole message fee; `nativeFee` is 0 on this path.
             self.get_wormhole_fee().await.ok(),
             None,
         );
@@ -717,9 +692,8 @@ impl EvmBridgeClient {
         Ok(receipt.transaction_hash)
     }
 
-    /// Whether `origin_nonce` still holds an unsubmitted commitment. A zero
-    /// commitment means either never queued or already submitted; the two are
-    /// indistinguishable on-chain.
+    /// Whether `origin_nonce` still holds an unsubmitted commitment. Zero means
+    /// never queued or already submitted — indistinguishable on-chain.
     pub async fn is_init_transfer_pending(&self, origin_nonce: u64) -> Result<bool> {
         let hl_omni_bridge = self.hl_omni_bridge()?;
         let commitment = hl_omni_bridge
@@ -730,9 +704,8 @@ impl EvmBridgeClient {
         Ok(!commitment.is_zero())
     }
 
-    /// Highest `originNonce` the bridge has assigned. Commitments are
-    /// enumerable against it, which is how a submitter finds pending
-    /// transfers without relying on logs.
+    /// Highest `originNonce` assigned. Commitments are enumerable against it,
+    /// which is how a submitter finds them without relying on logs.
     pub async fn current_origin_nonce(&self) -> Result<u64> {
         let hl_omni_bridge = self.hl_omni_bridge()?;
         let nonce = hl_omni_bridge.currentOriginNonce().call().await?;
@@ -740,12 +713,9 @@ impl EvmBridgeClient {
         Ok(nonce)
     }
 
-    /// Correlates `PreInitTransfer` and `CoreReceived` in the same HyperEVM tx.
-    ///
-    /// The `InitTransfer` that follows carries neither the originating
-    /// HyperCore user nor `coreNonce` — its `sender` is the HlBridgeToken
-    /// contract address — so this transaction is the only place the transfer
-    /// can be attributed back to the Core account that started it.
+    /// Correlates `PreInitTransfer` and `CoreReceived` in the same HyperEVM tx
+    /// — the only place the transfer can be attributed back to the Core
+    /// account that started it.
     pub async fn parse_core_initiated_transfer(
         &self,
         tx_hash: TxHash,
@@ -886,8 +856,7 @@ impl EvmBridgeClient {
         ))
     }
 
-    /// The same deployment as [`Self::omni_bridge`], viewed through the
-    /// HyperEVM-only ABI. Calling these on a non-HyperEVM chain reverts.
+    /// [`Self::omni_bridge`] through the HyperEVM-only ABI; reverts elsewhere.
     fn hl_omni_bridge(&self) -> Result<HlOmniBridge::HlOmniBridgeInstance<&DynProvider>> {
         let omni_bridge_address = self.omni_bridge_address()?;
         Ok(HlOmniBridge::new(
@@ -940,10 +909,9 @@ mod tests {
 
     use super::*;
 
-    /// Every HyperCore-path lookup here filters on `topic0` alone, so drift
-    /// against the Solidity sources is silent — the log simply never matches
-    /// and the transfer stalls after the funds have already moved. These pin
-    /// the ABI against `HlBridgeToken.sol` / `HlOmniBridgeWormhole.sol`.
+    /// Lookups filter on `topic0`, so drift against the Solidity sources is
+    /// silent: the log never matches and the transfer stalls after the funds
+    /// have moved.
     #[test]
     fn hypercore_event_signatures_match_the_contracts() {
         assert_eq!(
@@ -956,9 +924,8 @@ mod tests {
         );
     }
 
-    /// `triggerPendingInitTransfer`'s arguments are re-hashed into the
-    /// commitment the bridge stored, so a reordered or widened parameter is a
-    /// `PayloadMismatch` revert rather than a compile error.
+    /// These arguments are re-hashed into the stored commitment, so a reordered
+    /// or widened parameter is a `PayloadMismatch` revert, not a compile error.
     #[test]
     fn trigger_pending_init_transfer_signature_matches_the_contract() {
         assert_eq!(
