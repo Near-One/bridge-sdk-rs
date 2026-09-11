@@ -156,10 +156,8 @@ pub struct PreInitTransferFilter {
     pub message: String,
 }
 
-/// The two events an `ACTION_INIT_TRANSFER` callback emits. No `InitTransfer`
-/// here — that comes with `triggerPendingInitTransfer`, and its `sender` is
-/// the token contract, so the originating Core user is only recoverable from
-/// these.
+/// The token's `CoreReceived` and the bridge's `PreInitTransfer`, paired from
+/// one HyperCore bridging callback (action `0x01`).
 #[derive(Debug, Clone)]
 pub struct CoreInitiatedTransfer {
     pub pre_init_transfer: PreInitTransferFilter,
