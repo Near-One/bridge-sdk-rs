@@ -564,14 +564,11 @@ pub enum OmniConnectorSubCommand {
     },
 
     #[clap(
-        about = "Submit a HyperCore transfer the callback only committed on the bridge. \
-                 Retries the second phase of hyper-core-transfer; permissionless."
+        about = "Run the second step of hyper-core-transfer: turns a PreInitTransfer \
+                 commitment into the InitTransfer that actually bridges the funds."
     )]
     HyperCoreTriggerPendingInitTransfer {
-        #[clap(
-            long,
-            help = "HyperEVM tx hash of the callback that emitted PreInitTransfer"
-        )]
+        #[clap(long, help = "HyperEVM tx hash that emitted PreInitTransfer")]
         tx_hash: String,
         #[command(flatten)]
         config_cli: CliConfig,
