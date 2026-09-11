@@ -562,6 +562,24 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+
+    #[clap(
+        about = "Submit a HyperCore-originated transfer that the HyperCore callback only \
+                 committed on the bridge. Run this when the second phase of hyper-core-transfer \
+                 failed (bridge paused, out of gas, missing Wormhole fee); the commitment \
+                 survives and submitting is permissionless, so anyone can clear a stuck \
+                 transfer."
+    )]
+    HyperCoreTriggerPendingInitTransfer {
+        #[clap(
+            long,
+            help = "HyperEVM tx hash of the HyperCore callback that emitted PreInitTransfer"
+        )]
+        tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
     #[clap(about = "Initialize a transfer on Starknet")]
     StarknetInitTransfer {
         #[clap(short, long, help = "Token address on Starknet (felt hex)")]
@@ -1104,6 +1122,8 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
     let submits_to_unsupported_chain = match cmd {
         Cmd::EvmInitTransfer { config_cli, .. }
         | Cmd::EvmFinTransfer { config_cli, .. }
+        // An ordinary HyperEVM transaction, like the two above.
+        | Cmd::HyperCoreTriggerPendingInitTransfer { config_cli, .. }
         | Cmd::AptosInitTransfer { config_cli, .. }
         | Cmd::AptosFinTransfer { config_cli, .. }
         | Cmd::StarknetInitTransfer { config_cli, .. }
@@ -1648,6 +1668,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     message: message.unwrap_or_default(),
                     gas_limit,
                 })
+                .await
+                .unwrap();
+        }
+
+        OmniConnectorSubCommand::HyperCoreTriggerPendingInitTransfer {
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .hypercore_trigger_pending_init_transfer_from_tx(
+                    TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    None,
+                )
                 .await
                 .unwrap();
         }

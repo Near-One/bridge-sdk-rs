@@ -2878,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "evm-bridge-client"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "alloy",
  "borsh",
@@ -5095,7 +5095,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "alloy",
  "aptos-bridge-client",

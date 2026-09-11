@@ -90,7 +90,31 @@ sol! {
     #[allow(missing_docs)]
     #[sol(rpc)]
     interface HlBridgeToken {
-        event CoreReceived(address indexed sender, uint8 indexed action, uint256 amount, bytes data);
+        event CoreReceived(address indexed sender, uint8 indexed action, uint64 indexed coreNonce, uint256 amount, bytes data);
+    }
+}
+
+sol! {
+    /// HyperEVM-only `OmniBridgeWormhole` subclass (`HlOmniBridgeWormhole`).
+    ///
+    /// The HyperCore -> HyperEVM callback runs as a system transaction whose
+    /// logs never reach the block's `logsBloom`, so a Wormhole guardian (and
+    /// any bloom-gated watcher) would never see a message published from it.
+    /// HyperCore-originated transfers are therefore split in two: the token
+    /// *commits* the payload via `queueInitTransfer` — emitting only
+    /// `PreInitTransfer` — and anyone submits it afterwards from an ordinary
+    /// transaction with [`EvmBridgeClient::trigger_pending_init_transfer`],
+    /// which burns, publishes to Wormhole and emits the regular `InitTransfer`
+    /// under the same `originNonce`.
+    #[allow(missing_docs)]
+    #[allow(clippy::too_many_arguments)]
+    #[sol(rpc)]
+    interface HlOmniBridge {
+        function triggerPendingInitTransfer(uint64 originNonce, address tokenAddress, address sender, uint128 amount, uint128 fee, string recipient, string message) external payable;
+        function pendingInitTransfers(uint64 originNonce) external view returns (bytes32);
+        function currentOriginNonce() external view returns (uint64);
+
+        event PreInitTransfer(uint64 indexed originNonce, address indexed tokenAddress, address indexed sender, uint64 coreNonce, uint128 amount, uint128 fee, string recipient, string message);
     }
 }
 
@@ -114,19 +138,50 @@ pub struct InitTransferFilter {
 pub struct CoreReceivedFilter {
     pub sender: Address,
     pub action: u8,
+    /// HyperCore's own nonce for the originating action. Sequenced per
+    /// sender, so it identifies a delivery only together with `sender`.
+    pub core_nonce: u64,
     pub amount: U256,
     pub data: Bytes,
 }
 
+/// Decoded `HlOmniBridge.PreInitTransfer` event — the commitment phase of a
+/// HyperCore-originated transfer. Doubles as the argument list for
+/// [`EvmBridgeClient::trigger_pending_init_transfer`], which hashes these
+/// fields back into the bridge's commitment.
+///
+/// `recipient` and `message` stay raw strings for that reason: re-normalising
+/// them (parsing `recipient` into an `OmniAddress` and printing it back)
+/// would change the bytes and strand the transfer.
+#[derive(Debug, Clone)]
+pub struct PreInitTransferFilter {
+    /// Bridge-assigned commitment key, and the `originNonce` the later
+    /// `InitTransfer` carries.
+    pub origin_nonce: u64,
+    pub token_address: Address,
+    /// The originating HyperCore user, unlike `InitTransfer`'s `sender`.
+    pub sender: Address,
+    pub core_nonce: u64,
+    pub amount: u128,
+    /// Token-denominated; `nativeFee` is always 0 on this path.
+    pub fee: u128,
+    pub recipient: String,
+    pub message: String,
+}
+
 /// Pair of events emitted in the same HyperEVM tx when a HyperCore user
 /// triggers `ACTION_INIT_TRANSFER` on an HlBridgeToken:
-/// - `CoreReceived` carries the originating Core user (`sender`).
-/// - `InitTransfer` is emitted by `OmniBridge`, but its `sender` field is the
-///   HlBridgeToken contract address, not the Core user. Correlate the two to
-///   attribute the transfer back to the originating HyperCore account.
+/// - `CoreReceived` is emitted by the token.
+/// - `PreInitTransfer` is emitted by `HlOmniBridge` and carries the
+///   `originNonce` plus the exact payload needed to submit phase two.
+///
+/// There is no `InitTransfer` in this transaction: it only appears once
+/// [`EvmBridgeClient::trigger_pending_init_transfer`] runs, and its `sender`
+/// is the HlBridgeToken contract rather than the Core user — which is why the
+/// originating account has to be read from these two events.
 #[derive(Debug, Clone)]
 pub struct CoreInitiatedTransfer {
-    pub init_transfer: InitTransferFilter,
+    pub pre_init_transfer: PreInitTransferFilter,
     pub core_received: CoreReceivedFilter,
 }
 
@@ -533,17 +588,9 @@ impl EvmBridgeClient {
     ) -> Result<alloy::rpc::types::Log> {
         let sig_hash =
             alloy::primitives::keccak256(HlBridgeToken::CoreReceived::SIGNATURE.as_bytes());
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or(EvmBridgeClientError::BlockchainDataError(
-                "Transaction receipt missing".to_string(),
-            ))?;
 
-        receipt
-            .inner
-            .into_logs()
+        self.get_logs(tx_hash)
+            .await?
             .into_iter()
             .find(|log| {
                 log.address() == hl_bridge_token
@@ -557,18 +604,154 @@ impl EvmBridgeClient {
             )))
     }
 
-    /// Correlates `InitTransfer` and `CoreReceived` in the same HyperEVM tx.
+    /// The single `HlOmniBridge.PreInitTransfer` commitment in `tx_hash` — the
+    /// HyperEVM transaction that a HyperCore `ACTION_INIT_TRANSFER` callback
+    /// landed in. The returned payload is exactly what
+    /// [`Self::trigger_pending_init_transfer`] must be given back.
     ///
-    /// `InitTransfer.sender` is the HlBridgeToken contract address (not the
-    /// HyperCore user) when the transfer was initiated via the
-    /// `ACTION_INIT_TRANSFER` callback. The originating Core user is recoverable
-    /// only from the `CoreReceived` log, which carries `sender == from`.
+    /// Errors rather than guessing if the transaction turns out to carry
+    /// several commitments; use [`Self::get_pre_init_transfer_events`] and
+    /// pick by `sender` + `core_nonce` in that case.
+    pub async fn get_pre_init_transfer_event(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<PreInitTransferFilter> {
+        let mut events = self.get_pre_init_transfer_events(tx_hash).await?;
+
+        match events.len() {
+            0 => Err(EvmBridgeClientError::BlockchainDataError(format!(
+                "PreInitTransfer log missing in tx {tx_hash}"
+            ))),
+            1 => Ok(events.remove(0)),
+            n => Err(EvmBridgeClientError::BlockchainDataError(format!(
+                "tx {tx_hash} carries {n} PreInitTransfer logs; disambiguate by sender and core nonce"
+            ))),
+        }
+    }
+
+    /// Every `PreInitTransfer` the bridge emitted in `tx_hash`, in log order.
+    ///
+    /// Matches on the emitter address as well as `topic0`: the event is only a
+    /// commitment when the bridge itself emitted it, and any contract can emit
+    /// a log with the same signature.
+    pub async fn get_pre_init_transfer_events(
+        &self,
+        tx_hash: TxHash,
+    ) -> Result<Vec<PreInitTransferFilter>> {
+        let omni_bridge_address = self.omni_bridge_address()?;
+        let sig_hash =
+            alloy::primitives::keccak256(HlOmniBridge::PreInitTransfer::SIGNATURE.as_bytes());
+
+        self.get_logs(tx_hash)
+            .await?
+            .into_iter()
+            .filter(|log| {
+                log.address() == omni_bridge_address
+                    && log
+                        .topics()
+                        .first()
+                        .is_some_and(|topic| topic.0 == sig_hash.0)
+            })
+            .map(|log| {
+                let decoded = HlOmniBridge::PreInitTransfer::decode_log(&log.into_inner())
+                    .map_err(|err| {
+                        EvmBridgeClientError::BlockchainDataError(format!(
+                            "Failed to decode PreInitTransfer log: {err}"
+                        ))
+                    })?;
+
+                Ok(PreInitTransferFilter {
+                    origin_nonce: decoded.originNonce,
+                    token_address: decoded.tokenAddress,
+                    sender: decoded.sender,
+                    core_nonce: decoded.coreNonce,
+                    amount: decoded.amount,
+                    fee: decoded.fee,
+                    recipient: decoded.recipient.clone(),
+                    message: decoded.message.clone(),
+                })
+            })
+            .collect()
+    }
+
+    /// Submits a transfer that the HyperCore callback committed under
+    /// `origin_nonce`, burning the parked tokens and publishing the Wormhole
+    /// message. Permissionless on-chain, so a stuck transfer is never
+    /// operator-gated.
+    ///
+    /// Pass the payload exactly as `PreInitTransfer` reported it — the bridge
+    /// checks it against `keccak256(abi.encode(...))` and reverts with
+    /// `PayloadMismatch` on any re-encoding.
+    #[tracing::instrument(skip_all, name = "EVM TRIGGER PENDING INIT TRANSFER")]
+    pub async fn trigger_pending_init_transfer(
+        &self,
+        pre_init: &PreInitTransferFilter,
+        tx_nonce: Option<U256>,
+    ) -> Result<TxHash> {
+        let hl_omni_bridge = self.hl_omni_bridge()?;
+
+        let call_builder = self.prepare_tx_for_sending(
+            hl_omni_bridge.triggerPendingInitTransfer(
+                pre_init.origin_nonce,
+                pre_init.token_address,
+                pre_init.sender,
+                pre_init.amount,
+                pre_init.fee,
+                pre_init.recipient.clone(),
+                pre_init.message.clone(),
+            ),
+            tx_nonce,
+            // Covers the Wormhole message fee; `nativeFee` is 0 on this path.
+            self.get_wormhole_fee().await.ok(),
+            None,
+        );
+
+        let receipt = call_builder.send().await?.get_receipt().await?;
+
+        tracing::info!(
+            tx_hash = format!("{:?}", receipt.transaction_hash),
+            origin_nonce = pre_init.origin_nonce,
+            "Submitted pending HyperCore init transfer"
+        );
+
+        Ok(receipt.transaction_hash)
+    }
+
+    /// Whether `origin_nonce` still holds an unsubmitted commitment. A zero
+    /// commitment means either never queued or already submitted; the two are
+    /// indistinguishable on-chain.
+    pub async fn is_init_transfer_pending(&self, origin_nonce: u64) -> Result<bool> {
+        let hl_omni_bridge = self.hl_omni_bridge()?;
+        let commitment = hl_omni_bridge
+            .pendingInitTransfers(origin_nonce)
+            .call()
+            .await?;
+
+        Ok(!commitment.is_zero())
+    }
+
+    /// Highest `originNonce` the bridge has assigned. Commitments are
+    /// enumerable against it, which is how a submitter finds pending
+    /// transfers without relying on logs.
+    pub async fn current_origin_nonce(&self) -> Result<u64> {
+        let hl_omni_bridge = self.hl_omni_bridge()?;
+        let nonce = hl_omni_bridge.currentOriginNonce().call().await?;
+
+        Ok(nonce)
+    }
+
+    /// Correlates `PreInitTransfer` and `CoreReceived` in the same HyperEVM tx.
+    ///
+    /// The `InitTransfer` that follows carries neither the originating
+    /// HyperCore user nor `coreNonce` — its `sender` is the HlBridgeToken
+    /// contract address — so this transaction is the only place the transfer
+    /// can be attributed back to the Core account that started it.
     pub async fn parse_core_initiated_transfer(
         &self,
         tx_hash: TxHash,
         hl_bridge_token: Address,
     ) -> Result<CoreInitiatedTransfer> {
-        let init_transfer = self.get_transfer_event(tx_hash).await?;
+        let pre_init_transfer = self.get_pre_init_transfer_event(tx_hash).await?;
 
         let core_log = self.get_core_received_log(tx_hash, hl_bridge_token).await?;
         let decoded =
@@ -581,15 +764,17 @@ impl EvmBridgeClient {
         let HlBridgeToken::CoreReceived {
             sender,
             action,
+            coreNonce,
             amount,
             data,
         } = decoded.data;
 
         Ok(CoreInitiatedTransfer {
-            init_transfer,
+            pre_init_transfer,
             core_received: CoreReceivedFilter {
                 sender,
                 action,
+                core_nonce: coreNonce,
                 amount,
                 data,
             },
@@ -618,19 +803,10 @@ impl EvmBridgeClient {
         tx_hash: TxHash,
         event_signature: &str,
     ) -> Result<alloy::rpc::types::Log> {
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or(EvmBridgeClientError::BlockchainDataError(
-                "Transaction receipt missing".to_string(),
-            ))?;
-
         let sig_hash = alloy::primitives::keccak256(event_signature.as_bytes());
 
-        receipt
-            .inner
-            .into_logs()
+        self.get_logs(tx_hash)
+            .await?
             .into_iter()
             .find(|log| {
                 log.topics()
@@ -640,6 +816,18 @@ impl EvmBridgeClient {
             .ok_or(EvmBridgeClientError::BlockchainDataError(format!(
                 "Event log for '{event_signature}' missing in tx {tx_hash}"
             )))
+    }
+
+    async fn get_logs(&self, tx_hash: TxHash) -> Result<Vec<alloy::rpc::types::Log>> {
+        let receipt = self
+            .provider
+            .get_transaction_receipt(tx_hash)
+            .await?
+            .ok_or(EvmBridgeClientError::BlockchainDataError(
+                "Transaction receipt missing".to_string(),
+            ))?;
+
+        Ok(receipt.inner.into_logs())
     }
 
     pub fn prepare_tx_for_sending<P, D, N>(
@@ -698,6 +886,16 @@ impl EvmBridgeClient {
         ))
     }
 
+    /// The same deployment as [`Self::omni_bridge`], viewed through the
+    /// HyperEVM-only ABI. Calling these on a non-HyperEVM chain reverts.
+    fn hl_omni_bridge(&self) -> Result<HlOmniBridge::HlOmniBridgeInstance<&DynProvider>> {
+        let omni_bridge_address = self.omni_bridge_address()?;
+        Ok(HlOmniBridge::new(
+            omni_bridge_address,
+            self.signer_provider()?,
+        ))
+    }
+
     fn signer_provider(&self) -> Result<&DynProvider> {
         self.signer_provider
             .as_ref()
@@ -733,5 +931,39 @@ impl EvmBridgeClient {
                 "Unsupported address type in SignTransferEvent: {address:?}",
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy::sol_types::SolCall;
+
+    use super::*;
+
+    /// Every HyperCore-path lookup here filters on `topic0` alone, so drift
+    /// against the Solidity sources is silent — the log simply never matches
+    /// and the transfer stalls after the funds have already moved. These pin
+    /// the ABI against `HlBridgeToken.sol` / `HlOmniBridgeWormhole.sol`.
+    #[test]
+    fn hypercore_event_signatures_match_the_contracts() {
+        assert_eq!(
+            HlBridgeToken::CoreReceived::SIGNATURE,
+            "CoreReceived(address,uint8,uint64,uint256,bytes)"
+        );
+        assert_eq!(
+            HlOmniBridge::PreInitTransfer::SIGNATURE,
+            "PreInitTransfer(uint64,address,address,uint64,uint128,uint128,string,string)"
+        );
+    }
+
+    /// `triggerPendingInitTransfer`'s arguments are re-hashed into the
+    /// commitment the bridge stored, so a reordered or widened parameter is a
+    /// `PayloadMismatch` revert rather than a compile error.
+    #[test]
+    fn trigger_pending_init_transfer_signature_matches_the_contract() {
+        assert_eq!(
+            HlOmniBridge::triggerPendingInitTransferCall::SIGNATURE,
+            "triggerPendingInitTransfer(uint64,address,address,uint128,uint128,string,string)"
+        );
     }
 }
