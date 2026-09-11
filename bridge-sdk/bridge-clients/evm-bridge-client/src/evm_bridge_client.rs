@@ -134,16 +134,13 @@ pub struct InitTransferFilter {
 pub struct CoreReceivedFilter {
     pub sender: Address,
     pub action: u8,
-    /// Sequenced per sender, so it identifies a delivery only with `sender`.
     pub core_nonce: u64,
     pub amount: U256,
     pub data: Bytes,
 }
 
-/// Decoded `HlOmniBridge.PreInitTransfer`, and the argument list
-/// [`EvmBridgeClient::trigger_pending_init_transfer`] hashes back into the
-/// bridge's commitment — hence the raw strings: re-printing `recipient` as an
-/// `OmniAddress` would change the bytes and strand the transfer.
+/// Decoded `HlOmniBridge.PreInitTransfer`, and the input to
+/// [`EvmBridgeClient::trigger_pending_init_transfer`].
 #[derive(Debug, Clone)]
 pub struct PreInitTransferFilter {
     /// Commitment key, and the `originNonce` the later `InitTransfer` carries.
