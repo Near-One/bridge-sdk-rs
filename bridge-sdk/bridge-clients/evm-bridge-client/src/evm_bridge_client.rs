@@ -678,6 +678,13 @@ impl EvmBridgeClient {
 
         let receipt = call_builder.send().await?.get_receipt().await?;
 
+        if !receipt.status() {
+            return Err(EvmBridgeClientError::BlockchainDataError(format!(
+                "triggerPendingInitTransfer for origin nonce {} reverted in {}",
+                pre_init.origin_nonce, receipt.transaction_hash
+            )));
+        }
+
         tracing::info!(
             tx_hash = format!("{:?}", receipt.transaction_hash),
             origin_nonce = pre_init.origin_nonce,
