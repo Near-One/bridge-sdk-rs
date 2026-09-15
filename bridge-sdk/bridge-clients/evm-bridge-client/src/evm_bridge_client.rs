@@ -672,7 +672,7 @@ impl EvmBridgeClient {
             ),
             tx_nonce,
             // Wormhole message fee; `nativeFee` is 0 on this path.
-            self.get_wormhole_fee().await.ok(),
+            Some(self.get_wormhole_fee().await?),
             None,
         );
 
