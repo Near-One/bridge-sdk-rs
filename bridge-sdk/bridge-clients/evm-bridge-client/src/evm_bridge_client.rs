@@ -95,13 +95,14 @@ sol! {
 }
 
 sol! {
-    /// HyperEVM-only `OmniBridgeWormhole` subclass (`HlOmniBridgeWormhole`).
+    /// HyperEVM-only `OmniBridgeWormhole` subclass (`HlOmniBridge`).
     ///
     /// The HyperCore callback is a system transaction whose logs never reach
     /// the block's `logsBloom`, so nothing published from it would be visible
     /// to Wormhole guardians. It therefore only *commits* the payload
-    /// (`PreInitTransfer`); `triggerPendingInitTransfer` submits it later from
-    /// an ordinary transaction, under the same `originNonce`.
+    /// (`preInitTransfer` -> `PreInitTransfer`); `triggerPendingInitTransfer`
+    /// submits it later from an ordinary transaction, under the same
+    /// `originNonce`.
     #[allow(missing_docs)]
     #[allow(clippy::too_many_arguments)]
     #[sol(rpc)]

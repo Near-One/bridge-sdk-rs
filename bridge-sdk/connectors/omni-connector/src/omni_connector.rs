@@ -3398,6 +3398,12 @@ impl OmniConnector {
         message: String,
         gas_limit: Option<u64>,
     ) -> Result<TxHash> {
+        if fee >= amount {
+            return Err(BridgeSdkError::InvalidArgument(format!(
+                "fee {fee} must be less than amount {amount}"
+            )));
+        }
+
         let client = self.hypercore_bridge_client()?;
         let (hl_bridge_token, decimals) = match (hl_bridge_token, decimals) {
             (Some(addr), Some(d)) => (addr, d),
