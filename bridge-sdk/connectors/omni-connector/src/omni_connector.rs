@@ -1576,11 +1576,6 @@ impl OmniConnector {
 
     /// Completes a [`BtcTransferDraft`] into a submittable
     /// [`BtcTransferSelection`].
-    ///
-    /// For a shielded Zcash withdrawal this builds and verifies the Orchard
-    /// bundle: seconds of proving plus one NEAR query per selected input. It
-    /// touches no shared state, so run it *after* releasing any lock held over
-    /// the UTXO pool. For every other withdrawal it is a no-op.
     pub async fn near_build_btc_transfer_selection(
         &self,
         draft: BtcTransferDraft,

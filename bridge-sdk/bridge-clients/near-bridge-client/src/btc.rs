@@ -1631,7 +1631,6 @@ impl NearBridgeClient {
 
     /// Reads the connector config, reusing a cached response for up to
     /// [`CONFIG_CACHE_TTL`].
-    ///
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
         if let Some(config) = self.cached_config(chain) {
             return Ok(config);
