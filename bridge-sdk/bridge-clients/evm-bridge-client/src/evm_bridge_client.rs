@@ -14,6 +14,7 @@ use omni_types::{near_events::OmniBridgeEvent, OmniAddress};
 use omni_types::{prover_args::EvmProof, ChainKind};
 use omni_types::{EvmAddress, Fee};
 use sha3::{Digest, Keccak256};
+use std::sync::OnceLock;
 
 use crate::error::EvmBridgeClientError;
 
@@ -175,6 +176,7 @@ pub struct EvmBridgeClient {
     omni_bridge_address: Option<Address>,
     wormhole_core_address: Option<Address>,
     mpc_finality: Option<EvmFinality>,
+    wormhole_fee: OnceLock<U256>,
 }
 
 impl EvmBridgeClient {
@@ -831,9 +833,15 @@ impl EvmBridgeClient {
     }
 
     async fn get_wormhole_fee(&self) -> Result<U256> {
+        if let Some(fee) = self.wormhole_fee.get() {
+            return Ok(*fee);
+        }
+
         let wormhole_address = self.wormhole_core_address()?;
         let wormhole = WormholeCore::new(wormhole_address, &self.provider);
         let fee = wormhole.messageFee().call().await?;
+        let _ = self.wormhole_fee.set(fee);
+
         Ok(fee)
     }
 
