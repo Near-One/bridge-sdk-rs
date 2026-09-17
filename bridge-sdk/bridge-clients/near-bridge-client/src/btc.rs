@@ -19,7 +19,10 @@ use std::cmp::max;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use utxo_utils::UTXO;
+
+const CONFIG_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
@@ -276,7 +279,7 @@ struct WithdrawBridgeFee {
 
 #[serde_as]
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-struct PartialConfig {
+pub(crate) struct PartialConfig {
     withdraw_bridge_fee: WithdrawBridgeFee,
     change_address: String,
     deposit_bridge_fee: BridgeFee,
@@ -1626,7 +1629,14 @@ impl NearBridgeClient {
         Ok(serde_json::from_slice::<WhitelistMetadata>(&response)?)
     }
 
+    /// Reads the connector config, reusing a cached response for up to
+    /// [`CONFIG_CACHE_TTL`].
+    ///
     async fn get_config(&self, chain: ChainKind) -> Result<PartialConfig> {
+        if let Some(config) = self.cached_config(chain) {
+            return Ok(config);
+        }
+
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
         let response = near_rpc_client::view(
@@ -1639,7 +1649,23 @@ impl NearBridgeClient {
         )
         .await?;
 
-        Ok(serde_json::from_slice::<PartialConfig>(&response)?)
+        let config = serde_json::from_slice::<PartialConfig>(&response)?;
+        self.store_config(chain, &config);
+
+        Ok(config)
+    }
+
+    fn cached_config(&self, chain: ChainKind) -> Option<PartialConfig> {
+        let cache = self.utxo_config_cache.read().ok()?;
+        let (fetched_at, config) = cache.get(&chain)?;
+
+        (fetched_at.elapsed() < CONFIG_CACHE_TTL).then(|| config.clone())
+    }
+
+    fn store_config(&self, chain: ChainKind, config: &PartialConfig) {
+        if let Ok(mut cache) = self.utxo_config_cache.write() {
+            cache.insert(chain, (Instant::now(), config.clone()));
+        }
     }
 
     pub fn get_deposit_msg_for_omni_bridge(

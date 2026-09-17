@@ -70,6 +70,20 @@ pub struct BtcTransferSelection {
     pub gas_fee: u64,
 }
 
+#[derive(Clone)]
+pub struct BtcTransferDraft {
+    pub out_points: Vec<OutPoint>,
+    /// Outputs before the Orchard split: for a shielded withdrawal `tx_outs[0]`
+    /// carries the shielded amount and is dropped from the final
+    /// [`BtcTransferSelection::tx_outs`].
+    pub tx_outs: Vec<TxOut>,
+    pub selected: Vec<(String, UTXO)>,
+    pub gas_fee: u64,
+    pub recipient: String,
+    pub memo: Option<String>,
+    pub enable_orchard: bool,
+}
+
 #[allow(clippy::struct_field_names)]
 #[derive(Builder, Default)]
 #[builder(pattern = "owned")]
@@ -1509,24 +1523,80 @@ impl OmniConnector {
         // pulling the full set from the NEAR connector.
         utxos: Option<HashMap<String, UTXO>>,
     ) -> Result<BtcTransferSelection> {
-        let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
-        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
-        let near_bridge_client = self.near_bridge_client()?;
-        let fee = near_bridge_client.get_withdraw_fee(chain).await?;
-        let (out_points, tx_outs, chain_specific_data, gas_fee) = self
-            .extract_utxo(
+        let draft = self
+            .near_select_btc_utxos_draft(
                 chain,
                 recipient,
-                amount.checked_sub(fee).ok_or_else(|| {
-                    BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
-                })?,
-                enable_orchard,
+                amount,
                 fee_rate,
                 max_gas_fee,
                 change_reserve,
                 memo,
                 utxos,
             )
+            .await?;
+
+        self.near_build_btc_transfer_selection(draft).await
+    }
+
+    /// Picks the inputs and shapes the outputs for a withdrawal, stopping short
+    /// of building `chain_specific_data`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn near_select_btc_utxos_draft(
+        &self,
+        chain: ChainKind,
+        recipient: String,
+        amount: u128,
+        fee_rate: Option<u64>,
+        max_gas_fee: Option<u64>,
+        change_reserve: Option<u128>,
+        memo: Option<String>,
+        utxos: Option<HashMap<String, UTXO>>,
+    ) -> Result<BtcTransferDraft> {
+        let enable_orchard = self.get_orchard_mode(&recipient, chain)?;
+        validate_zcash_memo_usage(chain, enable_orchard, memo.as_deref())?;
+        let near_bridge_client = self.near_bridge_client()?;
+        let fee = near_bridge_client.get_withdraw_fee(chain).await?;
+
+        self.extract_utxo(
+            chain,
+            recipient,
+            amount.checked_sub(fee).ok_or_else(|| {
+                BridgeSdkError::InvalidArgument("Amount is smaller than `fee`".to_string())
+            })?,
+            enable_orchard,
+            fee_rate,
+            max_gas_fee,
+            change_reserve,
+            memo,
+            utxos,
+        )
+        .await
+    }
+
+    /// Completes a [`BtcTransferDraft`] into a submittable
+    /// [`BtcTransferSelection`].
+    ///
+    /// For a shielded Zcash withdrawal this builds and verifies the Orchard
+    /// bundle: seconds of proving plus one NEAR query per selected input. It
+    /// touches no shared state, so run it *after* releasing any lock held over
+    /// the UTXO pool. For every other withdrawal it is a no-op.
+    pub async fn near_build_btc_transfer_selection(
+        &self,
+        draft: BtcTransferDraft,
+    ) -> Result<BtcTransferSelection> {
+        let BtcTransferDraft {
+            out_points,
+            tx_outs,
+            selected,
+            gas_fee,
+            recipient,
+            memo,
+            enable_orchard,
+        } = draft;
+
+        let (chain_specific_data, tx_outs) = self
+            .get_chain_specific_data(enable_orchard, recipient, tx_outs, selected, memo)
             .await?;
 
         Ok(BtcTransferSelection {
@@ -4580,7 +4650,7 @@ impl OmniConnector {
         // Pre-fetched UTXO set to feed the selector. `None` ⇒ fall back to
         // pulling the full set from the NEAR connector.
         utxos: Option<HashMap<String, UTXO>>,
-    ) -> Result<(Vec<OutPoint>, Vec<TxOut>, Option<ChainSpecificData>, u64)> {
+    ) -> Result<BtcTransferDraft> {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -4694,24 +4764,17 @@ impl OmniConnector {
         }
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
-        let (chain_specific_data, output) = self
-            .get_chain_specific_data(
-                enable_orchard,
-                target_btc_address,
-                tx_outs,
-                selection.selected,
-                memo,
-            )
-            .await?;
-
-        Ok((
+        Ok(BtcTransferDraft {
             out_points,
-            output,
-            chain_specific_data,
-            gas_fee.try_into().map_err(|err| {
+            tx_outs,
+            selected: selection.selected,
+            gas_fee: gas_fee.try_into().map_err(|err| {
                 BridgeSdkError::UnknownError(format!("gas_fee unexpectedly high: {err}"))
             })?,
-        ))
+            recipient: target_btc_address,
+            memo,
+            enable_orchard,
+        })
     }
 
     async fn get_chain_specific_data(
