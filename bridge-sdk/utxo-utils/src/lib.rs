@@ -539,6 +539,73 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
     ))
 }
 
+/// Grows a pool that sits below `lower_limit`: spends the largest UTXO and fans
+/// it out into deposit-sized pieces. The largest UTXO is the source because it
+/// is the only one that can carry many pieces at once.
+///
+/// `utxo_list` must be sorted by balance in ascending order.
+#[allow(clippy::too_many_arguments)]
+fn choose_utxos_for_split(
+    utxo_list: &[(&String, &UTXO)],
+    lower_limit: usize,
+    max_output_number: usize,
+    min_deposit_amount: usize,
+    fee_rate: u64,
+    change_address: &str,
+    chain: ChainKind,
+    network: Network,
+) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+    if min_deposit_amount == 0 {
+        return Err("min_deposit_amount must be positive".to_string());
+    }
+    let (key, utxo) = *utxo_list
+        .last()
+        .ok_or_else(|| "Cannot split: the UTXO pool is empty".to_string())?;
+    let utxos_balance = utxo.balance;
+    let selected = vec![(key.clone(), utxo.clone())];
+
+    let balance = usize::try_from(utxos_balance)
+        .map_err(|e| format!("Error on convert u64 into usize: {e}"))?;
+    // Splitting one UTXO into `k` pieces moves the pool from `len` to
+    // `len - 1 + k`, so reaching the lower limit needs `k = limit - len + 1`.
+    let output_amount = std::cmp::min(
+        lower_limit.saturating_sub(utxo_list.len()) + 1,
+        std::cmp::min(balance / min_deposit_amount, max_output_number),
+    );
+
+    let mut output_amount: u64 = output_amount
+        .try_into()
+        .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
+    let min_deposit: u64 = min_deposit_amount
+        .try_into()
+        .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
+
+    // The fee grows with every extra output, so shrink the plan until each piece
+    // still clears `min_deposit_amount` once the fee is paid. Fewer than two
+    // pieces would only burn fee without growing the pool.
+    let (output_amount, amount) = loop {
+        if output_amount < 2 {
+            return Err(format!(
+                "Cannot split {utxos_balance} sat into at least 2 outputs of \
+                 {min_deposit_amount} sat at fee rate {fee_rate}"
+            ));
+        }
+        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate, false);
+        if let Some(amount) = utxos_balance.checked_sub(gas_fee) {
+            if amount / output_amount >= min_deposit {
+                break (output_amount, amount);
+            }
+        }
+        output_amount -= 1;
+    };
+
+    let out_points = utxo_to_out_points(selected)?;
+    let tx_outs =
+        get_tx_outs_utxo_management(change_address, output_amount, amount, chain, network)?;
+
+    Ok((out_points, tx_outs))
+}
+
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
 pub fn choose_utxos_for_active_management(
@@ -562,40 +629,16 @@ pub fn choose_utxos_for_active_management(
     let mut utxos_balance: u64 = 0;
 
     if utxo_list.len() < active_management_limit.0 {
-        let utxo_amount = 1;
-        for i in 0..utxo_amount {
-            utxos_balance += utxo_list[utxo_list.len() - 1 - i].1.balance;
-            let (k, v) = utxo_list[i];
-            selected.push((k.clone(), v.clone()));
-        }
-
-        let output_amount = std::cmp::min(
-            active_management_limit.0 - utxo_list.len(),
-            std::cmp::min(
-                usize::try_from(utxos_balance)
-                    .map_err(|e| format!("Error on convert u64 into usize: {e}"))?
-                    / min_deposit_amount
-                    - 1,
-                max_active_utxo_management_output_number,
-            ),
-        );
-
-        let output_amount = output_amount
-            .try_into()
-            .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
-
-        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate, false);
-        let out_points = utxo_to_out_points(selected)?;
-
-        let tx_outs = get_tx_outs_utxo_management(
+        choose_utxos_for_split(
+            &utxo_list,
+            active_management_limit.0,
+            max_active_utxo_management_output_number,
+            min_deposit_amount,
+            fee_rate,
             change_address,
-            output_amount,
-            utxos_balance - gas_fee,
             chain,
             network,
-        )?;
-
-        Ok((out_points, tx_outs))
+        )
     } else if utxo_list.len() > active_management_limit.1 {
         let utxo_amount = std::cmp::min(
             utxo_list.len() - active_management_limit.1 + 1,
@@ -819,6 +862,10 @@ pub fn get_tx_outs_utxo_management(
     let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
         format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
     })?;
+
+    if output_amount == 0 {
+        return Err("output_amount must be positive".to_string());
+    }
 
     let one_amount = amount / output_amount;
     let mut res = vec![TxOut {
@@ -1109,5 +1156,174 @@ mod tests {
         assert_eq!(outs.len(), 2);
         assert!(outs[0].script_pubkey.is_p2sh());
         assert!(outs[1].script_pubkey.is_p2pkh());
+    }
+
+    // --- active UTXO management, split branch (pool below the lower limit) ---
+
+    const BTC_CHANGE_ADDRESS: &str = "bc1qtgjgs0vz4ffaez59y64vytjp6034rpezgyh8jt";
+    const SPLIT_FEE_RATE: u64 = 5;
+
+    fn mk_utxo(idx: usize, balance: u64) -> (String, UTXO) {
+        (
+            format!("{idx:064x}@0"),
+            UTXO {
+                path: format!("m/0/{idx}"),
+                tx_bytes: vec![],
+                vout: 0,
+                balance,
+            },
+        )
+    }
+
+    fn split_pool(balances: &[u64]) -> HashMap<String, UTXO> {
+        balances
+            .iter()
+            .enumerate()
+            .map(|(i, balance)| mk_utxo(i, *balance))
+            .collect()
+    }
+
+    fn run_split(
+        pool: &HashMap<String, UTXO>,
+        lower_limit: usize,
+        max_output_number: usize,
+        min_deposit_amount: usize,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+        choose_utxos_for_active_management(
+            pool,
+            SPLIT_FEE_RATE,
+            BTC_CHANGE_ADDRESS,
+            (lower_limit, 20),
+            10,
+            max_output_number,
+            min_deposit_amount,
+            ChainKind::Btc,
+            Network::Mainnet,
+            false,
+            2_500_000_000,
+            2,
+        )
+    }
+
+    /// Every split must spend exactly the largest UTXO and pay out its whole
+    /// balance minus the fee for the shape it actually produced.
+    fn assert_split_conserves_value(
+        pool: &HashMap<String, UTXO>,
+        out_points: &[OutPoint],
+        tx_outs: &[TxOut],
+        min_deposit_amount: u64,
+    ) {
+        assert_eq!(out_points.len(), 1, "split must spend a single UTXO");
+
+        let spent_key = format!("{}@{}", out_points[0].txid, out_points[0].vout);
+        let spent = pool
+            .get(&spent_key)
+            .unwrap_or_else(|| panic!("selected UTXO {spent_key} is not in the pool"));
+        let largest = pool.values().map(|u| u.balance).max().expect("non-empty");
+        assert_eq!(spent.balance, largest, "split must spend the largest UTXO");
+
+        let out_number = u64::try_from(tx_outs.len()).unwrap();
+        let fee = get_gas_fee(ChainKind::Btc, 1, out_number, SPLIT_FEE_RATE, false);
+        let out_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+        assert_eq!(
+            out_total + fee,
+            spent.balance,
+            "outputs + fee must equal the spent input"
+        );
+
+        for out in tx_outs {
+            assert!(
+                out.value.to_sat() >= min_deposit_amount,
+                "output {} sat is below min_deposit_amount {min_deposit_amount}",
+                out.value.to_sat()
+            );
+        }
+    }
+
+    #[test]
+    fn split_spends_the_largest_utxo() {
+        let pool = split_pool(&[100_000, 500_000, 2_000_000]);
+        let (out_points, tx_outs) = run_split(&pool, 5, 10, 5_000).expect("split plan");
+
+        assert_split_conserves_value(&pool, &out_points, &tx_outs, 5_000);
+    }
+
+    #[test]
+    fn split_reaches_the_lower_limit() {
+        for pool_size in 1..5_usize {
+            let balances: Vec<u64> = (0..pool_size).map(|_| 2_000_000).collect();
+            let pool = split_pool(&balances);
+            let (out_points, tx_outs) = run_split(&pool, 5, 10, 5_000)
+                .unwrap_or_else(|e| panic!("split plan for pool of {pool_size}: {e}"));
+
+            assert_split_conserves_value(&pool, &out_points, &tx_outs, 5_000);
+            assert_eq!(
+                pool_size - 1 + tx_outs.len(),
+                5,
+                "pool of {pool_size} must reach the lower limit in one split"
+            );
+        }
+    }
+
+    #[test]
+    fn split_shrinks_output_number_to_keep_outputs_above_min_deposit() {
+        // Balance allows 3 pieces before the fee, but not after it.
+        let pool = split_pool(&[30_000]);
+        let (out_points, tx_outs) = run_split(&pool, 5, 10, 10_000).expect("split plan");
+
+        assert_eq!(tx_outs.len(), 2);
+        assert_split_conserves_value(&pool, &out_points, &tx_outs, 10_000);
+    }
+
+    #[test]
+    fn split_respects_max_output_number() {
+        let pool = split_pool(&[2_000_000]);
+        let (out_points, tx_outs) = run_split(&pool, 20, 3, 5_000).expect("split plan");
+
+        assert_eq!(tx_outs.len(), 3);
+        assert_split_conserves_value(&pool, &out_points, &tx_outs, 5_000);
+    }
+
+    #[test]
+    fn split_rejects_balance_too_small_for_two_pieces() {
+        let pool = split_pool(&[6_000]);
+        let err = run_split(&pool, 5, 10, 5_000).expect_err("6000 sat cannot become 2 deposits");
+        assert!(
+            err.contains("at least 2 outputs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn split_rejects_empty_pool() {
+        let pool = HashMap::new();
+        let err = run_split(&pool, 5, 10, 5_000).expect_err("empty pool cannot be split");
+        assert!(err.contains("pool is empty"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn split_rejects_zero_min_deposit_amount() {
+        let pool = split_pool(&[2_000_000]);
+        let err = run_split(&pool, 5, 10, 0).expect_err("zero min_deposit_amount is invalid");
+        assert!(
+            err.contains("min_deposit_amount must be positive"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn get_tx_outs_utxo_management_rejects_zero_outputs() {
+        let err = get_tx_outs_utxo_management(
+            BTC_CHANGE_ADDRESS,
+            0,
+            100_000,
+            ChainKind::Btc,
+            Network::Mainnet,
+        )
+        .expect_err("zero outputs must not divide by zero");
+        assert!(
+            err.contains("output_amount must be positive"),
+            "unexpected error: {err}"
+        );
     }
 }
