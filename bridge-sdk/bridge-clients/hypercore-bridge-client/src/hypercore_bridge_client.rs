@@ -140,6 +140,23 @@ impl HyperCoreBridgeClient {
             .map(|log| log.transaction_hash)
     }
 
+    /// Posts the action and returns its nonce, without waiting for HyperEVM.
+    #[tracing::instrument(skip_all, name = "HYPERCORE SEND TO EVM WITH DATA (NO WAIT)")]
+    pub async fn send_to_evm_with_data_no_wait(
+        &self,
+        token: String,
+        amount: String,
+        hl_bridge_token: Address,
+        data: Vec<u8>,
+        gas_limit: Option<u64>,
+    ) -> Result<u64> {
+        let (action, nonce) =
+            self.build_action(token, amount, hl_bridge_token, &data, gas_limit)?;
+        let signature = sign_action(&self.signer, &action)?;
+        self.post_action(&action, &signature, nonce).await?;
+        Ok(nonce)
+    }
+
     /// Detailed variant returning the full `CoreReceivedLog` (sender, action
     /// tag, core nonce, amount, data, tx hash, block). The single source of
     /// truth for action construction; [`send_to_evm_with_data`] is a thin
@@ -153,30 +170,45 @@ impl HyperCoreBridgeClient {
         data: Vec<u8>,
         gas_limit: Option<u64>,
     ) -> Result<CoreReceivedLog> {
+        let (action, nonce) =
+            self.build_action(token, amount, hl_bridge_token, &data, gas_limit)?;
+        let signature = sign_action(&self.signer, &action)?;
+        self.post_action(&action, &signature, nonce).await?;
+        self.poll_core_received(hl_bridge_token, &data).await
+    }
+
+    fn build_action(
+        &self,
+        token: String,
+        amount: String,
+        hl_bridge_token: Address,
+        data: &[u8],
+        gas_limit: Option<u64>,
+    ) -> Result<(SendToEvmWithDataAction, u64)> {
         let action_tag = data.first().copied().ok_or_else(|| {
             HyperCoreBridgeClientError::InvalidArgument(
                 "action `data` must be non-empty (at least the action tag)".to_string(),
             )
         })?;
         let nonce = current_ms_nonce();
-        let action = SendToEvmWithDataAction {
-            action_type: "sendToEvmWithData",
-            hyperliquid_chain: self.network.hyperliquid_chain(),
-            signature_chain_id: self.signature_chain_id.clone(),
-            token,
-            amount,
-            source_dex: "spot".to_string(),
-            destination_recipient: format!("0x{}", hex::encode(hl_bridge_token.as_slice())),
-            address_encoding: "hex".to_string(),
-            destination_chain_id: self.network.hyperevm_chain_id(),
-            gas_limit: gas_limit.unwrap_or_else(|| Self::default_gas_limit(action_tag)),
-            data: format!("0x{}", hex::encode(&data)),
-            nonce,
-        };
 
-        let signature = sign_action(&self.signer, &action)?;
-        self.post_action(&action, &signature, nonce).await?;
-        self.poll_core_received(hl_bridge_token, &data).await
+        Ok((
+            SendToEvmWithDataAction {
+                action_type: "sendToEvmWithData",
+                hyperliquid_chain: self.network.hyperliquid_chain(),
+                signature_chain_id: self.signature_chain_id.clone(),
+                token,
+                amount,
+                source_dex: "spot".to_string(),
+                destination_recipient: format!("0x{}", hex::encode(hl_bridge_token.as_slice())),
+                address_encoding: "hex".to_string(),
+                destination_chain_id: self.network.hyperevm_chain_id(),
+                gas_limit: gas_limit.unwrap_or_else(|| Self::default_gas_limit(action_tag)),
+                data: format!("0x{}", hex::encode(data)),
+                nonce,
+            },
+            nonce,
+        ))
     }
 
     async fn post_action(
@@ -227,7 +259,10 @@ impl HyperCoreBridgeClient {
 
         match parsed.get("status").and_then(|s| s.as_str()) {
             Some("ok") => {
-                tracing::info!(?nonce, "Hyperliquid /exchange accepted sendToEvmWithData");
+                tracing::info!(
+                    core_nonce = nonce,
+                    "Hyperliquid /exchange accepted sendToEvmWithData"
+                );
                 Ok(())
             }
             Some("err") => {

@@ -523,7 +523,8 @@ pub enum OmniConnectorSubCommand {
 
     #[clap(about = "HyperCore -> any destination via sendToEvmWithData. \
                  hlevm:0x... recipient uses ACTION_TRANSFER (direct pool release on HyperEVM); \
-                 any other recipient uses ACTION_INIT_TRANSFER (route through OmniBridge).")]
+                 any other recipient uses ACTION_INIT_TRANSFER, which only commits the transfer; \
+                 hyper-core-trigger-pending-init-transfer submits it.")]
     HyperCoreTransfer {
         #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
         token: String,
