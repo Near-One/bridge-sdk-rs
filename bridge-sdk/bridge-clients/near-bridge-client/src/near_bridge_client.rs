@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, RwLock};
+use std::time::Instant;
 
 use bridge_connector_common::result::{BridgeSdkError, Result};
 use derive_builder::Builder;
@@ -122,6 +123,9 @@ pub struct NearBridgeClient {
     #[doc = r"Whether the deployed UTXO connector exports a given method, probed on first use and cached both ways. Shared across clones; stale after a connector upgrade — restart the relayer to re-probe"]
     #[builder(setter(skip), default)]
     connector_method_exists: Arc<RwLock<HashMap<(ChainKind, &'static str), bool>>>,
+    #[doc = r"Last `get_config` response per UTXO chain, reused until it is `btc::CONFIG_CACHE_TTL` old. Shared across clones"]
+    #[builder(setter(skip), default)]
+    utxo_config_cache: Arc<RwLock<HashMap<ChainKind, (Instant, btc::PartialConfig)>>>,
 }
 
 impl NearBridgeClient {
