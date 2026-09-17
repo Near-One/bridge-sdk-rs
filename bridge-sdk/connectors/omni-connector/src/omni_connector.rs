@@ -30,6 +30,7 @@ use omni_types::{
 };
 
 use aptos_bridge_client::{AptosBridgeClient, AptosInitTransferEvent};
+pub use evm_bridge_client::PreInitTransferFilter;
 use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use hypercore_bridge_client::{
     encode_init_transfer_action, encode_transfer_action, format_amount, HyperCoreBridgeClient,
@@ -277,10 +278,12 @@ pub enum InitTransferArgs {
     ///
     /// - `OmniAddress::HyperEvm(addr)` → `ACTION_TRANSFER`. Pool release
     ///   directly from `HlBridgeToken._systemAddress` to `addr` on HyperEVM;
-    ///   `fee` and `message` are unused.
-    /// - any other variant → `ACTION_INIT_TRANSFER`. Routes through
-    ///   `OmniBridge.initTransfer`; `fee` is paid out of `amount`, `message`
-    ///   is forwarded with the bridge event.
+    ///   `fee` and `message` are unused. One transaction.
+    /// - any other variant → `ACTION_INIT_TRANSFER`. The callback only commits
+    ///   the transfer; the `triggerPendingInitTransfer` that burns and emits
+    ///   `InitTransfer` is a second transaction, sent by the relayer or by
+    ///   [`OmniConnector::hypercore_trigger_pending_init_transfer_from_tx`].
+    ///   `fee` is paid out of `amount` and must be below it.
     ///
     /// For the **inbound** direction (any chain → HyperCore Core user) see
     /// [`FinTransferArgs::EvmFinTransfer`]: target `chain_kind = HyperEvm`
@@ -3361,15 +3364,16 @@ impl OmniConnector {
                     gas_limit,
                 )
                 .await
-                .map(|tx_hash| tx_hash.to_string()),
+                .map(|core_nonce| core_nonce.to_string()),
         }
     }
 
     /// HyperCore -> any destination. Picks `ACTION_TRANSFER` when the
     /// recipient is a HyperEVM address (direct pool release), otherwise
-    /// `ACTION_INIT_TRANSFER` (route through `OmniBridge.initTransfer`).
-    /// Signs the Hyperliquid action, posts to `/exchange`, and blocks on the
-    /// HyperEVM `CoreReceived` log.
+    /// `ACTION_INIT_TRANSFER` (bridge out through `OmniBridge`).
+    ///
+    /// Signs the Hyperliquid action, posts it to `/exchange` and returns its
+    /// nonce. HyperEVM is not awaited.
     ///
     /// `hl_bridge_token` and `decimals` are resolved from Hyperliquid's
     /// `spotMeta` when either is `None`. Provide both explicitly to skip the
@@ -3385,7 +3389,13 @@ impl OmniConnector {
         fee: u128,
         message: String,
         gas_limit: Option<u64>,
-    ) -> Result<TxHash> {
+    ) -> Result<u64> {
+        if fee >= amount {
+            return Err(BridgeSdkError::InvalidArgument(format!(
+                "fee {fee} must be less than amount {amount}"
+            )));
+        }
+
         let client = self.hypercore_bridge_client()?;
         let (hl_bridge_token, decimals) = match (hl_bridge_token, decimals) {
             (Some(addr), Some(d)) => (addr, d),
@@ -3402,10 +3412,57 @@ impl OmniConnector {
             OmniAddress::HyperEvm(addr) => encode_transfer_action(Address::from_slice(&addr.0)),
             _ => encode_init_transfer_action(fee, &recipient, &message),
         };
-        let tx_hash = client
-            .send_to_evm_with_data(token, amount_str, hl_bridge_token, data, gas_limit)
+
+        client
+            .send_to_evm_with_data_no_wait(token, amount_str, hl_bridge_token, data, gas_limit)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Submits the commitment a HyperCore callback left in `queue_tx_hash` —
+    /// phase two of [`Self::hypercore_transfer`], separate because it is
+    /// retryable: a failure there (paused bridge, missing gas or Wormhole fee)
+    /// leaves the commitment standing.
+    ///
+    /// Errors if the transaction holds more than one commitment; feed those to
+    /// [`Self::hypercore_trigger_pending_init_transfer`] individually.
+    pub async fn hypercore_trigger_pending_init_transfer_from_tx(
+        &self,
+        queue_tx_hash: TxHash,
+        tx_nonce: Option<U256>,
+    ) -> Result<TxHash> {
+        let evm_bridge_client = self.evm_bridge_client(ChainKind::HyperEvm)?;
+        let pre_init = evm_bridge_client
+            .get_pre_init_transfer_event(queue_tx_hash)
             .await?;
-        Ok(tx_hash)
+
+        self.hypercore_trigger_pending_init_transfer(&pre_init, tx_nonce)
+            .await
+    }
+
+    /// Submits from a payload you already have — the indexer's
+    /// `PreInitTransfer` record, say. Fields must match the commitment byte for
+    /// byte: `recipient` and `message` are the raw on-chain strings.
+    pub async fn hypercore_trigger_pending_init_transfer(
+        &self,
+        pre_init: &PreInitTransferFilter,
+        tx_nonce: Option<U256>,
+    ) -> Result<TxHash> {
+        tracing::info!(
+            origin_nonce = pre_init.origin_nonce,
+            core_nonce = pre_init.core_nonce,
+            token = %pre_init.token_address,
+            sender = %pre_init.sender,
+            amount = pre_init.amount,
+            fee = pre_init.fee,
+            recipient = %pre_init.recipient,
+            "Submitting pending HyperCore init transfer"
+        );
+
+        Ok(self
+            .evm_bridge_client(ChainKind::HyperEvm)?
+            .trigger_pending_init_transfer(pre_init, tx_nonce)
+            .await?)
     }
 
     pub async fn fin_transfer(&self, fin_transfer_args: FinTransferArgs) -> Result<String> {
