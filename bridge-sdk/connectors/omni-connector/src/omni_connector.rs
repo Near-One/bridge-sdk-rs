@@ -1308,49 +1308,53 @@ impl OmniConnector {
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
-        let inputs_log: Vec<String> = out_points
-            .iter()
-            .map(|op| {
-                let key = format!("{}@{}", op.txid, op.vout);
-                let balance = utxos.get(&key).map(|u| u.balance);
-                match balance {
-                    Some(b) => format!("{key} ({b} sat)"),
-                    None => format!("{key} (?)"),
-                }
-            })
-            .collect();
-        let input_total: u64 = out_points
-            .iter()
-            .filter_map(|op| {
-                utxos
-                    .get(&format!("{}@{}", op.txid, op.vout))
-                    .map(|u| u.balance)
-            })
-            .sum();
+        // The plan is printed at INFO before the NEAR call so the operator can
+        // see which UTXOs are consumed and how they are split/merged; with
+        // `--dry-run` nothing is broadcast and only this plan plus the unsigned
+        // transaction are produced.
+        let pool_size = utxos.len();
+        let mode =
+            if pool_size < usize::try_from(active_management_lower_limit).unwrap_or(usize::MAX) {
+                "split"
+            } else {
+                "merge"
+            };
 
-        let outputs_log: Vec<String> = tx_outs
-            .iter()
-            .map(|o| format!("{} sat", o.value.to_sat()))
-            .collect();
+        let mut input_total: u64 = 0;
+        let mut input_lines: Vec<String> = Vec::with_capacity(out_points.len());
+        for out_point in &out_points {
+            let key = format!("{}@{}", out_point.txid, out_point.vout);
+            if let Some(utxo) = utxos.get(&key) {
+                input_total = input_total.saturating_add(utxo.balance);
+                input_lines.push(format!("    {key}: {} sat", utxo.balance));
+            } else {
+                input_lines.push(format!("    {key}: unknown balance"));
+            }
+        }
+
         let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
-
         let gas_fee = input_total.saturating_sub(output_total);
 
-        tracing::debug!(
-            pool_size = utxos.len(),
-            active_lower = active_management_lower_limit,
-            active_upper = active_management_upper_limit,
-            fee_rate,
-            num_inputs = out_points.len(),
-            num_outputs = tx_outs.len(),
-            input_total_sat = input_total,
-            output_total_sat = output_total,
-            gas_fee_sat = gas_fee,
-            inputs = ?inputs_log,
-            outputs = ?outputs_log,
-            change_address = %change_address,
-            "Active UTXO management transaction plan"
-        );
+        let mut plan = vec![
+            format!(
+                "Active UTXO management plan [{mode}]: pool_size={pool_size}, \
+                 active_limits=[{active_management_lower_limit}, {active_management_upper_limit}], \
+                 fee_rate={fee_rate}"
+            ),
+            format!("  inputs ({}), total {input_total} sat:", out_points.len()),
+        ];
+        plan.extend(input_lines);
+        plan.push(format!(
+            "  outputs ({}) to {change_address}, total {output_total} sat:",
+            tx_outs.len()
+        ));
+        for (i, tx_out) in tx_outs.iter().enumerate() {
+            plan.push(format!("    #{i}: {} sat", tx_out.value.to_sat()));
+        }
+        plan.push(format!("  network fee: {gas_fee} sat"));
+        let plan = plan.join("\n");
+
+        tracing::info!("{plan}");
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
