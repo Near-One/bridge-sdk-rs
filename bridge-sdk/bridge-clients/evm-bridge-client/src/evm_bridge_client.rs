@@ -140,7 +140,6 @@ pub struct PreInitTransferFilter {
     /// Commitment key, and the `originNonce` the later `InitTransfer` carries.
     pub origin_nonce: u64,
     pub token_address: Address,
-    /// The originating HyperCore user, unlike `InitTransfer`'s `sender`.
     pub sender: Address,
     pub core_nonce: u64,
     pub amount: u128,
