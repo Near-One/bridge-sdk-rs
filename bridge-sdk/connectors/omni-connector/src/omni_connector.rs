@@ -30,9 +30,8 @@ use omni_types::{
 };
 
 use aptos_bridge_client::{AptosBridgeClient, AptosInitTransferEvent};
-use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
-// In a public signature below, so callers need no direct evm-bridge-client dep.
 pub use evm_bridge_client::PreInitTransferFilter;
+use evm_bridge_client::{EvmBridgeClient, InitTransferFilter};
 use hypercore_bridge_client::{
     encode_init_transfer_action, encode_transfer_action, format_amount, HyperCoreBridgeClient,
 };
@@ -3371,12 +3370,10 @@ impl OmniConnector {
 
     /// HyperCore -> any destination. Picks `ACTION_TRANSFER` when the
     /// recipient is a HyperEVM address (direct pool release), otherwise
-    /// `ACTION_INIT_TRANSFER` (bridge out through `OmniBridge`). Signs the
-    /// Hyperliquid action, posts to `/exchange`, and blocks on the HyperEVM
-    /// `CoreReceived` log.
+    /// `ACTION_INIT_TRANSFER` (bridge out through `OmniBridge`).
     ///
-    /// Returns the action's nonce once Hyperliquid accepts it; HyperEVM is not
-    /// awaited.
+    /// Signs the Hyperliquid action, posts it to `/exchange` and returns its
+    /// nonce. HyperEVM is not awaited.
     ///
     /// `hl_bridge_token` and `decimals` are resolved from Hyperliquid's
     /// `spotMeta` when either is `None`. Provide both explicitly to skip the
@@ -3451,8 +3448,6 @@ impl OmniConnector {
         pre_init: &PreInitTransferFilter,
         tx_nonce: Option<U256>,
     ) -> Result<TxHash> {
-        // Before sending: on a revert this is the whole payload needed to
-        // retry, and it exists nowhere else on the caller's side.
         tracing::info!(
             origin_nonce = pre_init.origin_nonce,
             core_nonce = pre_init.core_nonce,

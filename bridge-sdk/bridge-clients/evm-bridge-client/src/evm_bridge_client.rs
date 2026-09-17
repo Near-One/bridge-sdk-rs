@@ -577,10 +577,6 @@ impl EvmBridgeClient {
             )))
     }
 
-    /// The single commitment in `tx_hash`, ready to hand back to
-    /// [`Self::trigger_pending_init_transfer`]. Errors rather than guessing if
-    /// the transaction carries several; pick by `sender` + `core_nonce` from
-    /// [`Self::get_pre_init_transfer_events`] then.
     pub async fn get_pre_init_transfer_event(
         &self,
         tx_hash: TxHash,
@@ -598,9 +594,6 @@ impl EvmBridgeClient {
         }
     }
 
-    /// Every `PreInitTransfer` in `tx_hash`, in log order. Matches the emitter
-    /// address too — any contract can emit a log with this signature, but only
-    /// the bridge's is a commitment.
     pub async fn get_pre_init_transfer_events(
         &self,
         tx_hash: TxHash,
@@ -643,9 +636,6 @@ impl EvmBridgeClient {
 
     /// Submits a committed transfer: burns the parked tokens and publishes the
     /// Wormhole message. Permissionless on-chain.
-    ///
-    /// Pass the payload exactly as `PreInitTransfer` reported it — the bridge
-    /// re-hashes it and reverts with `PayloadMismatch` on any re-encoding.
     #[tracing::instrument(skip_all, name = "EVM TRIGGER PENDING INIT TRANSFER")]
     pub async fn trigger_pending_init_transfer(
         &self,
@@ -709,9 +699,6 @@ impl EvmBridgeClient {
         Ok(nonce)
     }
 
-    /// Correlates `PreInitTransfer` and `CoreReceived` in the same HyperEVM tx
-    /// — the only place the transfer can be attributed back to the Core
-    /// account that started it.
     pub async fn parse_core_initiated_transfer(
         &self,
         tx_hash: TxHash,
@@ -858,7 +845,6 @@ impl EvmBridgeClient {
         ))
     }
 
-    /// [`Self::omni_bridge`] through the HyperEVM-only ABI; reverts elsewhere.
     fn hl_omni_bridge(&self) -> Result<HlOmniBridge::HlOmniBridgeInstance<&DynProvider>> {
         let omni_bridge_address = self.omni_bridge_address()?;
         Ok(HlOmniBridge::new(
