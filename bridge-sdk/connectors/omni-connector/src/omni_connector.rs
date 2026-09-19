@@ -57,7 +57,9 @@ use utxo_bridge_client::{
     types::{Bitcoin, PrefetchedTxData, Zcash},
     UTXOBridgeClient,
 };
-use utxo_utils::{get_gas_fee, UTXO};
+use utxo_utils::{
+    get_gas_fee, ActiveManagementPlan, WithdrawSelectionOverrides, WithdrawSelectionParams, UTXO,
+};
 use wormhole_bridge_client::WormholeBridgeClient;
 
 /// Result of UTXO selection for a BTC/Zcash withdrawal — feed into
@@ -109,6 +111,10 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
+    /// Per-chain replacements for the withdraw selection thresholds the
+    /// connector contract reports. Absent chains and unset fields keep the
+    /// contract's values.
+    utxo_selection_overrides: Option<HashMap<ChainKind, WithdrawSelectionOverrides>>,
 }
 
 macro_rules! forward_common_utxo_method {
@@ -1269,15 +1275,46 @@ impl OmniConnector {
         Ok((vout, msg, PrefetchedTxData { proof }))
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Reads the withdraw selection thresholds from the connector contract and
+    /// applies the locally configured overrides on top.
+    async fn withdraw_selection_params(&self, chain: ChainKind) -> Result<WithdrawSelectionParams> {
+        let mut params = self
+            .near_bridge_client()?
+            .get_withdraw_selection_params(chain)
+            .await?;
+
+        if let Some(overrides) = self
+            .utxo_selection_overrides
+            .as_ref()
+            .and_then(|by_chain| by_chain.get(&chain))
+        {
+            if !overrides.is_empty() {
+                tracing::debug!(
+                    ?chain,
+                    ?overrides,
+                    contract_algorithm_switch_threshold = params.active_management_upper_limit,
+                    contract_split_below = params.passive_management_lower_limit,
+                    contract_merge_above = params.passive_management_upper_limit,
+                    "Applying local overrides to withdraw selection params"
+                );
+                overrides.apply_to(&mut params);
+            }
+        }
+
+        Ok(params)
+    }
+
+    /// Submits an active UTXO-management transaction built from an explicit
+    /// [`ActiveManagementPlan`].
+    ///
+    /// The caller decides whether the pool should shrink (merge) or grow
+    /// (split) and by how much; the connector contract's `active_management_*`
+    /// limits are not read.
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
+        plan: &ActiveManagementPlan,
         fee_rate: Option<u64>,
-        max_input_number: Option<u8>,
-        merge_largest: bool,
-        max_change_amount: Option<u128>,
-        merge_cap_divisor: Option<u128>,
         transaction_options: TransactionOptions,
     ) -> Result<CryptoHash> {
         let utxo_bridge_client = self.utxo_bridge_client(chain)?;
@@ -1289,39 +1326,15 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
-        let (
-            active_management_lower_limit,
-            active_management_upper_limit,
-            max_active_utxo_management_input_number,
-            max_active_utxo_management_output_number,
-            config_max_change_amount,
-        ) = near_bridge_client
-            .get_active_management_limit(chain)
-            .await?;
-
-        let max_change_amount = max_change_amount.unwrap_or(config_max_change_amount);
-        let merge_cap_divisor = merge_cap_divisor.unwrap_or(2);
-        let max_input_number = max_input_number.unwrap_or(max_active_utxo_management_input_number);
-
         let change_address = near_bridge_client.get_change_address(chain).await?;
-        let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
 
-        let (out_points, tx_outs) = utxo_utils::choose_utxos_for_active_management(
+        let (out_points, tx_outs) = utxo_utils::plan_active_management(
             &utxos,
+            plan,
             fee_rate,
             &change_address,
-            (
-                active_management_lower_limit.try_into().unwrap(),
-                active_management_upper_limit.try_into().unwrap(),
-            ),
-            max_input_number.into(),
-            max_active_utxo_management_output_number.into(),
-            min_deposit_amount.try_into().unwrap(),
             chain,
             self.network()?,
-            merge_largest,
-            max_change_amount,
-            merge_cap_divisor,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
@@ -1355,8 +1368,7 @@ impl OmniConnector {
 
         tracing::debug!(
             pool_size = utxos.len(),
-            active_lower = active_management_lower_limit,
-            active_upper = active_management_upper_limit,
+            ?plan,
             fee_rate,
             num_inputs = out_points.len(),
             num_outputs = tx_outs.len(),
@@ -1390,9 +1402,7 @@ impl OmniConnector {
         let near_bridge_client = self.near_bridge_client()?;
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
-        let params = near_bridge_client
-            .get_withdraw_selection_params(chain)
-            .await?;
+        let params = self.withdraw_selection_params(chain).await?;
 
         let withdraw_fee = near_bridge_client.get_withdraw_fee(chain).await?;
 
@@ -4659,9 +4669,7 @@ impl OmniConnector {
             None => near_bridge_client.get_utxos(chain).await?,
         };
         let pool_size = u32::try_from(utxos.len()).unwrap_or(u32::MAX);
-        let params = near_bridge_client
-            .get_withdraw_selection_params(chain)
-            .await?;
+        let params = self.withdraw_selection_params(chain).await?;
 
         // Algorithm selection:
         // - No budget (`max_gas_fee = None`) ⇒ always the random selector.
