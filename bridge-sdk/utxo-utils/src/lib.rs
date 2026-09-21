@@ -204,13 +204,6 @@ pub struct WithdrawSelectionParams {
     pub active_management_upper_limit: u32,
 }
 
-/// Replacements for the withdraw selection thresholds the connector contract
-/// reports; `None` keeps the contract's value.
-///
-/// The contract mirrors the two passive bounds in its own PSBT validation, so
-/// only tightening them is safe: raising `merge_above` or lowering
-/// `split_below` yields transactions it rejects. `algorithm_switch_threshold`
-/// is SDK-only and can move either way.
 #[derive(Clone, Debug, Default)]
 pub struct WithdrawSelectionOverrides {
     /// Replaces `active_management_upper_limit`: above this the withdraw path
