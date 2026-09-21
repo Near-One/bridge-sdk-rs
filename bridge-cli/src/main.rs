@@ -584,13 +584,14 @@ fn default_config(network: Network) -> CliConfig {
             zcash: Some(defaults::ZCASH_MAINNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_MAINNET),
 
-            // No defaults: unset means "use whatever the connector contract reports".
-            btc_utxo_algorithm_switch_threshold: None,
-            btc_utxo_split_below: None,
-            btc_utxo_merge_above: None,
-            zcash_utxo_algorithm_switch_threshold: None,
-            zcash_utxo_split_below: None,
-            zcash_utxo_merge_above: None,
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_MAINNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_MAINNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_MAINNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_MAINNET,
 
             starknet_rpc: Some(defaults::STARKNET_RPC_MAINNET.to_owned()),
             starknet_private_key: None,
@@ -708,13 +709,14 @@ fn default_config(network: Network) -> CliConfig {
             zcash: Some(defaults::ZCASH_TESTNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_TESTNET),
 
-            // No defaults: unset means "use whatever the connector contract reports".
-            btc_utxo_algorithm_switch_threshold: None,
-            btc_utxo_split_below: None,
-            btc_utxo_merge_above: None,
-            zcash_utxo_algorithm_switch_threshold: None,
-            zcash_utxo_split_below: None,
-            zcash_utxo_merge_above: None,
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_TESTNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_TESTNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_TESTNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_TESTNET,
 
             starknet_rpc: Some(defaults::STARKNET_RPC_TESTNET.to_owned()),
             starknet_private_key: None,
@@ -832,13 +834,14 @@ fn default_config(network: Network) -> CliConfig {
             zcash: Some(defaults::ZCASH_DEVNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_DEVNET),
 
-            // No defaults: unset means "use whatever the connector contract reports".
-            btc_utxo_algorithm_switch_threshold: None,
-            btc_utxo_split_below: None,
-            btc_utxo_merge_above: None,
-            zcash_utxo_algorithm_switch_threshold: None,
-            zcash_utxo_split_below: None,
-            zcash_utxo_merge_above: None,
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_DEVNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_DEVNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_DEVNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_DEVNET,
 
             starknet_rpc: Some(defaults::STARKNET_RPC_DEVNET.to_owned()),
             starknet_private_key: None,
