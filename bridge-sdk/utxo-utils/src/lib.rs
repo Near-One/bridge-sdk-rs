@@ -6,7 +6,7 @@ pub use anchor_fill::choose_utxos_anchor_fill;
 use crate::address::UTXOAddress;
 use address::Network;
 use bitcoin::consensus::deserialize;
-use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut, Txid};
 use k256::elliptic_curve::subtle::CtOption;
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
@@ -587,6 +587,30 @@ pub enum SplitInput {
     Smallest,
     /// Keyed as `"{txid}@{vout}"`.
     Utxo(String),
+}
+
+impl std::str::FromStr for SplitInput {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "largest" => Ok(Self::Largest),
+            "smallest" => Ok(Self::Smallest),
+            key => {
+                let (txid, vout) = key.split_once('@').ok_or_else(|| {
+                    format!("expected 'largest', 'smallest' or a 'txid@vout' key, got '{key}'")
+                })?;
+                let txid: Txid = txid
+                    .parse()
+                    .map_err(|e| format!("Invalid txid '{txid}' in '{key}': {e}"))?;
+                let vout: u32 = vout
+                    .parse()
+                    .map_err(|e| format!("Invalid vout '{vout}' in '{key}': {e}"))?;
+
+                Ok(Self::Utxo(format!("{txid}@{vout}")))
+            }
+        }
+    }
 }
 
 /// Explicit shape for an active UTXO-management transaction: the caller states
@@ -1468,6 +1492,40 @@ mod tests {
         assert!(run_plan(&pool, &plan)
             .unwrap_err()
             .contains("too little to split"));
+    }
+
+    #[test]
+    fn split_input_parses_the_named_ends() {
+        assert!(matches!("largest".parse(), Ok(SplitInput::Largest)));
+        assert!(matches!("smallest".parse(), Ok(SplitInput::Smallest)));
+    }
+
+    #[test]
+    fn split_input_canonicalises_a_utxo_key() {
+        let key = format!("{:064x}@7", 1);
+        assert!(matches!(key.parse::<SplitInput>(), Ok(SplitInput::Utxo(k)) if k == key));
+
+        let sloppy = format!("{:064X}@007", 1);
+        assert!(matches!(sloppy.parse::<SplitInput>(), Ok(SplitInput::Utxo(k)) if k == key));
+    }
+
+    #[test]
+    fn split_input_rejects_malformed_utxo_keys() {
+        let txid = format!("{:064x}", 1);
+        for value in [
+            "deadbeef@1",
+            "largest@0",
+            &txid,
+            &format!("{txid}@"),
+            &format!("{txid}@x"),
+            &format!("{txid}@-1"),
+            &format!("{txid}@0@0"),
+        ] {
+            assert!(
+                value.parse::<SplitInput>().is_err(),
+                "'{value}' should not parse"
+            );
+        }
     }
 
     fn contract_params() -> WithdrawSelectionParams {

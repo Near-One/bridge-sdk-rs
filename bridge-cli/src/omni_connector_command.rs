@@ -49,24 +49,6 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct SplitInputArg(SplitInput);
-
-impl std::str::FromStr for SplitInputArg {
-    type Err = String;
-
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        match value {
-            "largest" => Ok(Self(SplitInput::Largest)),
-            "smallest" => Ok(Self(SplitInput::Smallest)),
-            key if key.contains('@') => Ok(Self(SplitInput::Utxo(key.to_owned()))),
-            other => Err(format!(
-                "expected 'largest', 'smallest' or a 'txid@vout' key, got '{other}'"
-            )),
-        }
-    }
-}
-
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "svm-chain")]
 pub enum SvmChainArg {
@@ -1084,7 +1066,7 @@ active_management_* limits are not read, so this command does exactly what it is
             default_value = "largest",
             help = "Which UTXO to spend: 'largest', 'smallest' or a 'txid@vout' key"
         )]
-        input: SplitInputArg,
+        input: SplitInput,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -2359,7 +2341,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
         } => {
             let plan = ActiveManagementPlan::Split {
                 output_number,
-                input: input.0,
+                input,
             };
 
             omni_connector(network, config_cli)
