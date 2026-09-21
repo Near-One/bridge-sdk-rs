@@ -608,20 +608,16 @@ impl std::str::FromStr for SplitInput {
 
 #[derive(Clone, Debug)]
 pub enum ActiveManagementPlan {
-    /// `input_number` inputs → one output, shrinking the pool.
     Merge {
-        /// At least 2; exact.
         input_number: usize,
         prefer_largest: bool,
+        /// Skip any UTXO larger than this
         per_utxo_cap: Option<u128>,
         /// Skip any UTXO that would push the merged total to this or above,
         /// keeping the single output a valid change piece for the contract.
         max_total: Option<u128>,
     },
-    /// One input → up to `output_number` outputs, growing the pool.
     Split {
-        /// At least 2, and an upper bound: fewer are emitted when the fee
-        /// would push a piece below `min_deposit_amount`.
         output_number: usize,
         input: SplitInput,
     },
@@ -640,8 +636,6 @@ pub fn plan_active_management(
     chain: ChainKind,
     network: Network,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
-    // Tie-break on the key: `HashMap` order varies between processes, so equal
-    // balances would otherwise make `Largest`/`Smallest` non-deterministic.
     let mut sorted: Vec<(&String, &UTXO)> = utxos.iter().collect();
     sorted.sort_by(|(left_key, left), (right_key, right)| {
         left.balance
@@ -701,7 +695,6 @@ fn merge(
         ));
     }
 
-    // A skipped UTXO doesn't end the walk: a later one may still fit under the caps.
     let mut selected: Vec<(String, UTXO)> = Vec::with_capacity(input_number);
     let mut total: u64 = 0;
     let mut skipped_by_cap = 0usize;

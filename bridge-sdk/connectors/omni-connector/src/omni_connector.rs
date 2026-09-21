@@ -1299,9 +1299,6 @@ impl OmniConnector {
         Ok(params)
     }
 
-    /// Submits an active UTXO-management transaction from an explicit plan. The
-    /// contract's pool-size band is not read, but its per-transaction count caps
-    /// are enforced.
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
