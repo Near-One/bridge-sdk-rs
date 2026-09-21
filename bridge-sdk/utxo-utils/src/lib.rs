@@ -614,13 +614,14 @@ impl std::str::FromStr for SplitInput {
 }
 
 /// Explicit shape for an active UTXO-management transaction: the caller states
-/// the direction and the counts, so the connector contract's
-/// `active_management_*` limits and `min_deposit_amount` are not consulted.
+/// the direction and the counts, so the contract's `active_management_*` band
+/// is not consulted. `min_deposit_amount` is, to keep a split from emitting
+/// unspendable pieces.
 #[derive(Clone, Debug)]
 pub enum ActiveManagementPlan {
     /// `input_number` inputs → one output, shrinking the pool.
     Merge {
-        /// At least 2.
+        /// At least 2; exact.
         input_number: usize,
         prefer_largest: bool,
         per_utxo_cap: Option<u128>,
@@ -628,9 +629,10 @@ pub enum ActiveManagementPlan {
         /// keeping the single output a valid change piece for the contract.
         max_total: Option<u128>,
     },
-    /// One input → `output_number` outputs, growing the pool.
+    /// One input → up to `output_number` outputs, growing the pool.
     Split {
-        /// At least 2.
+        /// At least 2, and an upper bound: fewer are emitted when the fee
+        /// would push a piece below `min_deposit_amount`.
         output_number: usize,
         input: SplitInput,
     },
@@ -649,9 +651,8 @@ pub fn plan_active_management(
     chain: ChainKind,
     network: Network,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
-    // Ties are broken on the `txid@vout` key. `HashMap` iteration order varies
-    // between processes, so without the tie-break `Largest` and `Smallest` pick
-    // a different UTXO on each run whenever several share the extreme balance.
+    // Tie-break on the key: `HashMap` order varies between processes, so equal
+    // balances would otherwise make `Largest`/`Smallest` non-deterministic.
     let mut sorted: Vec<(&String, &UTXO)> = utxos.iter().collect();
     sorted.sort_by(|(left_key, left), (right_key, right)| {
         left.balance

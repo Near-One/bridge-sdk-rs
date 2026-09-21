@@ -1021,8 +1021,9 @@ pub enum OmniConnectorSubCommand {
     },
     #[clap(
         about = "Merge UTXOs into a single output, shrinking the connector's pool",
-        long_about = "Merge UTXOs into a single output, shrinking the connector's pool.\n\nThe counts are stated explicitly: the connector contract's \
-active_management_* limits are not read, so this command does exactly what it is told."
+        long_about = "Merge UTXOs into a single output, shrinking the connector's pool.\n\nThe direction is stated explicitly: the contract's \
+active_management_* pool-size band is not read, so this command does exactly what it is told. --input-number is still checked against the contract's \
+max_active_utxo_management_input_number, which it rejects in a callback. The plan is logged at INFO before it is submitted."
     )]
     UtxoMerge {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
@@ -1051,15 +1052,19 @@ active_management_* limits are not read, so this command does exactly what it is
     },
     #[clap(
         about = "Split one UTXO into several outputs, growing the connector's pool",
-        long_about = "Split one UTXO into several outputs, growing the connector's pool.\n\nThe counts are stated explicitly: the connector contract's \
-active_management_* limits are not read, so this command does exactly what it is told."
+        long_about = "Split one UTXO into several outputs, growing the connector's pool.\n\nThe direction is stated explicitly: the contract's \
+active_management_* pool-size band is not read, so this command does exactly what it is told. --output-number is an upper bound and is also checked against \
+the contract's max_active_utxo_management_output_number. The plan is logged at INFO before it is submitted."
     )]
     UtxoSplit {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
-        #[clap(long, help = "How many outputs to produce (at least 2)")]
+        #[clap(
+            long,
+            help = "Upper bound on how many outputs to produce (at least 2); reduced automatically so no piece falls below the contract's min_deposit_amount"
+        )]
         output_number: usize,
         #[clap(
             long,

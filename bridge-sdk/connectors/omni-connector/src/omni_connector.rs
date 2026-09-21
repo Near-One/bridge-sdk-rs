@@ -1299,8 +1299,9 @@ impl OmniConnector {
         Ok(params)
     }
 
-    /// Submits an active UTXO-management transaction from an explicit plan; the
-    /// connector contract's `active_management_*` limits are not read.
+    /// Submits an active UTXO-management transaction from an explicit plan. The
+    /// contract's pool-size band is not read, but its per-transaction count caps
+    /// are enforced.
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,
@@ -1325,6 +1326,32 @@ impl OmniConnector {
             ))
         })?;
 
+        let (active_lower, active_upper, max_input_number, max_output_number, ..) =
+            near_bridge_client
+                .get_active_management_limit(chain)
+                .await?;
+
+        // The contract checks these in a callback, where a breach panics without
+        // showing up in the transaction's own status.
+        match *plan {
+            ActiveManagementPlan::Merge { input_number, .. } => {
+                if input_number > usize::from(max_input_number) {
+                    return Err(BridgeSdkError::UtxoManagementError(format!(
+                        "Merge asked for {input_number} inputs but the contract's \
+                         max_active_utxo_management_input_number is {max_input_number}"
+                    )));
+                }
+            }
+            ActiveManagementPlan::Split { output_number, .. } => {
+                if output_number > usize::from(max_output_number) {
+                    return Err(BridgeSdkError::UtxoManagementError(format!(
+                        "Split asked for {output_number} outputs but the contract's \
+                         max_active_utxo_management_output_number is {max_output_number}"
+                    )));
+                }
+            }
+        }
+
         let (out_points, tx_outs) = utxo_utils::plan_active_management(
             &utxos,
             plan,
@@ -1336,11 +1363,8 @@ impl OmniConnector {
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
-        // The plan is printed at INFO before the NEAR call so the operator can
-        // see which UTXOs are consumed and how they are split or merged.
         let pool_size = utxos.len();
-        // `requested_outputs` is set for a split only: that is the one count the
-        // planner is allowed to reduce.
+        // Only a split's count can be reduced by the planner.
         let (mode, requested_outputs) = match *plan {
             ActiveManagementPlan::Merge { .. } => ("merge", None),
             ActiveManagementPlan::Split { output_number, .. } => ("split", Some(output_number)),
@@ -1361,20 +1385,11 @@ impl OmniConnector {
         let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
         let gas_fee = input_total.saturating_sub(output_total);
 
-        // The contract's active-management band does not constrain the plan, but
-        // printing it next to the pool size lets the operator see at a glance
-        // whether the direction they asked for is the one the pool needs.
-        let (active_lower, active_upper, ..) = near_bridge_client
-            .get_active_management_limit(chain)
-            .await?;
-
         let mut plan_lines = vec![format!(
             "Active UTXO management plan [{mode}]: pool_size={pool_size}, \
              active_limits=[{active_lower}, {active_upper}], \
              min_deposit_amount={min_deposit_amount}, fee_rate={fee_rate}"
         )];
-        // A split shrinks its output count when the fee would push pieces below
-        // `min_deposit_amount`, so say when the plan came out smaller than asked.
         if let Some(requested) = requested_outputs.filter(|asked| tx_outs.len() < *asked) {
             plan_lines.push(format!(
                 "  note: {requested} outputs requested, reduced to {} to keep every piece \
