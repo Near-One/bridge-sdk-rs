@@ -49,13 +49,6 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
-#[clap(name = "mode")]
-pub enum ActiveManagementModeArg {
-    Merge,
-    Split,
-}
-
 #[derive(Clone, Debug)]
 pub struct SplitInputArg(SplitInput);
 
@@ -1045,57 +1038,53 @@ pub enum OmniConnectorSubCommand {
         config_cli: CliConfig,
     },
     #[clap(
-        about = "Perform UTXO rebalancing for UTXO Chain Connector",
-        long_about = "Perform UTXO rebalancing for UTXO Chain Connector.\n\nThe direction and the counts are stated explicitly: the connector contract's \
+        about = "Merge UTXOs into a single output, shrinking the connector's pool",
+        long_about = "Merge UTXOs into a single output, shrinking the connector's pool.\n\nThe counts are stated explicitly: the connector contract's \
 active_management_* limits are not read, so this command does exactly what it is told."
     )]
-    ActiveUTXOManagement {
+    UtxoMerge {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
-        #[clap(
-            long,
-            value_enum,
-            help = "merge: many inputs into one output, shrinking the pool. split: one input into many outputs, growing it"
-        )]
-        mode: ActiveManagementModeArg,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
-
+        #[clap(long, help = "How many UTXOs to consume (at least 2)")]
+        input_number: usize,
         #[clap(
             long,
-            required_if_eq("mode", "merge"),
-            help = "[merge] How many UTXOs to consume (at least 2)"
+            help = "Take from the largest end of the pool instead of the smallest (use ahead of a large withdrawal)"
         )]
-        input_number: Option<usize>,
+        prefer_largest: bool,
         #[clap(
             long,
-            help = "[merge] Take from the largest end of the pool instead of the smallest (use ahead of a large withdrawal)"
-        )]
-        merge_largest: bool,
-        #[clap(
-            long,
-            help = "[merge] Skip any single UTXO larger than this (defaults to no cap)"
+            help = "Skip any single UTXO larger than this (defaults to no cap)"
         )]
         per_utxo_cap: Option<u128>,
         #[clap(
             long,
-            help = "[merge] Skip any UTXO that would push the merged total to this or above, keeping the output a valid change piece (defaults to no cap)"
+            help = "Skip any UTXO that would push the merged total to this or above, keeping the output a valid change piece (defaults to no cap)"
         )]
         max_total: Option<u128>,
-
-        #[clap(
-            long,
-            required_if_eq("mode", "split"),
-            help = "[split] How many outputs to produce (at least 2)"
-        )]
-        output_number: Option<usize>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(
+        about = "Split one UTXO into several outputs, growing the connector's pool",
+        long_about = "Split one UTXO into several outputs, growing the connector's pool.\n\nThe counts are stated explicitly: the connector contract's \
+active_management_* limits are not read, so this command does exactly what it is told."
+    )]
+    UtxoSplit {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
+        #[clap(long, help = "How many outputs to produce (at least 2)")]
+        output_number: usize,
         #[clap(
             long,
             default_value = "largest",
-            help = "[split] Which UTXO to spend: 'largest', 'smallest' or a 'txid@vout' key"
+            help = "Which UTXO to spend: 'largest', 'smallest' or a 'txid@vout' key"
         )]
-        split_input: SplitInputArg,
-
+        input: SplitInputArg,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1258,7 +1247,8 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::BtcRequestRefund { .. }
         | Cmd::BtcVerifyRefundFinalize { .. }
         | Cmd::BtcExecuteRefund { .. }
-        | Cmd::ActiveUTXOManagement { .. } => false,
+        | Cmd::UtxoMerge { .. }
+        | Cmd::UtxoSplit { .. } => false,
         // `Internal` wraps hidden subcommands; classify each explicitly so a
         // future addition must be triaged for dry-run safety here too.
         Cmd::Internal { subcommand } => match subcommand {
@@ -2334,30 +2324,42 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::ActiveUTXOManagement {
+        OmniConnectorSubCommand::UtxoMerge {
             chain,
-            mode,
             fee_rate,
             input_number,
-            merge_largest,
+            prefer_largest,
             per_utxo_cap,
             max_total,
-            output_number,
-            split_input,
             config_cli,
         } => {
-            // `required_if_eq` on the args guarantees the count for the chosen mode.
-            let plan = match mode {
-                ActiveManagementModeArg::Merge => ActiveManagementPlan::Merge {
-                    input_number: input_number.expect("--input-number is required for merge"),
-                    prefer_largest: merge_largest,
-                    per_utxo_cap,
-                    max_total,
-                },
-                ActiveManagementModeArg::Split => ActiveManagementPlan::Split {
-                    output_number: output_number.expect("--output-number is required for split"),
-                    input: split_input.0,
-                },
+            let plan = ActiveManagementPlan::Merge {
+                input_number,
+                prefer_largest,
+                per_utxo_cap,
+                max_total,
+            };
+
+            omni_connector(network, config_cli)
+                .active_utxo_management(
+                    chain.into(),
+                    &plan,
+                    fee_rate,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::UtxoSplit {
+            chain,
+            fee_rate,
+            output_number,
+            input,
+            config_cli,
+        } => {
+            let plan = ActiveManagementPlan::Split {
+                output_number,
+                input: input.0,
             };
 
             omni_connector(network, config_cli)
