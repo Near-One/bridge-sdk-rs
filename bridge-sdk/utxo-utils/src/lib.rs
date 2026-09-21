@@ -606,10 +606,6 @@ impl std::str::FromStr for SplitInput {
     }
 }
 
-/// Explicit shape for an active UTXO-management transaction: the caller states
-/// the direction and the counts, so the contract's `active_management_*` band
-/// is not consulted. `min_deposit_amount` is, to keep a split from emitting
-/// unspendable pieces.
 #[derive(Clone, Debug)]
 pub enum ActiveManagementPlan {
     /// `input_number` inputs → one output, shrinking the pool.
