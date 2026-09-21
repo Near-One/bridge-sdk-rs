@@ -166,6 +166,38 @@ struct CliConfig {
     #[arg(long)]
     enable_orchard: Option<bool>,
 
+    #[arg(
+        long,
+        help = "BTC pool size above which withdrawals switch from the random selector to the consolidating anchor-fill selector (default: the contract's active_management_upper_limit)"
+    )]
+    btc_utxo_algorithm_switch_threshold: Option<u32>,
+    #[arg(
+        long,
+        help = "BTC pool size below which a withdrawal must split its change into more outputs than it consumes inputs, growing the pool (default: the contract's passive_management_lower_limit)"
+    )]
+    btc_utxo_split_below: Option<u32>,
+    #[arg(
+        long,
+        help = "BTC pool size above which a withdrawal must consume more inputs than it creates change outputs, shrinking the pool (default: the contract's passive_management_upper_limit)"
+    )]
+    btc_utxo_merge_above: Option<u32>,
+
+    #[arg(
+        long,
+        help = "Zcash pool size above which withdrawals switch from the random selector to the consolidating anchor-fill selector (default: the contract's active_management_upper_limit)"
+    )]
+    zcash_utxo_algorithm_switch_threshold: Option<u32>,
+    #[arg(
+        long,
+        help = "Zcash pool size below which a withdrawal must split its change into more outputs than it consumes inputs, growing the pool (default: the contract's passive_management_lower_limit)"
+    )]
+    zcash_utxo_split_below: Option<u32>,
+    #[arg(
+        long,
+        help = "Zcash pool size above which a withdrawal must consume more inputs than it creates change outputs, shrinking the pool (default: the contract's passive_management_upper_limit)"
+    )]
+    zcash_utxo_merge_above: Option<u32>,
+
     #[arg(long)]
     starknet_rpc: Option<String>,
     #[arg(long)]
@@ -297,6 +329,17 @@ impl CliConfig {
             zcash: self.zcash.or(other.zcash),
             enable_orchard: self.enable_orchard.or(other.enable_orchard),
 
+            btc_utxo_algorithm_switch_threshold: self
+                .btc_utxo_algorithm_switch_threshold
+                .or(other.btc_utxo_algorithm_switch_threshold),
+            btc_utxo_split_below: self.btc_utxo_split_below.or(other.btc_utxo_split_below),
+            btc_utxo_merge_above: self.btc_utxo_merge_above.or(other.btc_utxo_merge_above),
+            zcash_utxo_algorithm_switch_threshold: self
+                .zcash_utxo_algorithm_switch_threshold
+                .or(other.zcash_utxo_algorithm_switch_threshold),
+            zcash_utxo_split_below: self.zcash_utxo_split_below.or(other.zcash_utxo_split_below),
+            zcash_utxo_merge_above: self.zcash_utxo_merge_above.or(other.zcash_utxo_merge_above),
+
             starknet_rpc: self.starknet_rpc.or(other.starknet_rpc),
             starknet_private_key: self.starknet_private_key.or(other.starknet_private_key),
             starknet_account_address: self
@@ -313,6 +356,17 @@ impl CliConfig {
             aptos_bridge_address: self.aptos_bridge_address.or(other.aptos_bridge_address),
 
             config: self.config.or(other.config),
+        }
+    }
+}
+
+fn env_u32(name: &str) -> Option<u32> {
+    let raw = env::var(name).ok()?;
+    match raw.parse() {
+        Ok(value) => Some(value),
+        Err(err) => {
+            eprintln!("Ignoring {name}: '{raw}' is not a valid u32 ({err})");
+            None
         }
     }
 }
@@ -403,6 +457,13 @@ fn env_config() -> CliConfig {
         zcash_connector: env::var("ZCASH_CONNECTOR").ok(),
         zcash: env::var("ZCASH").ok(),
         enable_orchard: env::var("ENABLE_ORCHARD").ok().map(|s| s == "true"),
+
+        btc_utxo_algorithm_switch_threshold: env_u32("BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD"),
+        btc_utxo_split_below: env_u32("BTC_UTXO_SPLIT_BELOW"),
+        btc_utxo_merge_above: env_u32("BTC_UTXO_MERGE_ABOVE"),
+        zcash_utxo_algorithm_switch_threshold: env_u32("ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD"),
+        zcash_utxo_split_below: env_u32("ZCASH_UTXO_SPLIT_BELOW"),
+        zcash_utxo_merge_above: env_u32("ZCASH_UTXO_MERGE_ABOVE"),
 
         starknet_rpc: env::var("STARKNET_RPC").ok(),
         starknet_private_key: env::var("STARKNET_PRIVATE_KEY").ok(),
@@ -520,6 +581,15 @@ fn default_config(network: Network) -> CliConfig {
             zcash: Some(defaults::ZCASH_MAINNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_MAINNET),
 
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_MAINNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_MAINNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_MAINNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_MAINNET,
+
             starknet_rpc: Some(defaults::STARKNET_RPC_MAINNET.to_owned()),
             starknet_private_key: None,
             starknet_account_address: None,
@@ -636,6 +706,15 @@ fn default_config(network: Network) -> CliConfig {
             zcash: Some(defaults::ZCASH_TESTNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_TESTNET),
 
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_TESTNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_TESTNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_TESTNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_TESTNET,
+
             starknet_rpc: Some(defaults::STARKNET_RPC_TESTNET.to_owned()),
             starknet_private_key: None,
             starknet_account_address: None,
@@ -751,6 +830,15 @@ fn default_config(network: Network) -> CliConfig {
             zcash_connector: Some(defaults::ZCASH_CONNECTOR_DEVNET.to_owned()),
             zcash: Some(defaults::ZCASH_DEVNET.to_owned()),
             enable_orchard: Some(defaults::ENABLE_ORCHARD_BUNDLE_DEVNET),
+
+            btc_utxo_algorithm_switch_threshold:
+                defaults::BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET,
+            btc_utxo_split_below: defaults::BTC_UTXO_SPLIT_BELOW_DEVNET,
+            btc_utxo_merge_above: defaults::BTC_UTXO_MERGE_ABOVE_DEVNET,
+            zcash_utxo_algorithm_switch_threshold:
+                defaults::ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET,
+            zcash_utxo_split_below: defaults::ZCASH_UTXO_SPLIT_BELOW_DEVNET,
+            zcash_utxo_merge_above: defaults::ZCASH_UTXO_MERGE_ABOVE_DEVNET,
 
             starknet_rpc: Some(defaults::STARKNET_RPC_DEVNET.to_owned()),
             starknet_private_key: None,

@@ -65,6 +65,13 @@ pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
 pub const ZCASH_MAINNET: &str = "nzec.bridge.near";
 pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
 
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_MAINNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_MAINNET: Option<u32> = None;
+
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0x05f9a4a841dfb7bb3cde33073b2450fe45dcd407fb6c0985a274b0e943ad8598";
@@ -142,6 +149,13 @@ pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
 
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_TESTNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_TESTNET: Option<u32> = None;
+
 pub const STARKNET_RPC_TESTNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x02830785fd87b181c5391819f4a5e6a0b2d76c49d92b7f748a2433495eead162";
@@ -218,6 +232,13 @@ pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/
 pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_DEVNET: bool = true;
+
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_DEVNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_DEVNET: Option<u32> = None;
 
 pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =

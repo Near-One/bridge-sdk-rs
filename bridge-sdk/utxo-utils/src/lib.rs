@@ -6,7 +6,7 @@ pub use anchor_fill::choose_utxos_anchor_fill;
 use crate::address::UTXOAddress;
 use address::Network;
 use bitcoin::consensus::deserialize;
-use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut};
+use bitcoin::{Amount, OutPoint, ScriptBuf, Transaction as BtcTransaction, TxOut, Txid};
 use k256::elliptic_curve::subtle::CtOption;
 use omni_types::ChainKind;
 use serde_with::{serde_as, DisplayFromStr};
@@ -202,6 +202,40 @@ pub struct WithdrawSelectionParams {
     pub passive_management_lower_limit: u32,
     pub passive_management_upper_limit: u32,
     pub active_management_upper_limit: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WithdrawSelectionOverrides {
+    /// Replaces `active_management_upper_limit`: above this the withdraw path
+    /// switches from the random selector to the consolidating anchor-fill one.
+    pub algorithm_switch_threshold: Option<u32>,
+    /// Replaces `passive_management_lower_limit`: below this a withdrawal
+    /// splits change into more outputs than it consumes inputs.
+    pub split_below: Option<u32>,
+    /// Replaces `passive_management_upper_limit`: above this a withdrawal
+    /// consumes more inputs than it creates change outputs.
+    pub merge_above: Option<u32>,
+}
+
+impl WithdrawSelectionOverrides {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.algorithm_switch_threshold.is_none()
+            && self.split_below.is_none()
+            && self.merge_above.is_none()
+    }
+
+    pub fn apply_to(&self, params: &mut WithdrawSelectionParams) {
+        if let Some(threshold) = self.algorithm_switch_threshold {
+            params.active_management_upper_limit = threshold;
+        }
+        if let Some(limit) = self.split_below {
+            params.passive_management_lower_limit = limit;
+        }
+        if let Some(limit) = self.merge_above {
+            params.passive_management_upper_limit = limit;
+        }
+    }
 }
 
 /// Splits `change` into `n` outputs each strictly less than `max_per_piece`
@@ -539,123 +573,247 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
     ))
 }
 
+/// Which UTXO a [`ActiveManagementPlan::Split`] consumes.
+#[derive(Clone, Debug)]
+pub enum SplitInput {
+    Largest,
+    Smallest,
+    /// Keyed as `"{txid}@{vout}"`.
+    Utxo(String),
+}
+
+impl std::str::FromStr for SplitInput {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "largest" => Ok(Self::Largest),
+            "smallest" => Ok(Self::Smallest),
+            key => {
+                let (txid, vout) = key.split_once('@').ok_or_else(|| {
+                    format!("expected 'largest', 'smallest' or a 'txid@vout' key, got '{key}'")
+                })?;
+                let txid: Txid = txid
+                    .parse()
+                    .map_err(|e| format!("Invalid txid '{txid}' in '{key}': {e}"))?;
+                let vout: u32 = vout
+                    .parse()
+                    .map_err(|e| format!("Invalid vout '{vout}' in '{key}': {e}"))?;
+
+                Ok(Self::Utxo(format!("{txid}@{vout}")))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ActiveManagementPlan {
+    Merge {
+        input_number: usize,
+        prefer_largest: bool,
+        /// Skip any UTXO larger than this
+        per_utxo_cap: Option<u128>,
+        /// Skip any UTXO that would push the merged total to this or above,
+        /// keeping the single output a valid change piece for the contract.
+        max_total: Option<u128>,
+    },
+    Split {
+        output_number: usize,
+        input: SplitInput,
+    },
+}
+
+/// Builds the inputs and outputs for an active UTXO-management transaction
+/// from an explicit [`ActiveManagementPlan`].
 #[allow(clippy::implicit_hasher)]
 #[allow(clippy::too_many_arguments)]
-pub fn choose_utxos_for_active_management(
+pub fn plan_active_management(
     utxos: &HashMap<String, UTXO>,
+    plan: &ActiveManagementPlan,
     fee_rate: u64,
     change_address: &str,
-    active_management_limit: (usize, usize),
-    max_active_utxo_management_input_number: usize,
-    max_active_utxo_management_output_number: usize,
-    min_deposit_amount: usize,
+    min_deposit_amount: u64,
     chain: ChainKind,
     network: Network,
-    merge_largest: bool,
-    max_change_amount: u128,
-    merge_cap_divisor: u128,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
-    let mut utxo_list: Vec<(&String, &UTXO)> = utxos.iter().collect();
-    utxo_list.sort_by_key(|a| a.1.balance);
+    let mut sorted: Vec<(&String, &UTXO)> = utxos.iter().collect();
+    sorted.sort_by(|(left_key, left), (right_key, right)| {
+        left.balance
+            .cmp(&right.balance)
+            .then_with(|| left_key.cmp(right_key))
+    });
 
-    let mut selected: Vec<(String, UTXO)> = Vec::new();
-    let mut utxos_balance: u64 = 0;
-
-    if utxo_list.len() < active_management_limit.0 {
-        let utxo_amount = 1;
-        for i in 0..utxo_amount {
-            utxos_balance += utxo_list[utxo_list.len() - 1 - i].1.balance;
-            let (k, v) = utxo_list[i];
-            selected.push((k.clone(), v.clone()));
-        }
-
-        let output_amount = std::cmp::min(
-            active_management_limit.0 - utxo_list.len(),
-            std::cmp::min(
-                usize::try_from(utxos_balance)
-                    .map_err(|e| format!("Error on convert u64 into usize: {e}"))?
-                    / min_deposit_amount
-                    - 1,
-                max_active_utxo_management_output_number,
-            ),
-        );
-
-        let output_amount = output_amount
-            .try_into()
-            .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
-
-        let gas_fee: u64 = get_gas_fee(chain, 1, output_amount, fee_rate, false);
-        let out_points = utxo_to_out_points(selected)?;
-
-        let tx_outs = get_tx_outs_utxo_management(
-            change_address,
-            output_amount,
-            utxos_balance - gas_fee,
-            chain,
-            network,
-        )?;
-
-        Ok((out_points, tx_outs))
-    } else if utxo_list.len() > active_management_limit.1 {
-        let utxo_amount = std::cmp::min(
-            utxo_list.len() - active_management_limit.1 + 1,
-            max_active_utxo_management_input_number,
-        );
-        if merge_largest {
-            if merge_cap_divisor == 0 {
-                return Err("merge_cap_divisor must be positive".to_string());
-            }
-            let per_utxo_cap = max_change_amount / merge_cap_divisor;
-            for utxo_item in utxo_list.iter().rev() {
-                if selected.len() >= utxo_amount {
-                    break;
-                }
-                let next_balance = u128::from(utxo_item.1.balance);
-                if next_balance > per_utxo_cap {
-                    continue;
-                }
-                if u128::from(utxos_balance) + next_balance >= max_change_amount {
-                    continue;
-                }
-                utxos_balance += utxo_item.1.balance;
-                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
-            }
-            if selected.len() < 2 {
-                return Err(format!(
-                    "merge-largest: need at least 2 UTXOs <= max_change_amount/{merge_cap_divisor} ({per_utxo_cap}) to merge"
-                ));
-            }
-        } else {
-            for utxo_item in utxo_list.iter().take(utxo_amount) {
-                utxos_balance += utxo_item.1.balance;
-                selected.push((utxo_item.0.clone(), utxo_item.1.clone()));
-            }
-        }
-        let gas_fee: u64 = get_gas_fee(
-            chain,
-            selected
-                .len()
-                .try_into()
-                .map_err(|e| format!("Error on convert usize into u64: {e}"))?,
-            1,
+    match *plan {
+        ActiveManagementPlan::Merge {
+            input_number,
+            prefer_largest,
+            per_utxo_cap,
+            max_total,
+        } => merge(
+            &sorted,
+            input_number,
+            prefer_largest,
+            per_utxo_cap,
+            max_total,
             fee_rate,
-            false,
-        );
-        let out_points = utxo_to_out_points(selected)?;
-
-        let tx_outs = get_tx_outs(
             change_address,
-            utxos_balance - gas_fee,
-            change_address,
-            0,
             chain,
             network,
-        )?;
-
-        Ok((out_points, tx_outs))
-    } else {
-        Err("Incorrect number of UTXOs for active management".to_string())
+        ),
+        ActiveManagementPlan::Split {
+            output_number,
+            ref input,
+        } => split(
+            &sorted,
+            utxos,
+            output_number,
+            input,
+            fee_rate,
+            change_address,
+            min_deposit_amount,
+            chain,
+            network,
+        ),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge(
+    sorted: &[(&String, &UTXO)],
+    input_number: usize,
+    prefer_largest: bool,
+    per_utxo_cap: Option<u128>,
+    max_total: Option<u128>,
+    fee_rate: u64,
+    change_address: &str,
+    chain: ChainKind,
+    network: Network,
+) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+    if input_number < 2 {
+        return Err(format!(
+            "Merge needs at least 2 inputs to shrink the pool (got input_number={input_number})"
+        ));
+    }
+
+    let mut selected: Vec<(String, UTXO)> = Vec::with_capacity(input_number);
+    let mut total: u64 = 0;
+    let mut skipped_by_cap = 0usize;
+
+    let walk: Box<dyn Iterator<Item = &(&String, &UTXO)>> = if prefer_largest {
+        Box::new(sorted.iter().rev())
+    } else {
+        Box::new(sorted.iter())
+    };
+
+    for (key, utxo) in walk {
+        if selected.len() == input_number {
+            break;
+        }
+        let balance = u128::from(utxo.balance);
+        if per_utxo_cap.is_some_and(|cap| balance > cap) {
+            skipped_by_cap += 1;
+            continue;
+        }
+        let next_total = u128::from(total)
+            .checked_add(balance)
+            .ok_or_else(|| "Merged total overflows u128".to_string())?;
+        if max_total.is_some_and(|cap| next_total >= cap) {
+            skipped_by_cap += 1;
+            continue;
+        }
+        total = total
+            .checked_add(utxo.balance)
+            .ok_or_else(|| "Merged total overflows u64".to_string())?;
+        selected.push(((*key).clone(), (*utxo).clone()));
+    }
+
+    if selected.len() < input_number {
+        return Err(format!(
+            "Merge asked for {input_number} inputs but only {} of the {} pool UTXOs are eligible \
+             ({skipped_by_cap} excluded by per_utxo_cap/max_total)",
+            selected.len(),
+            sorted.len()
+        ));
+    }
+
+    let num_inputs = u64::try_from(selected.len())
+        .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
+    let gas_fee = get_gas_fee(chain, num_inputs, 1, fee_rate, false);
+    let amount = total
+        .checked_sub(gas_fee)
+        .ok_or_else(|| format!("Merged total {total} does not cover the mining fee {gas_fee}"))?;
+    if amount == 0 {
+        return Err(format!(
+            "Merged total {total} leaves nothing after the mining fee {gas_fee}"
+        ));
+    }
+
+    let out_points = utxo_to_out_points(selected)?;
+    let tx_outs = get_tx_outs_utxo_management(change_address, 1, amount, chain, network)?;
+
+    Ok((out_points, tx_outs))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn split(
+    sorted: &[(&String, &UTXO)],
+    utxos: &HashMap<String, UTXO>,
+    output_number: usize,
+    input: &SplitInput,
+    fee_rate: u64,
+    change_address: &str,
+    min_deposit_amount: u64,
+    chain: ChainKind,
+    network: Network,
+) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+    if output_number < 2 {
+        return Err(format!(
+            "Split needs at least 2 outputs to grow the pool (got output_number={output_number})"
+        ));
+    }
+    if min_deposit_amount == 0 {
+        return Err("min_deposit_amount must be positive".to_string());
+    }
+
+    let (key, utxo) = match input {
+        SplitInput::Largest => sorted
+            .last()
+            .map(|(k, u)| ((*k).clone(), (*u).clone()))
+            .ok_or_else(|| "UTXO pool is empty".to_string())?,
+        SplitInput::Smallest => sorted
+            .first()
+            .map(|(k, u)| ((*k).clone(), (*u).clone()))
+            .ok_or_else(|| "UTXO pool is empty".to_string())?,
+        SplitInput::Utxo(key) => utxos
+            .get(key)
+            .map(|u| (key.clone(), u.clone()))
+            .ok_or_else(|| format!("UTXO '{key}' is not in the pool"))?,
+    };
+
+    let mut outputs = u64::try_from(output_number)
+        .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
+
+    let (outputs, amount) = loop {
+        if outputs < 2 {
+            return Err(format!(
+                "Cannot split UTXO '{key}' holding {} sat into at least 2 outputs of \
+                 {min_deposit_amount} sat at fee rate {fee_rate}",
+                utxo.balance
+            ));
+        }
+        let gas_fee = get_gas_fee(chain, 1, outputs, fee_rate, false);
+        if let Some(amount) = utxo.balance.checked_sub(gas_fee) {
+            if amount / outputs >= min_deposit_amount {
+                break (outputs, amount);
+            }
+        }
+        outputs -= 1;
+    };
+
+    let out_points = utxo_to_out_points(vec![(key, utxo)])?;
+    let tx_outs = get_tx_outs_utxo_management(change_address, outputs, amount, chain, network)?;
+
+    Ok((out_points, tx_outs))
 }
 
 pub fn get_tx_outs_multi(
@@ -819,6 +977,10 @@ pub fn get_tx_outs_utxo_management(
     let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
         format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
     })?;
+
+    if output_amount == 0 {
+        return Err("output_amount must be positive".to_string());
+    }
 
     let one_amount = amount / output_amount;
     let mut res = vec![TxOut {
@@ -1109,5 +1271,444 @@ mod tests {
         assert_eq!(outs.len(), 2);
         assert!(outs[0].script_pubkey.is_p2sh());
         assert!(outs[1].script_pubkey.is_p2pkh());
+    }
+
+    // The active-management tests run on Zcash, whose fee is
+    // `5000 * max(num_input, num_output)` (see `get_gas_fee`).
+
+    const ZCASH_CHANGE_ADDRESS: &str = TRANSPARENT_P2PKH_MAINNET;
+
+    fn mk_utxo(idx: usize, balance: u64) -> (String, UTXO) {
+        (
+            format!("{idx:064x}@0"),
+            UTXO {
+                path: format!("m/0/{idx}"),
+                tx_bytes: vec![],
+                vout: 0,
+                balance,
+            },
+        )
+    }
+
+    fn management_pool() -> HashMap<String, UTXO> {
+        [10_000, 20_000, 30_000, 100_000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, balance)| mk_utxo(i, balance))
+            .collect()
+    }
+
+    fn run_plan_with_min(
+        pool: &HashMap<String, UTXO>,
+        plan: &ActiveManagementPlan,
+        min_deposit_amount: u64,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+        plan_active_management(
+            pool,
+            plan,
+            0,
+            ZCASH_CHANGE_ADDRESS,
+            min_deposit_amount,
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+    }
+
+    /// Floor of 1 sat: the plan is then driven purely by the requested counts,
+    /// which keeps the merge cases and the even-split cases readable.
+    fn run_plan(
+        pool: &HashMap<String, UTXO>,
+        plan: &ActiveManagementPlan,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+        run_plan_with_min(pool, plan, 1)
+    }
+
+    fn balances(pool: &HashMap<String, UTXO>, out_points: &[OutPoint]) -> Vec<u64> {
+        out_points
+            .iter()
+            .map(|op| pool[&format!("{}@{}", op.txid, op.vout)].balance)
+            .collect()
+    }
+
+    fn merge_plan(input_number: usize, prefer_largest: bool) -> ActiveManagementPlan {
+        ActiveManagementPlan::Merge {
+            input_number,
+            prefer_largest,
+            per_utxo_cap: None,
+            max_total: None,
+        }
+    }
+
+    #[test]
+    fn merge_consumes_smallest_utxos_into_one_output() {
+        let pool = management_pool();
+        let (out_points, tx_outs) = run_plan(&pool, &merge_plan(3, false)).unwrap();
+
+        assert_eq!(balances(&pool, &out_points), vec![10_000, 20_000, 30_000]);
+        assert_eq!(tx_outs.len(), 1);
+        // 60_000 in, fee = 5000 * max(3, 1).
+        assert_eq!(tx_outs[0].value.to_sat(), 60_000 - 15_000);
+    }
+
+    #[test]
+    fn merge_prefer_largest_walks_from_the_other_end() {
+        let pool = management_pool();
+        let (out_points, tx_outs) = run_plan(&pool, &merge_plan(2, true)).unwrap();
+
+        assert_eq!(balances(&pool, &out_points), vec![100_000, 30_000]);
+        assert_eq!(tx_outs[0].value.to_sat(), 130_000 - 10_000);
+    }
+
+    #[test]
+    fn merge_skips_utxos_above_per_utxo_cap() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Merge {
+            input_number: 2,
+            prefer_largest: true,
+            per_utxo_cap: Some(25_000),
+            max_total: None,
+        };
+        let (out_points, _) = run_plan(&pool, &plan).unwrap();
+
+        // 100k and 30k are over the cap, so the largest-first walk lands on 20k and 10k.
+        assert_eq!(balances(&pool, &out_points), vec![20_000, 10_000]);
+    }
+
+    #[test]
+    fn merge_skips_utxos_that_would_breach_max_total() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Merge {
+            input_number: 2,
+            prefer_largest: false,
+            per_utxo_cap: None,
+            max_total: Some(35_000),
+        };
+        let (out_points, _) = run_plan(&pool, &plan).unwrap();
+
+        // 10k + 20k = 30k fits; adding 30k or 100k would reach the cap.
+        assert_eq!(balances(&pool, &out_points), vec![10_000, 20_000]);
+    }
+
+    #[test]
+    fn merge_reports_how_many_utxos_were_eligible() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Merge {
+            input_number: 3,
+            prefer_largest: false,
+            per_utxo_cap: Some(25_000),
+            max_total: None,
+        };
+        let err = run_plan(&pool, &plan).unwrap_err();
+
+        assert!(err.contains("only 2"), "{err}");
+        assert!(err.contains("2 excluded"), "{err}");
+    }
+
+    #[test]
+    fn merge_needs_at_least_two_inputs() {
+        let pool = management_pool();
+        assert!(run_plan(&pool, &merge_plan(1, false))
+            .unwrap_err()
+            .contains("at least 2 inputs"));
+    }
+
+    #[test]
+    fn merge_rejects_a_total_below_the_fee() {
+        let pool: HashMap<String, UTXO> = [1, 2]
+            .into_iter()
+            .enumerate()
+            .map(|(i, b)| mk_utxo(i, b))
+            .collect();
+        // fee = 5000 * max(2, 1) = 10_000 against a 3 sat total.
+        assert!(run_plan(&pool, &merge_plan(2, false))
+            .unwrap_err()
+            .contains("does not cover the mining fee"));
+    }
+
+    #[test]
+    fn split_breaks_the_largest_utxo_into_even_pieces() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 4,
+            input: SplitInput::Largest,
+        };
+        let (out_points, tx_outs) = run_plan(&pool, &plan).unwrap();
+
+        assert_eq!(balances(&pool, &out_points), vec![100_000]);
+        // fee = 5000 * max(1, 4) = 20_000, so 80_000 across 4 outputs.
+        assert_eq!(
+            tx_outs.iter().map(|o| o.value.to_sat()).collect::<Vec<_>>(),
+            vec![20_000; 4]
+        );
+    }
+
+    #[test]
+    fn split_can_target_the_smallest_or_a_named_utxo() {
+        // The default pool's smallest UTXO is exactly the two-output fee, so use
+        // a pool where either end survives it.
+        let pool: HashMap<String, UTXO> = [30_000, 100_000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, balance)| mk_utxo(i, balance))
+            .collect();
+
+        let plan = ActiveManagementPlan::Split {
+            output_number: 2,
+            input: SplitInput::Smallest,
+        };
+        let (out_points, tx_outs) = run_plan(&pool, &plan).unwrap();
+        assert_eq!(balances(&pool, &out_points), vec![30_000]);
+        assert_eq!(
+            tx_outs.iter().map(|o| o.value.to_sat()).collect::<Vec<_>>(),
+            vec![10_000; 2]
+        );
+
+        let plan = ActiveManagementPlan::Split {
+            output_number: 2,
+            input: SplitInput::Utxo(mk_utxo(1, 0).0),
+        };
+        let (out_points, _) = run_plan(&pool, &plan).unwrap();
+        assert_eq!(balances(&pool, &out_points), vec![100_000]);
+    }
+
+    #[test]
+    fn largest_and_smallest_break_ties_on_the_utxo_key() {
+        // Three UTXOs at the same balance: the pick must not depend on
+        // `HashMap` iteration order, which varies between processes.
+        let pool: HashMap<String, UTXO> = (0..3).map(|i| mk_utxo(i, 1_025_000)).collect();
+
+        let pick = |input: SplitInput| {
+            let plan = ActiveManagementPlan::Split {
+                output_number: 2,
+                input,
+            };
+            let (out_points, _) = run_plan(&pool, &plan).unwrap();
+            format!("{}@{}", out_points[0].txid, out_points[0].vout)
+        };
+
+        let mut keys: Vec<&String> = pool.keys().collect();
+        keys.sort();
+        assert_eq!(&pick(SplitInput::Smallest), *keys.first().unwrap());
+        assert_eq!(&pick(SplitInput::Largest), *keys.last().unwrap());
+
+        // Repeat runs in the same process still agree, and so must runs in a
+        // fresh process, which is what the ordering guarantees.
+        assert_eq!(pick(SplitInput::Largest), pick(SplitInput::Largest));
+    }
+
+    #[test]
+    fn split_rejects_an_unknown_utxo_key() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 2,
+            input: SplitInput::Utxo("deadbeef@1".to_owned()),
+        };
+        assert!(run_plan(&pool, &plan)
+            .unwrap_err()
+            .contains("is not in the pool"));
+    }
+
+    #[test]
+    fn split_needs_at_least_two_outputs() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 1,
+            input: SplitInput::Largest,
+        };
+        assert!(run_plan(&pool, &plan)
+            .unwrap_err()
+            .contains("at least 2 outputs"));
+    }
+
+    #[test]
+    fn split_shrinks_output_number_to_keep_pieces_above_min_deposit() {
+        // 100k at a 10k floor: 4 outputs cost 20k fee and leave 20k pieces, but
+        // at a 30k floor only 2 outputs clear it (10k fee, 45k pieces).
+        let pool: HashMap<String, UTXO> = std::iter::once(mk_utxo(0, 100_000)).collect();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 4,
+            input: SplitInput::Largest,
+        };
+
+        let (_, tx_outs) = run_plan_with_min(&pool, &plan, 10_000).unwrap();
+        assert_eq!(tx_outs.len(), 4);
+
+        let (_, tx_outs) = run_plan_with_min(&pool, &plan, 30_000).unwrap();
+        assert_eq!(tx_outs.len(), 2);
+        assert_eq!(
+            tx_outs.iter().map(|o| o.value.to_sat()).collect::<Vec<_>>(),
+            vec![45_000; 2]
+        );
+    }
+
+    #[test]
+    fn split_rejects_a_balance_too_small_for_two_pieces() {
+        let pool: HashMap<String, UTXO> = std::iter::once(mk_utxo(0, 20_001)).collect();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 4,
+            input: SplitInput::Largest,
+        };
+        // Down at 2 outputs the fee is 10_000, leaving 10_001 for pieces of
+        // 5_000 — below a 20_000 floor, so no shape works.
+        let err = run_plan_with_min(&pool, &plan, 20_000).unwrap_err();
+        assert!(err.contains("at least 2 outputs"), "{err}");
+    }
+
+    #[test]
+    fn split_rejects_a_zero_min_deposit_amount() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 2,
+            input: SplitInput::Largest,
+        };
+        let err = run_plan_with_min(&pool, &plan, 0).unwrap_err();
+        assert!(err.contains("min_deposit_amount must be positive"), "{err}");
+    }
+
+    #[test]
+    fn get_tx_outs_utxo_management_rejects_zero_outputs() {
+        let err = get_tx_outs_utxo_management(
+            ZCASH_CHANGE_ADDRESS,
+            0,
+            100_000,
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect_err("zero outputs must not divide by zero");
+        assert!(err.contains("output_amount must be positive"), "{err}");
+    }
+
+    /// PR-318 shape check on Bitcoin, whose fee actually depends on `fee_rate`
+    /// and on the output count: outputs plus fee must equal the spent input,
+    /// and no piece may fall below the floor.
+    #[test]
+    fn split_conserves_value_and_clears_the_floor_on_bitcoin() {
+        const BTC_CHANGE_ADDRESS: &str = "bc1qtgjgs0vz4ffaez59y64vytjp6034rpezgyh8jt";
+        const FEE_RATE: u64 = 5;
+        const MIN_DEPOSIT: u64 = 5_000;
+
+        let pool: HashMap<String, UTXO> = [100_000, 500_000, 2_000_000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, balance)| mk_utxo(i, balance))
+            .collect();
+
+        let (out_points, tx_outs) = plan_active_management(
+            &pool,
+            &ActiveManagementPlan::Split {
+                output_number: 10,
+                input: SplitInput::Largest,
+            },
+            FEE_RATE,
+            BTC_CHANGE_ADDRESS,
+            MIN_DEPOSIT,
+            ChainKind::Btc,
+            Network::Mainnet,
+        )
+        .unwrap();
+
+        assert_eq!(balances(&pool, &out_points), vec![2_000_000]);
+
+        let out_number = u64::try_from(tx_outs.len()).unwrap();
+        let fee = get_gas_fee(ChainKind::Btc, 1, out_number, FEE_RATE, false);
+        let out_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+        assert_eq!(out_total + fee, 2_000_000);
+
+        for out in &tx_outs {
+            assert!(out.value.to_sat() >= MIN_DEPOSIT, "{:?}", out.value);
+        }
+    }
+
+    #[test]
+    fn split_input_parses_the_named_ends() {
+        assert!(matches!("largest".parse(), Ok(SplitInput::Largest)));
+        assert!(matches!("smallest".parse(), Ok(SplitInput::Smallest)));
+    }
+
+    #[test]
+    fn split_input_canonicalises_a_utxo_key() {
+        let key = format!("{:064x}@7", 1);
+        assert!(matches!(key.parse::<SplitInput>(), Ok(SplitInput::Utxo(k)) if k == key));
+
+        let sloppy = format!("{:064X}@007", 1);
+        assert!(matches!(sloppy.parse::<SplitInput>(), Ok(SplitInput::Utxo(k)) if k == key));
+    }
+
+    #[test]
+    fn split_input_rejects_malformed_utxo_keys() {
+        let txid = format!("{:064x}", 1);
+        for value in [
+            "deadbeef@1",
+            "largest@0",
+            &txid,
+            &format!("{txid}@"),
+            &format!("{txid}@x"),
+            &format!("{txid}@-1"),
+            &format!("{txid}@0@0"),
+        ] {
+            assert!(
+                value.parse::<SplitInput>().is_err(),
+                "'{value}' should not parse"
+            );
+        }
+    }
+
+    fn contract_params() -> WithdrawSelectionParams {
+        WithdrawSelectionParams {
+            min_change_amount: 537,
+            max_change_amount: 2_500_000_000,
+            max_withdrawal_input_number: 23,
+            max_change_number: 10,
+            passive_management_lower_limit: 10,
+            passive_management_upper_limit: 6000,
+            active_management_upper_limit: 4000,
+        }
+    }
+
+    #[test]
+    fn empty_overrides_leave_the_contract_values_alone() {
+        let overrides = WithdrawSelectionOverrides::default();
+        assert!(overrides.is_empty());
+
+        let mut params = contract_params();
+        overrides.apply_to(&mut params);
+
+        assert_eq!(params.active_management_upper_limit, 4000);
+        assert_eq!(params.passive_management_lower_limit, 10);
+        assert_eq!(params.passive_management_upper_limit, 6000);
+    }
+
+    #[test]
+    fn overrides_replace_only_the_fields_that_are_set() {
+        let overrides = WithdrawSelectionOverrides {
+            algorithm_switch_threshold: Some(500),
+            ..Default::default()
+        };
+        assert!(!overrides.is_empty());
+
+        let mut params = contract_params();
+        overrides.apply_to(&mut params);
+
+        assert_eq!(params.active_management_upper_limit, 500);
+        assert_eq!(params.passive_management_lower_limit, 10);
+        assert_eq!(params.passive_management_upper_limit, 6000);
+        assert_eq!(params.max_withdrawal_input_number, 23);
+        assert_eq!(params.min_change_amount, 537);
+    }
+
+    #[test]
+    fn overrides_can_replace_every_threshold() {
+        let overrides = WithdrawSelectionOverrides {
+            algorithm_switch_threshold: Some(500),
+            split_below: Some(50),
+            merge_above: Some(800),
+        };
+
+        let mut params = contract_params();
+        overrides.apply_to(&mut params);
+
+        assert_eq!(params.active_management_upper_limit, 500);
+        assert_eq!(params.passive_management_lower_limit, 50);
+        assert_eq!(params.passive_management_upper_limit, 800);
     }
 }
