@@ -166,8 +166,6 @@ struct CliConfig {
     #[arg(long)]
     enable_orchard: Option<bool>,
 
-    // Withdraw UTXO-selection thresholds. Each one replaces the value the
-    // connector contract reports; leaving it unset keeps the contract's.
     #[arg(
         long,
         help = "BTC pool size above which withdrawals switch from the random selector to the consolidating anchor-fill selector (default: the contract's active_management_upper_limit)"
@@ -362,7 +360,6 @@ impl CliConfig {
     }
 }
 
-/// Reads a `u32` env var, ignoring it (with a warning) when it doesn't parse.
 fn env_u32(name: &str) -> Option<u32> {
     let raw = env::var(name).ok()?;
     match raw.parse() {

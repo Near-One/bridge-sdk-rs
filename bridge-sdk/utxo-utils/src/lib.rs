@@ -204,36 +204,27 @@ pub struct WithdrawSelectionParams {
     pub active_management_upper_limit: u32,
 }
 
-/// Locally configured replacements for the pool-size thresholds that steer
-/// withdraw UTXO selection. Every field is optional: `None` keeps the value
-/// the connector contract reports, so an operator only states what they want
-/// to deviate on.
+/// Replacements for the withdraw selection thresholds the connector contract
+/// reports; `None` keeps the contract's value.
 ///
-/// Note the asymmetry in what is safe to change. `algorithm_switch_threshold`
-/// is SDK-only — the contract never validates against it — so it can move in
-/// either direction. The two passive-management bounds are mirrored by the
-/// contract's own PSBT validation, so only tightening is safe: lowering
-/// `merge_above` or raising `split_below` makes the SDK stricter than the
-/// contract and the resulting PSBT still passes. Loosening them produces
-/// transactions the contract rejects.
+/// The contract mirrors the two passive bounds in its own PSBT validation, so
+/// only tightening them is safe: raising `merge_above` or lowering
+/// `split_below` yields transactions it rejects. `algorithm_switch_threshold`
+/// is SDK-only and can move either way.
 #[derive(Clone, Debug, Default)]
 pub struct WithdrawSelectionOverrides {
-    /// Replaces `active_management_upper_limit`: pool sizes above this switch
-    /// the withdraw path from the random selector to the consolidating
-    /// anchor-fill selector.
+    /// Replaces `active_management_upper_limit`: above this the withdraw path
+    /// switches from the random selector to the consolidating anchor-fill one.
     pub algorithm_switch_threshold: Option<u32>,
-    /// Replaces `passive_management_lower_limit`: below this the withdrawal
-    /// must split its change into more outputs than it consumes inputs, so the
-    /// pool grows.
+    /// Replaces `passive_management_lower_limit`: below this a withdrawal
+    /// splits change into more outputs than it consumes inputs.
     pub split_below: Option<u32>,
-    /// Replaces `passive_management_upper_limit`: above this the withdrawal
-    /// must consume more inputs than it creates change outputs, so the pool
-    /// shrinks.
+    /// Replaces `passive_management_upper_limit`: above this a withdrawal
+    /// consumes more inputs than it creates change outputs.
     pub merge_above: Option<u32>,
 }
 
 impl WithdrawSelectionOverrides {
-    /// Returns true when nothing is overridden.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.algorithm_switch_threshold.is_none()
@@ -241,7 +232,6 @@ impl WithdrawSelectionOverrides {
             && self.merge_above.is_none()
     }
 
-    /// Overwrites the contract-supplied thresholds with whatever is set here.
     pub fn apply_to(&self, params: &mut WithdrawSelectionParams) {
         if let Some(threshold) = self.algorithm_switch_threshold {
             params.active_management_upper_limit = threshold;
@@ -593,54 +583,37 @@ pub fn choose_utxos_random_no_payment<R: rand::Rng>(
 /// Which UTXO a [`ActiveManagementPlan::Split`] consumes.
 #[derive(Clone, Debug)]
 pub enum SplitInput {
-    /// The largest UTXO in the pool — yields the biggest pieces.
     Largest,
-    /// The smallest UTXO in the pool.
     Smallest,
-    /// A specific UTXO, keyed as `"{txid}@{vout}"`.
+    /// Keyed as `"{txid}@{vout}"`.
     Utxo(String),
 }
 
-/// Explicit shape for an active UTXO-management transaction.
-///
-/// The caller states the direction and the counts outright; the connector
-/// contract's `active_management_*` limits and `min_deposit_amount` are not
-/// consulted. Whether the pool needs to shrink or grow is the caller's call,
-/// which makes the resulting transaction a pure function of these arguments
-/// and the current pool.
+/// Explicit shape for an active UTXO-management transaction: the caller states
+/// the direction and the counts, so the connector contract's
+/// `active_management_*` limits and `min_deposit_amount` are not consulted.
 #[derive(Clone, Debug)]
 pub enum ActiveManagementPlan {
-    /// `input_number` inputs → one output. Shrinks the pool by
-    /// `input_number - 1`.
+    /// `input_number` inputs → one output, shrinking the pool.
     Merge {
-        /// How many UTXOs to consume; at least 2.
+        /// At least 2.
         input_number: usize,
-        /// Take from the largest end of the pool instead of the smallest.
-        /// Useful ahead of a large withdrawal, which needs a fat UTXO.
         prefer_largest: bool,
-        /// Skip any single UTXO above this. `None` ⇒ no per-UTXO cap.
         per_utxo_cap: Option<u128>,
         /// Skip any UTXO that would push the merged total to this or above,
-        /// so the single output stays a valid change piece for the contract.
-        /// `None` ⇒ no cap.
+        /// keeping the single output a valid change piece for the contract.
         max_total: Option<u128>,
     },
-    /// One input → `output_number` outputs. Grows the pool by
-    /// `output_number - 1`.
+    /// One input → `output_number` outputs, growing the pool.
     Split {
-        /// How many outputs to produce; at least 2.
+        /// At least 2.
         output_number: usize,
-        /// Which UTXO to spend.
         input: SplitInput,
     },
 }
 
 /// Builds the inputs and outputs for an active UTXO-management transaction
 /// from an explicit [`ActiveManagementPlan`].
-///
-/// Returns `Err` when the pool cannot satisfy the plan — too few eligible
-/// UTXOs for the requested `input_number`, an unknown UTXO key, or a balance
-/// that does not cover the mining fee.
 #[allow(clippy::implicit_hasher)]
 pub fn plan_active_management(
     utxos: &HashMap<String, UTXO>,
@@ -704,9 +677,7 @@ fn merge(
         ));
     }
 
-    // Walk from whichever end the caller asked for, skipping UTXOs the caps
-    // exclude. A skipped UTXO doesn't end the walk: a later one may still fit
-    // under `max_total`.
+    // A skipped UTXO doesn't end the walk: a later one may still fit under the caps.
     let mut selected: Vec<(String, UTXO)> = Vec::with_capacity(input_number);
     let mut total: u64 = 0;
     let mut skipped_by_cap = 0usize;
@@ -808,7 +779,7 @@ fn split(
         )
     })?;
     // `get_tx_outs_utxo_management` hands the remainder to the first output and
-    // `amount / outputs` to the rest, so a zero quotient would emit dust outputs.
+    // `amount / outputs` to the rest, so a zero quotient would emit dust.
     if amount / outputs == 0 {
         return Err(format!(
             "UTXO '{key}' leaves {amount} after the mining fee {gas_fee}, too little to split \
@@ -1275,10 +1246,8 @@ mod tests {
         assert!(outs[1].script_pubkey.is_p2pkh());
     }
 
-    // --- Active UTXO management: explicit merge / split plans ---
-    //
-    // All of these run on Zcash, whose fee is `5000 * max(num_input, num_output)`
-    // (see `get_gas_fee`), so the expected amounts stay readable.
+    // The active-management tests run on Zcash, whose fee is
+    // `5000 * max(num_input, num_output)` (see `get_gas_fee`).
 
     const ZCASH_CHANGE_ADDRESS: &str = TRANSPARENT_P2PKH_MAINNET;
 
@@ -1294,7 +1263,6 @@ mod tests {
         )
     }
 
-    /// Four UTXOs: 10k, 20k, 30k, 100k.
     fn management_pool() -> HashMap<String, UTXO> {
         [10_000, 20_000, 30_000, 100_000]
             .into_iter()
@@ -1502,8 +1470,6 @@ mod tests {
             .contains("too little to split"));
     }
 
-    // --- Withdraw selection overrides ---
-
     fn contract_params() -> WithdrawSelectionParams {
         WithdrawSelectionParams {
             min_change_amount: 537,
@@ -1543,7 +1509,6 @@ mod tests {
         assert_eq!(params.active_management_upper_limit, 500);
         assert_eq!(params.passive_management_lower_limit, 10);
         assert_eq!(params.passive_management_upper_limit, 6000);
-        // Fields outside the override set are never touched.
         assert_eq!(params.max_withdrawal_input_number, 23);
         assert_eq!(params.min_change_amount, 537);
     }

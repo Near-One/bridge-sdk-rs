@@ -111,9 +111,6 @@ pub struct OmniConnector {
     btc_light_client: Option<LightClient>,
     zcash_light_client: Option<LightClient>,
     enable_orchard: Option<bool>,
-    /// Per-chain replacements for the withdraw selection thresholds the
-    /// connector contract reports. Absent chains and unset fields keep the
-    /// contract's values.
     utxo_selection_overrides: Option<HashMap<ChainKind, WithdrawSelectionOverrides>>,
 }
 
@@ -1275,8 +1272,6 @@ impl OmniConnector {
         Ok((vout, msg, PrefetchedTxData { proof }))
     }
 
-    /// Reads the withdraw selection thresholds from the connector contract and
-    /// applies the locally configured overrides on top.
     async fn withdraw_selection_params(&self, chain: ChainKind) -> Result<WithdrawSelectionParams> {
         let mut params = self
             .near_bridge_client()?
@@ -1304,12 +1299,8 @@ impl OmniConnector {
         Ok(params)
     }
 
-    /// Submits an active UTXO-management transaction built from an explicit
-    /// [`ActiveManagementPlan`].
-    ///
-    /// The caller decides whether the pool should shrink (merge) or grow
-    /// (split) and by how much; the connector contract's `active_management_*`
-    /// limits are not read.
+    /// Submits an active UTXO-management transaction from an explicit plan; the
+    /// connector contract's `active_management_*` limits are not read.
     pub async fn active_utxo_management(
         &self,
         chain: ChainKind,

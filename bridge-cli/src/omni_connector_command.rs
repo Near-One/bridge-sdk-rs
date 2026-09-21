@@ -49,18 +49,13 @@ impl From<UTXOChainArg> for ChainKind {
     }
 }
 
-/// Direction of an active UTXO-management transaction. Stated by the caller;
-/// the connector contract's pool-size limits are not consulted.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq)]
 #[clap(name = "mode")]
 pub enum ActiveManagementModeArg {
-    /// Many inputs into one output — shrinks the pool.
     Merge,
-    /// One input into many outputs — grows the pool.
     Split,
 }
 
-/// Which UTXO a split consumes: `largest`, `smallest`, or a `txid@vout` key.
 #[derive(Clone, Debug)]
 pub struct SplitInputArg(SplitInput);
 
