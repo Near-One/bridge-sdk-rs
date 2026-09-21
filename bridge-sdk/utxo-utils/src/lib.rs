@@ -639,16 +639,25 @@ pub enum ActiveManagementPlan {
 /// Builds the inputs and outputs for an active UTXO-management transaction
 /// from an explicit [`ActiveManagementPlan`].
 #[allow(clippy::implicit_hasher)]
+#[allow(clippy::too_many_arguments)]
 pub fn plan_active_management(
     utxos: &HashMap<String, UTXO>,
     plan: &ActiveManagementPlan,
     fee_rate: u64,
     change_address: &str,
+    min_deposit_amount: u64,
     chain: ChainKind,
     network: Network,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+    // Ties are broken on the `txid@vout` key. `HashMap` iteration order varies
+    // between processes, so without the tie-break `Largest` and `Smallest` pick
+    // a different UTXO on each run whenever several share the extreme balance.
     let mut sorted: Vec<(&String, &UTXO)> = utxos.iter().collect();
-    sorted.sort_by_key(|(_, u)| u.balance);
+    sorted.sort_by(|(left_key, left), (right_key, right)| {
+        left.balance
+            .cmp(&right.balance)
+            .then_with(|| left_key.cmp(right_key))
+    });
 
     match *plan {
         ActiveManagementPlan::Merge {
@@ -677,6 +686,7 @@ pub fn plan_active_management(
             input,
             fee_rate,
             change_address,
+            min_deposit_amount,
             chain,
             network,
         ),
@@ -769,6 +779,7 @@ fn split(
     input: &SplitInput,
     fee_rate: u64,
     change_address: &str,
+    min_deposit_amount: u64,
     chain: ChainKind,
     network: Network,
 ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
@@ -776,6 +787,9 @@ fn split(
         return Err(format!(
             "Split needs at least 2 outputs to grow the pool (got output_number={output_number})"
         ));
+    }
+    if min_deposit_amount == 0 {
+        return Err("min_deposit_amount must be positive".to_string());
     }
 
     let (key, utxo) = match input {
@@ -793,23 +807,25 @@ fn split(
             .ok_or_else(|| format!("UTXO '{key}' is not in the pool"))?,
     };
 
-    let outputs = u64::try_from(output_number)
+    let mut outputs = u64::try_from(output_number)
         .map_err(|e| format!("Error on convert usize into u64: {e}"))?;
-    let gas_fee = get_gas_fee(chain, 1, outputs, fee_rate, false);
-    let amount = utxo.balance.checked_sub(gas_fee).ok_or_else(|| {
-        format!(
-            "UTXO '{key}' holds {} which does not cover the mining fee {gas_fee}",
-            utxo.balance
-        )
-    })?;
-    // `get_tx_outs_utxo_management` hands the remainder to the first output and
-    // `amount / outputs` to the rest, so a zero quotient would emit dust.
-    if amount / outputs == 0 {
-        return Err(format!(
-            "UTXO '{key}' leaves {amount} after the mining fee {gas_fee}, too little to split \
-             into {output_number} outputs"
-        ));
-    }
+
+    let (outputs, amount) = loop {
+        if outputs < 2 {
+            return Err(format!(
+                "Cannot split UTXO '{key}' holding {} sat into at least 2 outputs of \
+                 {min_deposit_amount} sat at fee rate {fee_rate}",
+                utxo.balance
+            ));
+        }
+        let gas_fee = get_gas_fee(chain, 1, outputs, fee_rate, false);
+        if let Some(amount) = utxo.balance.checked_sub(gas_fee) {
+            if amount / outputs >= min_deposit_amount {
+                break (outputs, amount);
+            }
+        }
+        outputs -= 1;
+    };
 
     let out_points = utxo_to_out_points(vec![(key, utxo)])?;
     let tx_outs = get_tx_outs_utxo_management(change_address, outputs, amount, chain, network)?;
@@ -978,6 +994,10 @@ pub fn get_tx_outs_utxo_management(
     let change_script_pubkey = change_address.script_pubkey().map_err(|e| {
         format!("Failed to get script_pubkey for change UTXO address '{change_address}': {e}")
     })?;
+
+    if output_amount == 0 {
+        return Err("output_amount must be positive".to_string());
+    }
 
     let one_amount = amount / output_amount;
     let mut res = vec![TxOut {
@@ -1295,18 +1315,29 @@ mod tests {
             .collect()
     }
 
-    fn run_plan(
+    fn run_plan_with_min(
         pool: &HashMap<String, UTXO>,
         plan: &ActiveManagementPlan,
+        min_deposit_amount: u64,
     ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
         plan_active_management(
             pool,
             plan,
             0,
             ZCASH_CHANGE_ADDRESS,
+            min_deposit_amount,
             ChainKind::Zcash,
             Network::Mainnet,
         )
+    }
+
+    /// Floor of 1 sat: the plan is then driven purely by the requested counts,
+    /// which keeps the merge cases and the even-split cases readable.
+    fn run_plan(
+        pool: &HashMap<String, UTXO>,
+        plan: &ActiveManagementPlan,
+    ) -> Result<(Vec<OutPoint>, Vec<TxOut>), String> {
+        run_plan_with_min(pool, plan, 1)
     }
 
     fn balances(pool: &HashMap<String, UTXO>, out_points: &[OutPoint]) -> Vec<u64> {
@@ -1458,6 +1489,31 @@ mod tests {
     }
 
     #[test]
+    fn largest_and_smallest_break_ties_on_the_utxo_key() {
+        // Three UTXOs at the same balance: the pick must not depend on
+        // `HashMap` iteration order, which varies between processes.
+        let pool: HashMap<String, UTXO> = (0..3).map(|i| mk_utxo(i, 1_025_000)).collect();
+
+        let pick = |input: SplitInput| {
+            let plan = ActiveManagementPlan::Split {
+                output_number: 2,
+                input,
+            };
+            let (out_points, _) = run_plan(&pool, &plan).unwrap();
+            format!("{}@{}", out_points[0].txid, out_points[0].vout)
+        };
+
+        let mut keys: Vec<&String> = pool.keys().collect();
+        keys.sort();
+        assert_eq!(&pick(SplitInput::Smallest), *keys.first().unwrap());
+        assert_eq!(&pick(SplitInput::Largest), *keys.last().unwrap());
+
+        // Repeat runs in the same process still agree, and so must runs in a
+        // fresh process, which is what the ordering guarantees.
+        assert_eq!(pick(SplitInput::Largest), pick(SplitInput::Largest));
+    }
+
+    #[test]
     fn split_rejects_an_unknown_utxo_key() {
         let pool = management_pool();
         let plan = ActiveManagementPlan::Split {
@@ -1482,16 +1538,102 @@ mod tests {
     }
 
     #[test]
-    fn split_rejects_pieces_that_would_be_dust() {
+    fn split_shrinks_output_number_to_keep_pieces_above_min_deposit() {
+        // 100k at a 10k floor: 4 outputs cost 20k fee and leave 20k pieces, but
+        // at a 30k floor only 2 outputs clear it (10k fee, 45k pieces).
+        let pool: HashMap<String, UTXO> = std::iter::once(mk_utxo(0, 100_000)).collect();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 4,
+            input: SplitInput::Largest,
+        };
+
+        let (_, tx_outs) = run_plan_with_min(&pool, &plan, 10_000).unwrap();
+        assert_eq!(tx_outs.len(), 4);
+
+        let (_, tx_outs) = run_plan_with_min(&pool, &plan, 30_000).unwrap();
+        assert_eq!(tx_outs.len(), 2);
+        assert_eq!(
+            tx_outs.iter().map(|o| o.value.to_sat()).collect::<Vec<_>>(),
+            vec![45_000; 2]
+        );
+    }
+
+    #[test]
+    fn split_rejects_a_balance_too_small_for_two_pieces() {
         let pool: HashMap<String, UTXO> = std::iter::once(mk_utxo(0, 20_001)).collect();
         let plan = ActiveManagementPlan::Split {
             output_number: 4,
             input: SplitInput::Largest,
         };
-        // fee = 20_000 leaves 1 sat, which cannot make four outputs.
-        assert!(run_plan(&pool, &plan)
-            .unwrap_err()
-            .contains("too little to split"));
+        // Down at 2 outputs the fee is 10_000, leaving 10_001 for pieces of
+        // 5_000 — below a 20_000 floor, so no shape works.
+        let err = run_plan_with_min(&pool, &plan, 20_000).unwrap_err();
+        assert!(err.contains("at least 2 outputs"), "{err}");
+    }
+
+    #[test]
+    fn split_rejects_a_zero_min_deposit_amount() {
+        let pool = management_pool();
+        let plan = ActiveManagementPlan::Split {
+            output_number: 2,
+            input: SplitInput::Largest,
+        };
+        let err = run_plan_with_min(&pool, &plan, 0).unwrap_err();
+        assert!(err.contains("min_deposit_amount must be positive"), "{err}");
+    }
+
+    #[test]
+    fn get_tx_outs_utxo_management_rejects_zero_outputs() {
+        let err = get_tx_outs_utxo_management(
+            ZCASH_CHANGE_ADDRESS,
+            0,
+            100_000,
+            ChainKind::Zcash,
+            Network::Mainnet,
+        )
+        .expect_err("zero outputs must not divide by zero");
+        assert!(err.contains("output_amount must be positive"), "{err}");
+    }
+
+    /// PR-318 shape check on Bitcoin, whose fee actually depends on `fee_rate`
+    /// and on the output count: outputs plus fee must equal the spent input,
+    /// and no piece may fall below the floor.
+    #[test]
+    fn split_conserves_value_and_clears_the_floor_on_bitcoin() {
+        const BTC_CHANGE_ADDRESS: &str = "bc1qtgjgs0vz4ffaez59y64vytjp6034rpezgyh8jt";
+        const FEE_RATE: u64 = 5;
+        const MIN_DEPOSIT: u64 = 5_000;
+
+        let pool: HashMap<String, UTXO> = [100_000, 500_000, 2_000_000]
+            .into_iter()
+            .enumerate()
+            .map(|(i, balance)| mk_utxo(i, balance))
+            .collect();
+
+        let (out_points, tx_outs) = plan_active_management(
+            &pool,
+            &ActiveManagementPlan::Split {
+                output_number: 10,
+                input: SplitInput::Largest,
+            },
+            FEE_RATE,
+            BTC_CHANGE_ADDRESS,
+            MIN_DEPOSIT,
+            ChainKind::Btc,
+            Network::Mainnet,
+        )
+        .unwrap();
+
+        assert_eq!(balances(&pool, &out_points), vec![2_000_000]);
+
+        let out_number = u64::try_from(tx_outs.len()).unwrap();
+        let fee = get_gas_fee(ChainKind::Btc, 1, out_number, FEE_RATE, false);
+        let out_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
+        assert_eq!(out_total + fee, 2_000_000);
+
+        for out in &tx_outs {
+            assert!(out.value.to_sat() >= MIN_DEPOSIT, "{:?}", out.value);
+        }
     }
 
     #[test]

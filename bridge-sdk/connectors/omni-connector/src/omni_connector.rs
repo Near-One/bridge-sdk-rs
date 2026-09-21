@@ -1318,59 +1318,86 @@ impl OmniConnector {
 
         let utxos = near_bridge_client.get_utxos(chain).await?;
         let change_address = near_bridge_client.get_change_address(chain).await?;
+        let min_deposit_amount = near_bridge_client.get_min_deposit_amount(chain).await?;
+        let min_deposit_amount = u64::try_from(min_deposit_amount).map_err(|_| {
+            BridgeSdkError::UtxoManagementError(format!(
+                "Contract min_deposit_amount {min_deposit_amount} does not fit in u64"
+            ))
+        })?;
 
         let (out_points, tx_outs) = utxo_utils::plan_active_management(
             &utxos,
             plan,
             fee_rate,
             &change_address,
+            min_deposit_amount,
             chain,
             self.network()?,
         )
         .map_err(BridgeSdkError::UtxoManagementError)?;
 
-        let inputs_log: Vec<String> = out_points
-            .iter()
-            .map(|op| {
-                let key = format!("{}@{}", op.txid, op.vout);
-                let balance = utxos.get(&key).map(|u| u.balance);
-                match balance {
-                    Some(b) => format!("{key} ({b} sat)"),
-                    None => format!("{key} (?)"),
-                }
-            })
-            .collect();
-        let input_total: u64 = out_points
-            .iter()
-            .filter_map(|op| {
-                utxos
-                    .get(&format!("{}@{}", op.txid, op.vout))
-                    .map(|u| u.balance)
-            })
-            .sum();
+        // The plan is printed at INFO before the NEAR call so the operator can
+        // see which UTXOs are consumed and how they are split or merged.
+        let pool_size = utxos.len();
+        // `requested_outputs` is set for a split only: that is the one count the
+        // planner is allowed to reduce.
+        let (mode, requested_outputs) = match *plan {
+            ActiveManagementPlan::Merge { .. } => ("merge", None),
+            ActiveManagementPlan::Split { output_number, .. } => ("split", Some(output_number)),
+        };
 
-        let outputs_log: Vec<String> = tx_outs
-            .iter()
-            .map(|o| format!("{} sat", o.value.to_sat()))
-            .collect();
+        let mut input_total: u64 = 0;
+        let mut input_lines: Vec<String> = Vec::with_capacity(out_points.len());
+        for out_point in &out_points {
+            let key = format!("{}@{}", out_point.txid, out_point.vout);
+            if let Some(utxo) = utxos.get(&key) {
+                input_total = input_total.saturating_add(utxo.balance);
+                input_lines.push(format!("    {key}: {} sat", utxo.balance));
+            } else {
+                input_lines.push(format!("    {key}: unknown balance"));
+            }
+        }
+
         let output_total: u64 = tx_outs.iter().map(|o| o.value.to_sat()).sum();
-
         let gas_fee = input_total.saturating_sub(output_total);
 
-        tracing::debug!(
-            pool_size = utxos.len(),
-            ?plan,
-            fee_rate,
-            num_inputs = out_points.len(),
-            num_outputs = tx_outs.len(),
-            input_total_sat = input_total,
-            output_total_sat = output_total,
-            gas_fee_sat = gas_fee,
-            inputs = ?inputs_log,
-            outputs = ?outputs_log,
-            change_address = %change_address,
-            "Active UTXO management transaction plan"
-        );
+        // The contract's active-management band does not constrain the plan, but
+        // printing it next to the pool size lets the operator see at a glance
+        // whether the direction they asked for is the one the pool needs.
+        let (active_lower, active_upper, ..) = near_bridge_client
+            .get_active_management_limit(chain)
+            .await?;
+
+        let mut plan_lines = vec![format!(
+            "Active UTXO management plan [{mode}]: pool_size={pool_size}, \
+             active_limits=[{active_lower}, {active_upper}], \
+             min_deposit_amount={min_deposit_amount}, fee_rate={fee_rate}"
+        )];
+        // A split shrinks its output count when the fee would push pieces below
+        // `min_deposit_amount`, so say when the plan came out smaller than asked.
+        if let Some(requested) = requested_outputs.filter(|asked| tx_outs.len() < *asked) {
+            plan_lines.push(format!(
+                "  note: {requested} outputs requested, reduced to {} to keep every piece \
+                 at or above {min_deposit_amount} sat",
+                tx_outs.len()
+            ));
+        }
+        plan_lines.push(format!(
+            "  inputs ({}), total {input_total} sat:",
+            out_points.len()
+        ));
+        plan_lines.extend(input_lines);
+        plan_lines.push(format!(
+            "  outputs ({}) to {change_address}, total {output_total} sat:",
+            tx_outs.len()
+        ));
+        for (i, tx_out) in tx_outs.iter().enumerate() {
+            plan_lines.push(format!("    #{i}: {} sat", tx_out.value.to_sat()));
+        }
+        plan_lines.push(format!("  network fee: {gas_fee} sat"));
+        let plan_log = plan_lines.join("\n");
+
+        tracing::info!("{plan_log}");
 
         near_bridge_client
             .active_utxo_management(chain, out_points, tx_outs, transaction_options)
