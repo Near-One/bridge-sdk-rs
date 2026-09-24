@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.72"
+version = "0.3.76"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -2878,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "evm-bridge-client"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "alloy",
  "borsh",
@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "hypercore-bridge-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "alloy",
  "hex",
@@ -4336,7 +4336,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.31"
+version = "0.2.32"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -4759,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "near-rpc-client"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "base64 0.22.1",
  "borsh",
@@ -5095,7 +5095,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.5.6"
+version = "0.7.0"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -9568,7 +9568,7 @@ dependencies = [
 
 [[package]]
 name = "utxo-utils"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "bitcoin",
  "k256",

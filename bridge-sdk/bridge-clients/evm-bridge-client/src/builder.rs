@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
@@ -110,6 +111,7 @@ impl EvmBridgeClientBuilder {
             omni_bridge_address,
             wormhole_core_address,
             mpc_finality: self.mpc_finality,
+            wormhole_fee: OnceLock::new(),
         })
     }
 }

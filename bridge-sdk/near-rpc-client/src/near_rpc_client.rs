@@ -12,7 +12,10 @@ use near_jsonrpc_primitives::types::transactions::TransactionInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction, TransactionV0};
 use near_primitives::types::{AccountId, BlockReference, Finality, FunctionArgs};
-use near_primitives::views::{FinalExecutionOutcomeView, QueryRequest};
+use near_primitives::views::{
+    ExecutionStatusView, FinalExecutionOutcomeView, FinalExecutionOutcomeViewEnum,
+    FinalExecutionStatus, QueryRequest,
+};
 use near_token::NearToken;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use tokio::time;
@@ -370,7 +373,10 @@ pub async fn wait_for_tx(
         }
 
         match response {
-            Ok(_) => return Ok(hash),
+            Ok(outcome) => {
+                warn_on_failed_receipts(hash, outcome.final_execution_outcome);
+                return Ok(hash);
+            }
             Err(err) => match err {
                 JsonRpcError::ServerError(JsonRpcServerError::HandlerError(_))
                 | near_jsonrpc_client::errors::JsonRpcError::ServerError(
@@ -382,6 +388,33 @@ pub async fn wait_for_tx(
                 }
                 _ => return Err(NearRpcError::RpcTransactionError(err)),
             },
+        }
+    }
+}
+
+/// A callback panic leaves the transaction status as success while an inner
+/// receipt fails. Warns rather than errors: some flows fail a receipt on purpose
+/// and handle it in a callback.
+fn warn_on_failed_receipts(hash: CryptoHash, outcome: Option<FinalExecutionOutcomeViewEnum>) {
+    let Some(outcome) = outcome else {
+        return;
+    };
+    let outcome = outcome.into_outcome();
+
+    if let FinalExecutionStatus::Failure(err) = &outcome.status {
+        tracing::warn!(tx_hash = %hash, error = ?err, "NEAR transaction failed");
+        return;
+    }
+
+    for receipt in &outcome.receipts_outcome {
+        if let ExecutionStatusView::Failure(err) = &receipt.outcome.status {
+            tracing::warn!(
+                tx_hash = %hash,
+                receipt_id = %receipt.id,
+                executor = %receipt.outcome.executor_id,
+                error = ?err,
+                "NEAR receipt failed while the transaction reports success"
+            );
         }
     }
 }

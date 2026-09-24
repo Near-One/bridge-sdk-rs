@@ -28,6 +28,7 @@ use utxo_bridge_client::{
     types::{Bitcoin, PrefetchedTxData, Zcash},
     AuthOptions, UTXOBridgeClient,
 };
+use utxo_utils::{ActiveManagementPlan, SplitInput, WithdrawSelectionOverrides};
 use wormhole_bridge_client::WormholeBridgeClientBuilder;
 
 use crate::{combined_config, fee, CliConfig, Network};
@@ -523,7 +524,8 @@ pub enum OmniConnectorSubCommand {
 
     #[clap(about = "HyperCore -> any destination via sendToEvmWithData. \
                  hlevm:0x... recipient uses ACTION_TRANSFER (direct pool release on HyperEVM); \
-                 any other recipient uses ACTION_INIT_TRANSFER (route through OmniBridge).")]
+                 any other recipient uses ACTION_INIT_TRANSFER, which only commits the transfer; \
+                 hyper-core-trigger-pending-init-transfer submits it.")]
     HyperCoreTransfer {
         #[clap(long, help = "Hyperliquid spot token identifier, e.g. PURR:0x<32hex>")]
         token: String,
@@ -562,6 +564,18 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+
+    #[clap(
+        about = "Run the second step of hyper-core-transfer: turns a PreInitTransfer \
+                 commitment into the InitTransfer that actually bridges the funds."
+    )]
+    HyperCoreTriggerPendingInitTransfer {
+        #[clap(long, help = "HyperEVM tx hash that emitted PreInitTransfer")]
+        tx_hash: String,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+
     #[clap(about = "Initialize a transfer on Starknet")]
     StarknetInitTransfer {
         #[clap(short, long, help = "Token address on Starknet (felt hex)")]
@@ -1005,32 +1019,59 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Perform UTXO rebalancing for UTXO Chain Connector")]
-    ActiveUTXOManagement {
+    #[clap(
+        about = "Merge UTXOs into a single output, shrinking the connector's pool",
+        long_about = "Merge UTXOs into a single output, shrinking the connector's pool.\n\nThe direction is stated explicitly: the contract's \
+active_management_* pool-size band is not read, so this command does exactly what it is told. --input-number is still checked against the contract's \
+max_active_utxo_management_input_number, which it rejects in a callback. The plan is logged at INFO before it is submitted."
+    )]
+    UtxoMerge {
+        #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
+        chain: UTXOChainArg,
+        #[clap(short, long, help = "Fee rate on UTXO chain")]
+        fee_rate: Option<u64>,
+        #[clap(long, help = "How many UTXOs to consume (at least 2)")]
+        input_number: usize,
+        #[clap(
+            long,
+            help = "Take from the largest end of the pool instead of the smallest (use ahead of a large withdrawal)"
+        )]
+        prefer_largest: bool,
+        #[clap(
+            long,
+            help = "Skip any single UTXO larger than this (defaults to no cap)"
+        )]
+        per_utxo_cap: Option<u128>,
+        #[clap(
+            long,
+            help = "Skip any UTXO that would push the merged total to this or above, keeping the output a valid change piece (defaults to no cap)"
+        )]
+        max_total: Option<u128>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(
+        about = "Split one UTXO into several outputs, growing the connector's pool",
+        long_about = "Split one UTXO into several outputs, growing the connector's pool.\n\nThe direction is stated explicitly: the contract's \
+active_management_* pool-size band is not read, so this command does exactly what it is told. --output-number is an upper bound and is also checked against \
+the contract's max_active_utxo_management_output_number. The plan is logged at INFO before it is submitted."
+    )]
+    UtxoSplit {
         #[clap(short, long, help = "Chain for the UTXO rebalancing (Bitcoin/Zcash)")]
         chain: UTXOChainArg,
         #[clap(short, long, help = "Fee rate on UTXO chain")]
         fee_rate: Option<u64>,
         #[clap(
             long,
-            help = "Override the max number of UTXO inputs to consume in the rebalancing tx (defaults to the value from the bridge config)"
+            help = "Upper bound on how many outputs to produce (at least 2); reduced automatically so no piece falls below the contract's min_deposit_amount"
         )]
-        max_input_number: Option<u8>,
+        output_number: usize,
         #[clap(
             long,
-            help = "Merge the largest UTXOs instead of the smallest (use ahead of a large withdrawal)"
+            default_value = "largest",
+            help = "Which UTXO to spend: 'largest', 'smallest' or a 'txid@vout' key"
         )]
-        merge_largest: bool,
-        #[clap(
-            long,
-            help = "Override the max change amount per output (defaults to the value from the bridge config)"
-        )]
-        max_change_amount: Option<u128>,
-        #[clap(
-            long,
-            help = "Divisor applied to max_change_amount to cap individual UTXO size when merging largest (defaults to 2)"
-        )]
-        merge_cap_divisor: Option<u128>,
+        input: SplitInput,
         #[command(flatten)]
         config_cli: CliConfig,
     },
@@ -1104,6 +1145,7 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
     let submits_to_unsupported_chain = match cmd {
         Cmd::EvmInitTransfer { config_cli, .. }
         | Cmd::EvmFinTransfer { config_cli, .. }
+        | Cmd::HyperCoreTriggerPendingInitTransfer { config_cli, .. }
         | Cmd::AptosInitTransfer { config_cli, .. }
         | Cmd::AptosFinTransfer { config_cli, .. }
         | Cmd::StarknetInitTransfer { config_cli, .. }
@@ -1192,7 +1234,8 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::BtcRequestRefund { .. }
         | Cmd::BtcVerifyRefundFinalize { .. }
         | Cmd::BtcExecuteRefund { .. }
-        | Cmd::ActiveUTXOManagement { .. } => false,
+        | Cmd::UtxoMerge { .. }
+        | Cmd::UtxoSplit { .. } => false,
         // `Internal` wraps hidden subcommands; classify each explicitly so a
         // future addition must be triaged for dry-run safety here too.
         Cmd::Internal { subcommand } => match subcommand {
@@ -1648,6 +1691,19 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     message: message.unwrap_or_default(),
                     gas_limit,
                 })
+                .await
+                .unwrap();
+        }
+
+        OmniConnectorSubCommand::HyperCoreTriggerPendingInitTransfer {
+            tx_hash,
+            config_cli,
+        } => {
+            omni_connector(network, config_cli)
+                .hypercore_trigger_pending_init_transfer_from_tx(
+                    TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                    None,
+                )
                 .await
                 .unwrap();
         }
@@ -2255,23 +2311,49 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
 
             tracing::info!("BTC Address: {btc_address}");
         }
-        OmniConnectorSubCommand::ActiveUTXOManagement {
+        OmniConnectorSubCommand::UtxoMerge {
             chain,
             fee_rate,
-            max_input_number,
-            merge_largest,
-            max_change_amount,
-            merge_cap_divisor,
+            input_number,
+            prefer_largest,
+            per_utxo_cap,
+            max_total,
             config_cli,
         } => {
+            let plan = ActiveManagementPlan::Merge {
+                input_number,
+                prefer_largest,
+                per_utxo_cap,
+                max_total,
+            };
+
             omni_connector(network, config_cli)
                 .active_utxo_management(
                     chain.into(),
+                    &plan,
                     fee_rate,
-                    max_input_number,
-                    merge_largest,
-                    max_change_amount,
-                    merge_cap_divisor,
+                    TransactionOptions::default(),
+                )
+                .await
+                .unwrap();
+        }
+        OmniConnectorSubCommand::UtxoSplit {
+            chain,
+            fee_rate,
+            output_number,
+            input,
+            config_cli,
+        } => {
+            let plan = ActiveManagementPlan::Split {
+                output_number,
+                input,
+            };
+
+            omni_connector(network, config_cli)
+                .active_utxo_management(
+                    chain.into(),
+                    &plan,
+                    fee_rate,
                     TransactionOptions::default(),
                 )
                 .await
@@ -2577,6 +2659,25 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let utxo_selection_overrides = HashMap::from([
+        (
+            ChainKind::Btc,
+            WithdrawSelectionOverrides {
+                algorithm_switch_threshold: combined_config.btc_utxo_algorithm_switch_threshold,
+                split_below: combined_config.btc_utxo_split_below,
+                merge_above: combined_config.btc_utxo_merge_above,
+            },
+        ),
+        (
+            ChainKind::Zcash,
+            WithdrawSelectionOverrides {
+                algorithm_switch_threshold: combined_config.zcash_utxo_algorithm_switch_threshold,
+                split_below: combined_config.zcash_utxo_split_below,
+                merge_above: combined_config.zcash_utxo_merge_above,
+            },
+        ),
+    ]);
+
     OmniConnectorBuilder::default()
         .network(Some(network.into()))
         .near_bridge_client(Some(near_bridge_client))
@@ -2599,6 +2700,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .btc_light_client(Some(btc_light_client))
         .zcash_light_client(Some(zcash_light_client))
         .enable_orchard(combined_config.enable_orchard)
+        .utxo_selection_overrides(Some(utxo_selection_overrides))
         .build()
         .unwrap()
 }

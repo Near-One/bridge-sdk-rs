@@ -31,7 +31,7 @@ pub const POL_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
 pub const POL_WORMHOLE_ADDRESS_MAINNET: &str = "0x7A4B5a56256163F07b2C80A7cA55aBE66c4ec4d7";
 
-pub const HYPEREVM_RPC_MAINNET: &str = "https://rpc.hyperliquid.xyz/evm";
+pub const HYPEREVM_RPC_MAINNET: &str = "https://hyperliquid.drpc.org";
 pub const HYPEREVM_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xf353b40fC144d1c6c5BCdda712fa6De833016aF9";
 pub const HYPEREVM_WORMHOLE_ADDRESS_MAINNET: &str = "0x7C0faFc4384551f063e05aee704ab943b8B53aB3";
@@ -64,6 +64,13 @@ pub const ZCASH_ENDPOINT_MAINNET: &str = "https://zcash-mainnet.gateway.tatum.io
 pub const ZCASH_CONNECTOR_MAINNET: &str = "zcash-connector.bridge.near";
 pub const ZCASH_MAINNET: &str = "zec.omft.near";
 pub const ENABLE_ORCHARD_BUNDLE_MAINNET: bool = false;
+
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_MAINNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_MAINNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_MAINNET: Option<u32> = None;
 
 pub const STARKNET_RPC_MAINNET: &str = "https://starknet-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
@@ -142,6 +149,13 @@ pub const ZCASH_CONNECTOR_TESTNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_TESTNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_TESTNET: bool = true;
 
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_TESTNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_TESTNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_TESTNET: Option<u32> = None;
+
 pub const STARKNET_RPC_TESTNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x02830785fd87b181c5391819f4a5e6a0b2d76c49d92b7f748a2433495eead162";
@@ -218,6 +232,13 @@ pub const ZCASH_ENDPOINT_DEVNET: &str = "https://zcash-testnet.gateway.tatum.io/
 pub const ZCASH_CONNECTOR_DEVNET: &str = "zcash_connector.n-bridge.testnet";
 pub const ZCASH_DEVNET: &str = "nzcash.n-bridge.testnet";
 pub const ENABLE_ORCHARD_BUNDLE_DEVNET: bool = true;
+
+pub const BTC_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET: Option<u32> = None;
+pub const BTC_UTXO_SPLIT_BELOW_DEVNET: Option<u32> = None;
+pub const BTC_UTXO_MERGE_ABOVE_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_ALGORITHM_SWITCH_THRESHOLD_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_SPLIT_BELOW_DEVNET: Option<u32> = None;
+pub const ZCASH_UTXO_MERGE_ABOVE_DEVNET: Option<u32> = None;
 
 pub const STARKNET_RPC_DEVNET: &str = "https://starknet-sepolia-rpc.publicnode.com";
 pub const STARKNET_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
