@@ -1600,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.75"
+version = "0.3.76"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -5143,8 +5143,8 @@ dependencies = [
 
 [[package]]
 name = "omni-types"
-version = "3.3.3"
-source = "git+https://github.com/near-one/omni-bridge?rev=f499d46c2d58869e4cbb5d19cff703ff7d2731d6#f499d46c2d58869e4cbb5d19cff703ff7d2731d6"
+version = "3.3.4"
+source = "git+https://github.com/near-one/omni-bridge?rev=3f0349044938d42fca080e732098ffe9477551ec#3f0349044938d42fca080e732098ffe9477551ec"
 dependencies = [
  "alloy",
  "borsh",
