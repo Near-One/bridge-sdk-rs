@@ -304,6 +304,9 @@ bridge-cli mainnet btc-request-refund \
     --chain btc \
     --btc-tx-hash cb9.....36b
 
+# The request attaches `required_balance_for_request_refund` (2 NEAR on mainnet
+# as of 2026-10), which is not returned, also when the inclusion proof fails.
+#
 # Optional arguments:
 #   --vout N            — pick a specific output if the tx has more than one
 #                         tracked deposit address (the CLI will tell you which
@@ -334,19 +337,32 @@ bridge-cli mainnet btc-request-refund \
 #    BTC connector contract via near-cli. Anyone can call it (the BTC tx
 #    is already pinned to your refund_address by step 1).
 #
-# Timelock rules:
-#   * 2 days — `refund_address` was provided in the original deposit
-#   * 14 days — `refund_address` was NOT provided in the original deposit
-#   * instant — caller has the DAO or RefundOperator role on the connector
+# Timelock rules (read the current values from `get_config`; the contract
+# applies the value in force when execute_refund runs, also to requests made
+# before a change):
+#   * `refund_timelock_sec` (2 days on mainnet) — `refund_address` was
+#     provided in the original deposit
+#   * `unsafe_refund_timelock_sec` (3,153,600,000 s, i.e. 100 years, on mainnet
+#     since 2026-10-16; 14 days before) — `refund_address` was NOT provided
+#   * instant — caller has the DAO or RefundOperator role, for deposits that
+#     provided a `refund_address` only; the unsafe timelock cannot be skipped
+#
+#   near contract call-function as-read-only btc-connector.bridge.near \
+#       get_config json-args '{}' network-config mainnet now
 #
 # `utxo_storage_key` is "<btc_tx_hash>@<vout>" of the original deposit.
-# Attach a small deposit to cover storage for the BTCPendingInfo entry.
+# Attach exactly `required_balance_for_execute_refund` (1 NEAR on mainnet as of
+# 2026-10). With less the call fails (and the deposit comes back); on success the
+# contract keeps the whole deposit, anything above that amount included:
+#
+#   near contract call-function as-read-only btc-connector.bridge.near \
+#       required_balance_for_execute_refund json-args '{}' network-config mainnet now
 
 near contract call-function as-transaction btc-connector.bridge.near \
     execute_refund \
     json-args '{"utxo_storage_key":"cb9.....36b@0"}' \
     prepaid-gas '100.0 Tgas' \
-    attached-deposit '0.05 NEAR' \
+    attached-deposit '1 NEAR' \
     sign-as your-account.near \
     network-config mainnet sign-with-keychain send
 
