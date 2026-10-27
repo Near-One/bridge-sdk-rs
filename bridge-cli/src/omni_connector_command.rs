@@ -1361,6 +1361,9 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             ChainKind::Zcash | ChainKind::Btc => {
                 panic!("DeployToken is not supported for UTXO chains");
             }
+            ChainKind::Avax => {
+                panic!("DeployToken is not supported yet for {chain:?}");
+            }
         },
         OmniConnectorSubCommand::IsTransferFinalised {
             origin_chain,
@@ -1568,7 +1571,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
+                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash | ChainKind::Avax => {
                     panic!("Unsupported chain for NearFinTransfer: {chain:?}");
                 }
             }

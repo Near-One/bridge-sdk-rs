@@ -2042,7 +2042,7 @@ impl OmniConnector {
         let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
                 tx_id: EvmTxId(tx_hash.0),
-                extractors: vec![EvmExtractor::Log { log_index }],
+                extractors: [EvmExtractor::Log { log_index }].into(),
                 finality,
             }),
             values: vec![ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
@@ -2095,9 +2095,10 @@ impl OmniConnector {
             request: ForeignChainRpcRequest::Starknet(StarknetRpcRequest {
                 tx_id: StarknetTxId(StarknetFelt(tx_hash.to_bytes_be())),
                 finality,
-                extractors: vec![StarknetExtractor::Log {
+                extractors: [StarknetExtractor::Log {
                     log_index: log.log_index,
-                }],
+                }]
+                .into(),
             }),
             values: vec![ExtractedValue::StarknetExtractedValue(
                 StarknetExtractedValue::Log(starknet_log),
@@ -2138,9 +2139,10 @@ impl OmniConnector {
             request: ForeignChainRpcRequest::Aptos(AptosRpcRequest {
                 tx_id: AptosTxId(tx_id),
                 finality,
-                extractors: vec![AptosExtractor::Event {
+                extractors: [AptosExtractor::Event {
                     event_index: log.event_index,
-                }],
+                }]
+                .into(),
             }),
             values: vec![ExtractedValue::AptosExtractedValue(
                 AptosExtractedValue::Event(AptosEvent {
@@ -3111,7 +3113,8 @@ impl OmniConnector {
             | OmniAddress::Bnb(address)
             | OmniAddress::Pol(address)
             | OmniAddress::HyperEvm(address)
-            | OmniAddress::Abs(address) => self
+            | OmniAddress::Abs(address)
+            | OmniAddress::Avax(address) => self
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
@@ -3816,7 +3819,8 @@ impl OmniConnector {
             | ChainKind::Bnb
             | ChainKind::Pol
             | ChainKind::HyperEvm
-            | ChainKind::Abs => {
+            | ChainKind::Abs
+            | ChainKind::Avax => {
                 self.evm_is_transfer_finalised(destination_chain, nonce)
                     .await
             }
@@ -3981,7 +3985,8 @@ impl OmniConnector {
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk
-            | ChainKind::Aptos => {
+            | ChainKind::Aptos
+            | ChainKind::Avax => {
                 return Err(BridgeSdkError::ConfigError(format!(
                     "EVM bridge client is not available for {chain_kind:?}"
                 )));
@@ -4254,7 +4259,8 @@ impl OmniConnector {
             | ChainKind::Sol
             | ChainKind::Fogo
             | ChainKind::Strk
-            | ChainKind::Aptos => Err(BridgeSdkError::ConfigError(
+            | ChainKind::Aptos
+            | ChainKind::Avax => Err(BridgeSdkError::ConfigError(
                 "UTXO bridge client is not configured".to_string(),
             )),
         }
@@ -4297,7 +4303,8 @@ impl OmniConnector {
             | ChainKind::Bnb
             | ChainKind::Pol
             | ChainKind::HyperEvm
-            | ChainKind::Abs => {
+            | ChainKind::Abs
+            | ChainKind::Avax => {
                 let tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                     BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {tx_hash}"))
                 })?;
