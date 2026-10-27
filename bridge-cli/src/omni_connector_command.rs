@@ -1284,7 +1284,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
+                ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
                     omni_connector(network, config_cli)
                         .deploy_token(DeployTokenArgs::NearDeployTokenWithMpcProof {
                             chain_kind: source_chain,
@@ -1558,7 +1558,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
+                ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
                     connector
                         .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
                             chain_kind: chain,
@@ -1570,7 +1570,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash | ChainKind::Avax => {
+                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
                     panic!("Unsupported chain for NearFinTransfer: {chain:?}");
                 }
             }
@@ -1947,7 +1947,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
-            ChainKind::Abs | ChainKind::Strk | ChainKind::Aptos => {
+            ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
                 omni_connector(network, config_cli)
                     .bind_token(BindTokenArgs::BindTokenWithMpcProofTx {
                         chain_kind: chain,

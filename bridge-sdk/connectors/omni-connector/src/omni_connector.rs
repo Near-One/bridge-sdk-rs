@@ -1985,16 +1985,28 @@ impl OmniConnector {
     }
 
     /// Build a borsh-serialized `ForeignTxSignPayload` for an Abstract (EVM) chain.
-    ///
-    /// The `proof_kind` selects which event to look for:
-    /// - `InitTransfer` for `fin_transfer`
-    /// - `DeployToken` for `bind_token`
     pub async fn build_abs_mpc_sign_payload(
         &self,
         tx_hash: TxHash,
         proof_kind: ProofKind,
     ) -> Result<Vec<u8>> {
-        let evm_client = self.evm_bridge_client(ChainKind::Abs)?;
+        self.build_evm_mpc_sign_payload(ChainKind::Abs, tx_hash, proof_kind)
+            .await
+    }
+
+    /// Build a borsh-serialized `ForeignTxSignPayload` for an EVM chain verified via MPC
+    /// (Abstract, Avalanche).
+    ///
+    /// The `proof_kind` selects which event to look for:
+    /// - `InitTransfer` for `fin_transfer`
+    /// - `DeployToken` for `bind_token`
+    pub async fn build_evm_mpc_sign_payload(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: TxHash,
+        proof_kind: ProofKind,
+    ) -> Result<Vec<u8>> {
+        let evm_client = self.evm_bridge_client(chain_kind)?;
         let finality = evm_client.check_mpc_finality(tx_hash).await?;
 
         let rpc_log = match proof_kind {
@@ -2040,12 +2052,23 @@ impl OmniConnector {
             topics: rpc_log.topics().iter().map(|t| Hash256(t.0)).collect(),
         };
 
+        let rpc_request = EvmRpcRequest {
+            tx_id: EvmTxId(tx_hash.0),
+            extractors: [EvmExtractor::Log { log_index }].into(),
+            finality,
+        };
+        let request = match chain_kind {
+            ChainKind::Abs => ForeignChainRpcRequest::Abstract(rpc_request),
+            ChainKind::Avax => ForeignChainRpcRequest::Avalanche(rpc_request),
+            other => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "MPC proof is not supported for EVM chain {other:?}"
+                )));
+            }
+        };
+
         let sign_payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: ForeignChainRpcRequest::Abstract(EvmRpcRequest {
-                tx_id: EvmTxId(tx_hash.0),
-                extractors: [EvmExtractor::Log { log_index }].into(),
-                finality,
-            }),
+            request,
             values: vec![ExtractedValue::EvmExtractedValue(EvmExtractedValue::Log(
                 evm_log,
             ))],
@@ -3185,14 +3208,18 @@ impl OmniConnector {
                 transaction_options,
             } => {
                 let sign_payload = match chain_kind {
-                    ChainKind::Abs => {
+                    ChainKind::Abs | ChainKind::Avax => {
                         let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                             BridgeSdkError::InvalidArgument(format!(
                                 "Failed to parse EVM tx hash: {tx_hash}"
                             ))
                         })?;
-                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::LogMetadata)
-                            .await?
+                        self.build_evm_mpc_sign_payload(
+                            chain_kind,
+                            evm_tx_hash,
+                            ProofKind::LogMetadata,
+                        )
+                        .await?
                     }
                     ChainKind::Strk => {
                         let felt =
@@ -3319,14 +3346,18 @@ impl OmniConnector {
                 transaction_options,
             } => {
                 let sign_payload = match chain_kind {
-                    ChainKind::Abs => {
+                    ChainKind::Abs | ChainKind::Avax => {
                         let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                             BridgeSdkError::InvalidArgument(format!(
                                 "Failed to parse EVM tx hash: {tx_hash}"
                             ))
                         })?;
-                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::DeployToken)
-                            .await?
+                        self.build_evm_mpc_sign_payload(
+                            chain_kind,
+                            evm_tx_hash,
+                            ProofKind::DeployToken,
+                        )
+                        .await?
                     }
                     ChainKind::Strk => {
                         let felt =
@@ -3616,14 +3647,18 @@ impl OmniConnector {
                 transaction_options,
             } => {
                 let sign_payload = match chain_kind {
-                    ChainKind::Abs => {
+                    ChainKind::Abs | ChainKind::Avax => {
                         let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                             BridgeSdkError::InvalidArgument(format!(
                                 "Failed to parse EVM tx hash: {tx_hash}"
                             ))
                         })?;
-                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::InitTransfer)
-                            .await?
+                        self.build_evm_mpc_sign_payload(
+                            chain_kind,
+                            evm_tx_hash,
+                            ProofKind::InitTransfer,
+                        )
+                        .await?
                     }
                     ChainKind::Strk => {
                         let felt =
@@ -3757,14 +3792,18 @@ impl OmniConnector {
                 transaction_options,
             } => {
                 let sign_payload = match chain_kind {
-                    ChainKind::Abs => {
+                    ChainKind::Abs | ChainKind::Avax => {
                         let evm_tx_hash = TxHash::from_str(&tx_hash).map_err(|_| {
                             BridgeSdkError::InvalidArgument(format!(
                                 "Failed to parse EVM tx hash: {tx_hash}"
                             ))
                         })?;
-                        self.build_abs_mpc_sign_payload(evm_tx_hash, ProofKind::FinTransfer)
-                            .await?
+                        self.build_evm_mpc_sign_payload(
+                            chain_kind,
+                            evm_tx_hash,
+                            ProofKind::FinTransfer,
+                        )
+                        .await?
                     }
                     ChainKind::Strk => {
                         let felt =
