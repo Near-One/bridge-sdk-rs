@@ -1984,16 +1984,6 @@ impl OmniConnector {
             .await
     }
 
-    /// Build a borsh-serialized `ForeignTxSignPayload` for an Abstract (EVM) chain.
-    pub async fn build_abs_mpc_sign_payload(
-        &self,
-        tx_hash: TxHash,
-        proof_kind: ProofKind,
-    ) -> Result<Vec<u8>> {
-        self.build_evm_mpc_sign_payload(ChainKind::Abs, tx_hash, proof_kind)
-            .await
-    }
-
     /// Build a borsh-serialized `ForeignTxSignPayload` for an EVM chain verified via MPC
     /// (Abstract, Avalanche).
     ///
