@@ -112,6 +112,7 @@ fn derive_evm_sender(chain: ChainKind, config: &CliConfig) -> Result<String, Str
         ChainKind::Pol => &config.pol_private_key,
         ChainKind::HyperEvm => &config.hyperevm_private_key,
         ChainKind::Abs => &config.abs_private_key,
+        ChainKind::Avax => &config.avax_private_key,
         _ => return Err(format!("Unsupported EVM chain: {chain:?}")),
     }
     .as_ref()
@@ -1310,7 +1311,8 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             | ChainKind::Bnb
             | ChainKind::Pol
             | ChainKind::HyperEvm
-            | ChainKind::Abs => {
+            | ChainKind::Abs
+            | ChainKind::Avax => {
                 omni_connector(network, config_cli)
                     .deploy_token(DeployTokenArgs::EvmDeployTokenWithTxHash {
                         chain_kind: chain,
@@ -1360,9 +1362,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             }
             ChainKind::Zcash | ChainKind::Btc => {
                 panic!("DeployToken is not supported for UTXO chains");
-            }
-            ChainKind::Avax => {
-                panic!("DeployToken is not supported yet for {chain:?}");
             }
         },
         OmniConnectorSubCommand::IsTransferFinalised {
@@ -2514,6 +2513,15 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .build()
         .unwrap();
 
+    let avax_bridge_client = EvmBridgeClientBuilder::default()
+        .endpoint(combined_config.avax_rpc)
+        .private_key(combined_config.avax_private_key)
+        .omni_bridge_address(combined_config.avax_bridge_token_factory_address)
+        .wormhole_core_address(None)
+        .mpc_finality(Some(EvmFinality::Finalized))
+        .build()
+        .unwrap();
+
     let hypercore_network = match network {
         Network::Mainnet => HyperliquidNetwork::Mainnet,
         Network::Testnet | Network::Devnet => HyperliquidNetwork::Testnet,
@@ -2691,6 +2699,7 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .pol_bridge_client(Some(pol_bridge_client))
         .hyperevm_bridge_client(Some(hyperevm_bridge_client))
         .abs_bridge_client(Some(abs_bridge_client))
+        .avax_bridge_client(Some(avax_bridge_client))
         .hypercore_bridge_client(hypercore_bridge_client)
         .solana_bridge_client(Some(solana_bridge_client))
         .fogo_bridge_client(Some(fogo_bridge_client))

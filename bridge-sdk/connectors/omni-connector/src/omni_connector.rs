@@ -99,6 +99,7 @@ pub struct OmniConnector {
     pol_bridge_client: Option<EvmBridgeClient>,
     hyperevm_bridge_client: Option<EvmBridgeClient>,
     abs_bridge_client: Option<EvmBridgeClient>,
+    avax_bridge_client: Option<EvmBridgeClient>,
     hypercore_bridge_client: Option<HyperCoreBridgeClient>,
     solana_bridge_client: Option<SolanaBridgeClient>,
     fogo_bridge_client: Option<SolanaBridgeClient>,
@@ -3979,14 +3980,14 @@ impl OmniConnector {
             ChainKind::Pol => self.pol_bridge_client.as_ref(),
             ChainKind::HyperEvm => self.hyperevm_bridge_client.as_ref(),
             ChainKind::Abs => self.abs_bridge_client.as_ref(),
+            ChainKind::Avax => self.avax_bridge_client.as_ref(),
             ChainKind::Near
             | ChainKind::Sol
             | ChainKind::Fogo
             | ChainKind::Btc
             | ChainKind::Zcash
             | ChainKind::Strk
-            | ChainKind::Aptos
-            | ChainKind::Avax => {
+            | ChainKind::Aptos => {
                 return Err(BridgeSdkError::ConfigError(format!(
                     "EVM bridge client is not available for {chain_kind:?}"
                 )));
