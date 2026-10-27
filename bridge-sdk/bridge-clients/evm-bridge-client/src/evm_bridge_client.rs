@@ -430,7 +430,7 @@ impl EvmBridgeClient {
         };
 
         match chain_kind {
-            ChainKind::HyperEvm | ChainKind::Abs => {
+            ChainKind::HyperEvm | ChainKind::Abs | ChainKind::Avax => {
                 let bridge_deposit = OmniBridge::TransferMessagePayload {
                     destinationNonce: message_payload.destination_nonce,
                     originChain: message_payload.transfer_id.origin_chain.into(),
@@ -877,7 +877,8 @@ impl EvmBridgeClient {
             | OmniAddress::Bnb(addr)
             | OmniAddress::Pol(addr)
             | OmniAddress::HyperEvm(addr)
-            | OmniAddress::Abs(addr) => Ok(Address::from_slice(&addr.0)),
+            | OmniAddress::Abs(addr)
+            | OmniAddress::Avax(addr) => Ok(Address::from_slice(&addr.0)),
             OmniAddress::Near(_)
             | OmniAddress::Sol(_)
             | OmniAddress::Fogo(_)

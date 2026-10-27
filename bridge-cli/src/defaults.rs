@@ -48,6 +48,10 @@ pub const ABS_RPC_MAINNET: &str = "https://api.mainnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
     "0xd2490A00bDB97C1EDE4fdf207CFE2664AFB9C20D";
 
+pub const AVAX_RPC_MAINNET: &str = "https://api.avax.network/ext/bc/C/rpc";
+pub const AVAX_BRIDGE_TOKEN_FACTORY_ADDRESS_MAINNET: &str =
+    "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
+
 pub const SOLANA_RPC_MAINNET: &str = "https://api.mainnet-beta.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_MAINNET: &str = "dahPEoZGXfyV58JqqH85okdHmpN8U2q8owgPUXSCPxe";
 pub const SOLANA_WORMHOLE_ADDRESS_MAINNET: &str = "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth";
@@ -132,6 +136,10 @@ pub const ABS_RPC_TESTNET: &str = "https://api.testnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
     "0x5C79627d2cD753d45B41839d187619f99c7B8D78";
 
+pub const AVAX_RPC_TESTNET: &str = "https://api.avax-test.network/ext/bc/C/rpc";
+pub const AVAX_BRIDGE_TOKEN_FACTORY_ADDRESS_TESTNET: &str =
+    "0xd025b38762B4A4E36F0Cde483b86CB13ea00D989";
+
 pub const SOLANA_RPC_TESTNET: &str = "https://api.devnet.solana.com";
 pub const SOLANA_BRIDGE_ADDRESS_TESTNET: &str = "862HdJV59Vp83PbcubUnvuXc4EAXP8CDDs6LTxFpunTe";
 pub const SOLANA_WORMHOLE_ADDRESS_TESTNET: &str = "3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5";
@@ -214,6 +222,10 @@ pub const HYPERCORE_SIGNATURE_CHAIN_ID_DEVNET: &str = HYPERCORE_SIGNATURE_CHAIN_
 
 pub const ABS_RPC_DEVNET: &str = "https://api.testnet.abs.xyz";
 pub const ABS_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
+    "0x0000000000000000000000000000000000000000";
+
+pub const AVAX_RPC_DEVNET: &str = "https://api.avax-test.network/ext/bc/C/rpc";
+pub const AVAX_BRIDGE_TOKEN_FACTORY_ADDRESS_DEVNET: &str =
     "0x0000000000000000000000000000000000000000";
 
 pub const SOLANA_RPC_DEVNET: &str = "https://api.devnet.solana.com";

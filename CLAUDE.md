@@ -56,7 +56,7 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 - **Exhaustive matching**: `ChainKind` and `OmniAddress` enums from `omni-types` must be exhaustively matched. When adding a new chain, check all `match` arms.
 - **One `EvmBridgeClient` per EVM chain**: Each EVM chain (Eth, Arb, Base, HyperEVM, Abstract) gets its own `EvmBridgeClient` instance with different config (RPC, keys, bridge address, optional wormhole address).
 - **Wormhole**: Some chains use Wormhole VAAs for proof verification (Arb, Base, Bnb, Pol, HyperEVM, Sol).
-- **MPC Proof**: Starknet and Abstract use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_abs_mpc_sign_payload()` / `build_strk_mpc_sign_payload()`, using types from `mpc-contract-interface` (`github.com/near/mpc`).
+- **MPC Proof**: Starknet, Aptos, Abstract and Avalanche use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_evm_mpc_sign_payload()` / `build_strk_mpc_sign_payload()` / `build_aptos_mpc_sign_payload()`, using types from `mpc-contract-interface` (`github.com/near/mpc`).
 - **CLI config precedence**: CLI args > env vars > config file > defaults (defined in `defaults.rs`)
 
 ### External Dependencies
