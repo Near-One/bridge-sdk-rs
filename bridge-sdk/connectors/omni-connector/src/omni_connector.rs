@@ -489,14 +489,14 @@ impl OmniConnector {
         near_bridge_client.get_provers().await
     }
 
-    /// Whether the bridge verifies `chain_kind` proofs through the configured MPC omni prover.
-    pub async fn near_uses_mpc_prover(&self, chain_kind: ChainKind) -> Result<bool> {
+    pub async fn near_get_mpc_chains(&self) -> Result<HashMap<ChainKind, Option<MpcFinality>>> {
         let near_bridge_client = self.near_bridge_client()?;
-        let Ok(mpc_omni_prover_id) = near_bridge_client.mpc_omni_prover_id() else {
-            return Ok(false);
-        };
-        let provers = near_bridge_client.get_provers().await?;
-        Ok(provers.get(&chain_kind) == Some(&mpc_omni_prover_id))
+        near_bridge_client.get_mpc_chains().await
+    }
+
+    /// Whether the bridge verifies `chain_kind` proofs through an MPC prover.
+    pub async fn near_uses_mpc_prover(&self, chain_kind: ChainKind) -> Result<bool> {
+        Ok(self.near_get_mpc_chains().await?.contains_key(&chain_kind))
     }
 
     pub async fn near_is_fast_transfer_finalised(
@@ -2076,14 +2076,14 @@ impl OmniConnector {
         })
     }
 
-    /// Finality configured on the EVM client, else the one registered on the MPC omni prover.
+    /// Finality configured on the EVM client, else the one registered on the chain's MPC prover.
     async fn evm_mpc_finality(&self, chain_kind: ChainKind) -> Result<EvmFinality> {
         if let Ok(finality) = self.evm_bridge_client(chain_kind)?.mpc_finality() {
             return Ok(finality);
         }
 
-        match self.near_get_mpc_finalities().await?.remove(&chain_kind) {
-            Some(MpcFinality::Evm(finality)) => Ok(finality),
+        match self.near_get_mpc_chains().await?.remove(&chain_kind) {
+            Some(Some(MpcFinality::Evm(finality))) => Ok(finality),
             _ => Err(BridgeSdkError::ConfigError(format!(
                 "MPC finality is not configured for {chain_kind:?}"
             ))),
