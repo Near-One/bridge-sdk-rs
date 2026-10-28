@@ -1,6 +1,6 @@
 use clap::Subcommand;
 use core::panic;
-use near_mpc_contract_interface::types::{AptosFinality, EvmFinality, StarknetFinality};
+use near_mpc_contract_interface::types::{AptosFinality, StarknetFinality};
 use std::collections::HashMap;
 use std::{path::Path, str::FromStr};
 
@@ -1273,19 +1273,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             tx_hash,
             config_cli,
         } => match chain {
-            ChainKind::Near => match source_chain {
-                ChainKind::Eth => {
-                    omni_connector(network, config_cli)
-                        .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
-                            chain_kind: source_chain,
-                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                            transaction_options: TransactionOptions::default(),
-                        })
-                        .await
-                        .unwrap();
-                }
-                ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
-                    omni_connector(network, config_cli)
+            ChainKind::Near => {
+                let connector = omni_connector(network, config_cli);
+                if uses_mpc_prover(&connector, source_chain).await {
+                    connector
                         .deploy_token(DeployTokenArgs::NearDeployTokenWithMpcProof {
                             chain_kind: source_chain,
                             tx_hash,
@@ -1293,9 +1284,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         })
                         .await
                         .unwrap();
-                }
-                _ => {
-                    omni_connector(network, config_cli)
+                } else if source_chain == ChainKind::Eth {
+                    connector
+                        .deploy_token(DeployTokenArgs::NearDeployTokenWithEvmProof {
+                            chain_kind: source_chain,
+                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                            transaction_options: TransactionOptions::default(),
+                        })
+                        .await
+                        .unwrap();
+                } else {
+                    connector
                         .deploy_token(DeployTokenArgs::NearDeployToken {
                             chain_kind: source_chain,
                             tx_hash,
@@ -1304,7 +1303,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                         .await
                         .unwrap();
                 }
-            },
+            }
             ChainKind::Eth
             | ChainKind::Arb
             | ChainKind::Base
@@ -1522,56 +1521,63 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                 .await
                 .unwrap();
 
-            match chain {
-                ChainKind::Eth => {
-                    connector
-                        .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
-                            chain_kind: chain,
-                            destination_chain,
-                            tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                            storage_deposit_actions,
-                            transaction_options: TransactionOptions::default(),
-                        })
-                        .await
-                        .unwrap();
-                }
-                ChainKind::Arb
-                | ChainKind::Base
-                | ChainKind::Bnb
-                | ChainKind::Pol
-                | ChainKind::HyperEvm
-                | ChainKind::Sol
-                | ChainKind::Fogo => {
-                    let vaa = connector
-                        .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
-                        .await
-                        .unwrap();
+            if uses_mpc_prover(&connector, chain).await {
+                connector
+                    .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
+                        chain_kind: chain,
+                        destination_chain,
+                        storage_deposit_actions,
+                        tx_hash,
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            } else {
+                match chain {
+                    ChainKind::Eth => {
+                        connector
+                            .fin_transfer(FinTransferArgs::NearFinTransferWithEvmProof {
+                                chain_kind: chain,
+                                destination_chain,
+                                tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                                storage_deposit_actions,
+                                transaction_options: TransactionOptions::default(),
+                            })
+                            .await
+                            .unwrap();
+                    }
+                    ChainKind::Arb
+                    | ChainKind::Base
+                    | ChainKind::Bnb
+                    | ChainKind::Pol
+                    | ChainKind::HyperEvm
+                    | ChainKind::Sol
+                    | ChainKind::Fogo => {
+                        let vaa = connector
+                            .wormhole_get_vaa_by_tx_hash(tx_hash.clone())
+                            .await
+                            .unwrap();
 
-                    connector
-                        .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
-                            chain_kind: chain,
-                            destination_chain,
-                            storage_deposit_actions,
-                            vaa,
-                            transaction_options: TransactionOptions::default(),
-                        })
-                        .await
-                        .unwrap();
-                }
-                ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
-                    connector
-                        .fin_transfer(FinTransferArgs::NearFinTransferWithMpcProof {
-                            chain_kind: chain,
-                            destination_chain,
-                            storage_deposit_actions,
-                            tx_hash,
-                            transaction_options: TransactionOptions::default(),
-                        })
-                        .await
-                        .unwrap();
-                }
-                ChainKind::Near | ChainKind::Btc | ChainKind::Zcash => {
-                    panic!("Unsupported chain for NearFinTransfer: {chain:?}");
+                        connector
+                            .fin_transfer(FinTransferArgs::NearFinTransferWithVaa {
+                                chain_kind: chain,
+                                destination_chain,
+                                storage_deposit_actions,
+                                vaa,
+                                transaction_options: TransactionOptions::default(),
+                            })
+                            .await
+                            .unwrap();
+                    }
+                    ChainKind::Near
+                    | ChainKind::Btc
+                    | ChainKind::Zcash
+                    | ChainKind::Abs
+                    | ChainKind::Avax
+                    | ChainKind::Strk
+                    | ChainKind::Aptos => {
+                        panic!("Unsupported chain for NearFinTransfer: {chain:?}");
+                    }
                 }
             }
         }
@@ -1936,19 +1942,10 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
             chain,
             tx_hash,
             config_cli,
-        } => match chain {
-            ChainKind::Eth => {
-                omni_connector(network, config_cli)
-                    .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
-                        chain_kind: chain,
-                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
-                        transaction_options: TransactionOptions::default(),
-                    })
-                    .await
-                    .unwrap();
-            }
-            ChainKind::Abs | ChainKind::Avax | ChainKind::Strk | ChainKind::Aptos => {
-                omni_connector(network, config_cli)
+        } => {
+            let connector = omni_connector(network, config_cli);
+            if uses_mpc_prover(&connector, chain).await {
+                connector
                     .bind_token(BindTokenArgs::BindTokenWithMpcProofTx {
                         chain_kind: chain,
                         tx_hash,
@@ -1956,9 +1953,17 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     })
                     .await
                     .unwrap();
-            }
-            _ => {
-                omni_connector(network, config_cli)
+            } else if chain == ChainKind::Eth {
+                connector
+                    .bind_token(BindTokenArgs::BindTokenWithEvmProofTx {
+                        chain_kind: chain,
+                        tx_hash: TxHash::from_str(&tx_hash).expect("Invalid tx_hash"),
+                        transaction_options: TransactionOptions::default(),
+                    })
+                    .await
+                    .unwrap();
+            } else {
+                connector
                     .bind_token(BindTokenArgs::BindTokenWithVaaProofTx {
                         chain_kind: chain,
                         tx_hash,
@@ -1967,7 +1972,7 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
-        },
+        }
         OmniConnectorSubCommand::SvmSetAdmin {
             chain,
             admin,
@@ -2396,6 +2401,15 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
     }
 }
 
+/// Whether the bridge expects an MPC proof for transactions originating on `chain`.
+async fn uses_mpc_prover(connector: &OmniConnector, chain: ChainKind) -> bool {
+    match chain {
+        ChainKind::Strk | ChainKind::Aptos => true,
+        chain if chain.is_evm_chain() => connector.near_uses_mpc_prover(chain).await.unwrap(),
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
     let combined_config = combined_config(cli_config, network);
@@ -2509,7 +2523,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .private_key(combined_config.abs_private_key)
         .omni_bridge_address(combined_config.abs_bridge_token_factory_address)
         .wormhole_core_address(None)
-        .mpc_finality(Some(EvmFinality::Latest))
         .build()
         .unwrap();
 
@@ -2518,7 +2531,6 @@ fn omni_connector(network: Network, cli_config: CliConfig) -> OmniConnector {
         .private_key(combined_config.avax_private_key)
         .omni_bridge_address(combined_config.avax_bridge_token_factory_address)
         .wormhole_core_address(None)
-        .mpc_finality(Some(EvmFinality::Finalized))
         .build()
         .unwrap();
 

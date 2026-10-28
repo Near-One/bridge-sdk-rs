@@ -278,6 +278,27 @@ impl NearBridgeClient {
         Ok(mpc_finalities)
     }
 
+    pub async fn get_provers(&self) -> Result<HashMap<ChainKind, AccountId>> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "get_provers".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await?;
+
+        let provers = serde_json::from_slice::<Vec<(ChainKind, AccountId)>>(&response)?
+            .into_iter()
+            .collect();
+
+        Ok(provers)
+    }
+
     pub async fn is_fast_transfer_finalised(
         &self,
         fast_transfer_id: FastTransferId,

@@ -212,8 +212,13 @@ impl EvmBridgeClient {
     /// and returns that finality so it can be embedded in the MPC sign payload.
     pub async fn check_mpc_finality(&self, tx_hash: TxHash) -> Result<EvmFinality> {
         let finality = self.mpc_finality()?;
+        self.check_finality(tx_hash, &finality).await?;
+        Ok(finality)
+    }
 
-        let block_tag = match &finality {
+    /// Verifies that `tx_hash` is mined at or below the block tagged by `finality`.
+    pub async fn check_finality(&self, tx_hash: TxHash, finality: &EvmFinality) -> Result<()> {
+        let block_tag = match finality {
             EvmFinality::Latest => alloy::eips::BlockNumberOrTag::Latest,
             EvmFinality::Safe => alloy::eips::BlockNumberOrTag::Safe,
             EvmFinality::Finalized => alloy::eips::BlockNumberOrTag::Finalized,
@@ -252,7 +257,7 @@ impl EvmBridgeClient {
             return Err(EvmBridgeClientError::MpcFinalityNotReached);
         }
 
-        Ok(finality)
+        Ok(())
     }
 
     /// Checks if the transfer is already finalised on EVM
