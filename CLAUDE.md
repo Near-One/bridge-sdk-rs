@@ -47,7 +47,7 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 2. **`bridge-cli/src/defaults.rs`**: Add RPC URL and bridge token factory address constants for mainnet/testnet/devnet
 3. **`bridge-cli/src/main.rs`**: Add fields to `CliConfig` struct, `or()` merge method, `env_config()`, and `default_config()` for all 3 networks
 4. **`bridge-cli/src/omni_connector_command.rs`**: Add to `derive_evm_sender()`, deploy token match, `NearFinTransfer` match (wormhole arm or unsupported arm), build bridge client in `omni_connector()`, add to `OmniConnectorBuilder`
-5. **`bridge-sdk/connectors/omni-connector/src/omni_connector.rs`**: Add `xxx_bridge_client: Option<EvmBridgeClient>` field, update `evm_bridge_client()`, `log_metadata()`, `is_transfer_finalised()`, `utxo_bridge_client()`, `get_storage_deposit_actions_for_tx()`
+5. **`bridge-sdk/connectors/omni-connector/src/omni_connector.rs`**: Add `xxx_bridge_client: Option<EvmBridgeClient>` field, update `evm_bridge_client()`, `log_metadata()`, `is_transfer_finalised()`, `utxo_bridge_client()`, `get_storage_deposit_actions_for_tx()`, `evm_foreign_chain_request()`, `build_mpc_sign_payload()`
 6. **`bridge-sdk/bridge-clients/evm-bridge-client/src/evm_bridge_client.rs`**: Add `OmniAddress::Xxx` to `convert_omni_address()`
 
 ### Key Patterns
@@ -56,7 +56,7 @@ The primary pattern for adding EVM chain support (follow HyperEVM/Abstract as ex
 - **Exhaustive matching**: `ChainKind` and `OmniAddress` enums from `omni-types` must be exhaustively matched. When adding a new chain, check all `match` arms.
 - **One `EvmBridgeClient` per EVM chain**: Each EVM chain (Eth, Arb, Base, HyperEVM, Abstract) gets its own `EvmBridgeClient` instance with different config (RPC, keys, bridge address, optional wormhole address).
 - **Wormhole**: Some chains use Wormhole VAAs for proof verification (Arb, Base, Bnb, Pol, HyperEVM, Sol).
-- **MPC Proof**: Starknet, Aptos, Abstract and Avalanche use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_evm_mpc_sign_payload()` / `build_strk_mpc_sign_payload()` / `build_aptos_mpc_sign_payload()`, using types from `mpc-contract-interface` (`github.com/near/mpc`).
+- **MPC Proof**: Starknet, Aptos and any EVM chain whose bridge prover is the MPC omni prover use MPC Read-RPC signed payloads for proof verification (`NearFinTransferWithMpcProof`). `OmniConnector::near_uses_mpc_prover()` reads the bridge's `get_provers` and treats a chain's prover as MPC when it exposes `get_finalities` (provers are versioned accounts, so there is no single MPC prover id). The SDK auto-constructs the `ForeignTxSignPayload` from the transaction receipt via `build_mpc_sign_payload()` (dispatching to `build_evm_mpc_sign_payload()` / `build_strk_mpc_sign_payload()` / `build_aptos_mpc_sign_payload()`), using types from `mpc-contract-interface` (`github.com/near/mpc`). EVM finality comes from the client's `mpc_finality` or, if unset, from `get_finalities` on the prover registered for that chain.
 - **CLI config precedence**: CLI args > env vars > config file > defaults (defined in `defaults.rs`)
 
 ### External Dependencies

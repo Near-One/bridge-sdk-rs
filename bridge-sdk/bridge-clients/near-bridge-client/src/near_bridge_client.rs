@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Instant;
@@ -276,6 +276,74 @@ impl NearBridgeClient {
             .collect();
 
         Ok(mpc_finalities)
+    }
+
+    pub async fn get_provers(&self) -> Result<HashMap<ChainKind, AccountId>> {
+        let endpoint = self.endpoint()?;
+        let omni_bridge_id = self.omni_bridge_id()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: omni_bridge_id,
+                method_name: "get_provers".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await?;
+
+        let provers = serde_json::from_slice::<Vec<(ChainKind, AccountId)>>(&response)?
+            .into_iter()
+            .collect();
+
+        Ok(provers)
+    }
+
+    /// Finalities registered on `prover_id`, or `None` when it is not an MPC prover (no `get_finalities`).
+    pub async fn get_prover_finalities(
+        &self,
+        prover_id: AccountId,
+    ) -> Result<Option<HashMap<ChainKind, MpcFinality>>> {
+        let endpoint = self.endpoint()?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: prover_id,
+                method_name: "get_finalities".to_string(),
+                args: serde_json::Value::Null,
+            },
+        )
+        .await;
+
+        match response {
+            Ok(response) => Ok(Some(
+                serde_json::from_slice::<Vec<(ChainKind, MpcFinality)>>(&response)?
+                    .into_iter()
+                    .collect(),
+            )),
+            Err(err) if err.is_method_not_found() => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Chains the bridge verifies through an MPC prover, with the finality that prover registered for each.
+    pub async fn get_mpc_chains(&self) -> Result<HashMap<ChainKind, Option<MpcFinality>>> {
+        let provers = self.get_provers().await?;
+
+        let mut prover_finalities = HashMap::new();
+        for prover_id in provers.values().cloned().collect::<HashSet<_>>() {
+            let finalities = self.get_prover_finalities(prover_id.clone()).await?;
+            prover_finalities.insert(prover_id, finalities);
+        }
+
+        Ok(provers
+            .into_iter()
+            .filter_map(|(chain_kind, prover_id)| {
+                let finalities = prover_finalities.get(&prover_id)?.as_ref()?;
+                Some((chain_kind, finalities.get(&chain_kind).cloned()))
+            })
+            .collect())
     }
 
     pub async fn is_fast_transfer_finalised(
