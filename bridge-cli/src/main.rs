@@ -949,8 +949,7 @@ fn init_logger() {
         .from_env_lossy();
     let env_filter = env_filter
         .add_directive("nep141_connector=debug".parse().unwrap())
-        .add_directive("eth_connector=debug".parse().unwrap())
-        .add_directive("fast_bridge=debug".parse().unwrap());
+        .add_directive("eth_connector=debug".parse().unwrap());
 
     let subscriber = FmtSubscriber::builder()
         .with_env_filter(env_filter)
