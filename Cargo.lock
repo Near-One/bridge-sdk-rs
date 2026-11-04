@@ -10808,7 +10808,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "bip32"
-version = "0.6.0-pre.1"
