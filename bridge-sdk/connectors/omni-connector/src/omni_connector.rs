@@ -24,10 +24,7 @@ use omni_types::prover_args::{
 };
 use omni_types::prover_result::ProofKind;
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
-use omni_types::{
-    EvmAddress, FastTransfer, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferIdKind,
-    TransferMessage, UnifiedTransferId, UtxoId, H160,
-};
+use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
 use aptos_bridge_client::{AptosBridgeClient, AptosInitTransferEvent};
 pub use evm_bridge_client::PreInitTransferFilter;
@@ -469,16 +466,6 @@ impl OmniConnector {
         near_bridge_client.get_native_token_id(origin_chain).await
     }
 
-    pub async fn near_get_fast_transfer_status(
-        &self,
-        fast_transfer_id: FastTransferId,
-    ) -> Result<Option<FastTransferStatus>> {
-        let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client
-            .get_fast_transfer_status(fast_transfer_id)
-            .await
-    }
-
     pub async fn near_get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
         let near_bridge_client = self.near_bridge_client()?;
         near_bridge_client.get_mpc_finalities().await
@@ -497,16 +484,6 @@ impl OmniConnector {
     /// Whether the bridge verifies `chain_kind` proofs through an MPC prover.
     pub async fn near_uses_mpc_prover(&self, chain_kind: ChainKind) -> Result<bool> {
         Ok(self.near_get_mpc_chains().await?.contains_key(&chain_kind))
-    }
-
-    pub async fn near_is_fast_transfer_finalised(
-        &self,
-        fast_transfer_id: FastTransferId,
-    ) -> Result<bool> {
-        let near_bridge_client = self.near_bridge_client()?;
-        near_bridge_client
-            .is_fast_transfer_finalised(fast_transfer_id)
-            .await
     }
 
     pub async fn near_log_metadata(
@@ -2413,143 +2390,6 @@ impl OmniConnector {
             .await
     }
 
-    pub async fn near_fast_transfer(
-        &self,
-        chain_kind: ChainKind,
-        tx_hash: String,
-        storage_deposit_amount: Option<u128>,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-        if chain_kind.is_utxo_chain() {
-            return Err(BridgeSdkError::InvalidArgument(
-                "For Utxo chains use \"near_fast_transfer_from_utxo\" method".to_string(),
-            ));
-        } else if !chain_kind.is_evm_chain() {
-            return Err(BridgeSdkError::InvalidArgument(format!(
-                "Fast transfer is not supported for chain: {chain_kind:?}"
-            )));
-        }
-
-        let near_bridge_client = self.near_bridge_client()?;
-
-        let tx_hash = TxHash::from_str(&tx_hash).map_err(|e| {
-            BridgeSdkError::InvalidArgument(format!("Failed to parse tx hash: {e}"))
-        })?;
-
-        let transfer_event = self.evm_get_transfer_event(chain_kind, tx_hash).await?;
-
-        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
-            BridgeSdkError::InvalidArgument(format!(
-                "Failed to parse recipient: {}",
-                transfer_event.recipient
-            ))
-        })?;
-        let token_address =
-            OmniAddress::new_from_evm_address(chain_kind, H160(*transfer_event.token_address.0))
-                .map_err(|_| {
-                    BridgeSdkError::InvalidArgument(format!(
-                        "Failed to parse token address: {}",
-                        transfer_event.token_address
-                    ))
-                })?;
-
-        let token_id = near_bridge_client
-            .get_token_id(token_address.clone())
-            .await?;
-
-        if transfer_event.amount < transfer_event.fee {
-            return Err(BridgeSdkError::InvalidArgument(format!(
-                "Transfer amount is less than fee: {} < {}",
-                transfer_event.amount, transfer_event.fee
-            )));
-        }
-
-        let relayer = near_bridge_client.account_id()?;
-        let decimals = self.near_get_token_decimals(token_address).await?;
-        let amount_to_send =
-            self.denormalize_amount(&decimals, transfer_event.amount - transfer_event.fee)?;
-        let balance = near_bridge_client
-            .ft_balance_of(token_id.clone(), relayer.clone())
-            .await?;
-
-        if balance < amount_to_send {
-            return Err(BridgeSdkError::InsufficientBalance(format!(
-                "Insufficient balance for fast transfer: {balance} < {amount_to_send}",
-            )));
-        }
-
-        near_bridge_client
-            .fast_fin_transfer(
-                near_bridge_client::FastFinTransferArgs {
-                    token_id,
-                    amount_to_send,
-                    recipient,
-                    amount: transfer_event.amount,
-                    fee: Fee {
-                        fee: transfer_event.fee.into(),
-                        native_fee: transfer_event.native_fee.into(),
-                    },
-                    transfer_id: UnifiedTransferId {
-                        origin_chain: chain_kind,
-                        kind: TransferIdKind::Nonce(transfer_event.origin_nonce),
-                    },
-                    msg: transfer_event.message,
-                    storage_deposit_amount,
-                    relayer,
-                },
-                transaction_options,
-            )
-            .await
-    }
-
-    pub async fn near_fast_transfer_from_utxo(
-        &self,
-        chain_kind: ChainKind,
-        tx_hash: String,
-        recipient: OmniAddress,
-        refund_address: Option<String>,
-        fee: u128,
-        storage_deposit_amount: Option<u128>,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-        let near_bridge_client = self.near_bridge_client()?;
-        let utxo_bridge_client = self.utxo_bridge_client(chain_kind)?;
-
-        let deposit_address = near_bridge_client
-            .get_btc_address(chain_kind, &recipient, refund_address, fee, false)
-            .await?;
-        let tx_data = utxo_bridge_client
-            .get_bridge_transaction_data(&tx_hash, &deposit_address)
-            .await?;
-        // Considering protocol fee is 0 for safe_deposit
-        let amount: u128 = tx_data.amount.into();
-
-        let fast_fin_transfer_msg = near_bridge_client::FastFinTransferArgs {
-            token_id: self.near_get_native_token_id(chain_kind).await?,
-            amount_to_send: amount - fee,
-            transfer_id: UnifiedTransferId {
-                origin_chain: chain_kind,
-                kind: TransferIdKind::Utxo(UtxoId {
-                    tx_hash: tx_hash.clone(),
-                    vout: tx_data.vout,
-                }),
-            },
-            recipient,
-            fee: Fee {
-                fee: fee.into(),
-                native_fee: 0.into(),
-            },
-            msg: String::new(),
-            amount,
-            storage_deposit_amount,
-            relayer: near_bridge_client.account_id()?,
-        };
-
-        near_bridge_client
-            .fast_fin_transfer(fast_fin_transfer_msg, transaction_options)
-            .await
-    }
-
     pub async fn evm_is_transfer_finalised(
         &self,
         chain_kind: ChainKind,
@@ -4358,32 +4198,19 @@ impl OmniConnector {
                     ))
                 })?;
 
-        let mut recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
                 "Failed to parse recipient: {}",
                 transfer_event.recipient
             ))
         })?;
 
-        let mut fee_recipient = self
+        let fee_recipient = self
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
                 BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
-
-        self.apply_fast_transfer_override(
-            chain,
-            &token_address,
-            transfer_event.origin_nonce,
-            transfer_event.amount,
-            transfer_event.fee,
-            transfer_event.native_fee,
-            &transfer_event.message,
-            &mut recipient,
-            &mut fee_recipient,
-        )
-        .await?;
 
         self.get_storage_deposit_actions(
             chain,
@@ -4457,32 +4284,19 @@ impl OmniConnector {
             ))
         })?;
 
-        let mut recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
                 "Failed to parse recipient: {}",
                 transfer_event.recipient
             ))
         })?;
 
-        let mut fee_recipient = self
+        let fee_recipient = self
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
                 BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
-
-        self.apply_fast_transfer_override(
-            ChainKind::Strk,
-            &token_address,
-            transfer_event.origin_nonce,
-            transfer_event.amount,
-            transfer_event.fee,
-            transfer_event.native_fee,
-            &transfer_event.message,
-            &mut recipient,
-            &mut fee_recipient,
-        )
-        .await?;
 
         self.get_storage_deposit_actions(
             ChainKind::Strk,
@@ -4511,32 +4325,19 @@ impl OmniConnector {
                 },
             )?;
 
-        let mut recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
+        let recipient = OmniAddress::from_str(&transfer_event.recipient).map_err(|_| {
             BridgeSdkError::InvalidArgument(format!(
                 "Failed to parse recipient: {}",
                 transfer_event.recipient
             ))
         })?;
 
-        let mut fee_recipient = self
+        let fee_recipient = self
             .near_bridge_client()
             .and_then(NearBridgeClient::account_id)
             .map_err(|_| {
                 BridgeSdkError::ConfigError("NEAR bridge client is not configured".to_string())
             })?;
-
-        self.apply_fast_transfer_override(
-            ChainKind::Aptos,
-            &token_address,
-            transfer_event.origin_nonce,
-            transfer_event.amount,
-            transfer_event.fee,
-            transfer_event.native_fee,
-            &transfer_event.message,
-            &mut recipient,
-            &mut fee_recipient,
-        )
-        .await?;
 
         self.get_storage_deposit_actions(
             ChainKind::Aptos,
@@ -4547,58 +4348,6 @@ impl OmniConnector {
             transfer_event.native_fee,
         )
         .await
-    }
-
-    // If the transfer was already fast-finalised on NEAR, the omni-bridge contract routes
-    // both the recipient and the fee recipient to the relayer that executed the fast transfer
-    // (see `process_fin_transfer_to_near` in omni-bridge). Storage-deposit actions emitted by
-    // `fin_transfer` must therefore target that relayer instead of the original recipient.
-    #[allow(clippy::too_many_arguments)]
-    async fn apply_fast_transfer_override(
-        &self,
-        chain: ChainKind,
-        token_address: &OmniAddress,
-        origin_nonce: u64,
-        amount: u128,
-        fee: u128,
-        native_fee: u128,
-        msg: &str,
-        recipient: &mut OmniAddress,
-        fee_recipient: &mut AccountId,
-    ) -> Result<()> {
-        if !matches!(recipient, OmniAddress::Near(_)) {
-            return Ok(());
-        }
-
-        let token_id = self.near_get_token_id(token_address.clone()).await?;
-        let decimals = self.near_get_token_decimals(token_address.clone()).await?;
-
-        let fast_transfer = FastTransfer {
-            transfer_id: UnifiedTransferId {
-                origin_chain: chain,
-                kind: TransferIdKind::Nonce(origin_nonce),
-            },
-            token_id,
-            amount: near_sdk::json_types::U128(self.denormalize_amount(&decimals, amount)?),
-            fee: Fee {
-                fee: near_sdk::json_types::U128(self.denormalize_amount(&decimals, fee)?),
-                native_fee: near_sdk::json_types::U128(native_fee),
-            },
-            recipient: recipient.clone(),
-            msg: msg.to_string(),
-        };
-
-        if let Some(status) = self
-            .near_get_fast_transfer_status(fast_transfer.id())
-            .await?
-        {
-            if !status.finalised {
-                *recipient = OmniAddress::Near(status.relayer.clone());
-                *fee_recipient = status.relayer;
-            }
-        }
-
-        Ok(())
     }
 
     pub async fn get_storage_deposit_actions(

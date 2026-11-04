@@ -13,8 +13,7 @@ use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
     mpc_types::MpcFinality,
-    ChainKind, FastTransferId, FastTransferStatus, Fee, OmniAddress, TransferId, TransferMessage,
-    UnifiedTransferId,
+    ChainKind, Fee, OmniAddress, TransferId, TransferMessage,
 };
 use reqwest::Url;
 use serde_json::json;
@@ -37,8 +36,6 @@ const FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const CLAIM_FEE_GAS: u64 = 300_000_000_000_000;
 const CLAIM_FEE_DEPOSIT: u128 = 1;
-
-const FAST_FIN_TRANSFER_GAS: u64 = 300_000_000_000_000;
 
 const MPC_DEPOSIT: u128 = 1;
 const FT_TRANSFER_DEPOSIT: u128 = 1;
@@ -69,19 +66,6 @@ impl Default for TransactionOptions {
 #[derive(serde::Deserialize)]
 struct StorageBalanceBounds {
     min: NearToken,
-}
-
-#[derive(serde::Serialize)]
-pub struct FastFinTransferArgs {
-    pub token_id: AccountId,
-    pub amount_to_send: u128,
-    pub transfer_id: UnifiedTransferId,
-    pub recipient: OmniAddress,
-    pub amount: u128,
-    pub fee: Fee,
-    pub msg: String,
-    pub storage_deposit_amount: Option<u128>,
-    pub relayer: AccountId,
 }
 
 #[derive(Default, Clone)]
@@ -234,29 +218,6 @@ impl NearBridgeClient {
         Ok(token_id)
     }
 
-    pub async fn get_fast_transfer_status(
-        &self,
-        fast_transfer_id: FastTransferId,
-    ) -> Result<Option<FastTransferStatus>> {
-        let endpoint = self.endpoint()?;
-        let omni_bridge_id = self.omni_bridge_id()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: omni_bridge_id,
-                method_name: "get_fast_transfer_status".to_string(),
-                args: serde_json::json!({
-                    "fast_transfer_id": fast_transfer_id
-                }),
-            },
-        )
-        .await?;
-
-        let status = serde_json::from_slice::<Option<FastTransferStatus>>(&response)?;
-        Ok(status)
-    }
-
     pub async fn get_mpc_finalities(&self) -> Result<HashMap<ChainKind, MpcFinality>> {
         let endpoint = self.endpoint()?;
         let mpc_omni_prover = self.mpc_omni_prover_id()?;
@@ -344,29 +305,6 @@ impl NearBridgeClient {
                 Some((chain_kind, finalities.get(&chain_kind).cloned()))
             })
             .collect())
-    }
-
-    pub async fn is_fast_transfer_finalised(
-        &self,
-        fast_transfer_id: FastTransferId,
-    ) -> Result<bool> {
-        let endpoint = self.endpoint()?;
-        let omni_bridge_id = self.omni_bridge_id()?;
-
-        let response = near_rpc_client::view(
-            endpoint,
-            ViewRequest {
-                contract_account_id: omni_bridge_id,
-                method_name: "is_fast_transfer_finalised".to_string(),
-                args: serde_json::json!({
-                    "fast_transfer_id": fast_transfer_id
-                }),
-            },
-        )
-        .await?;
-
-        let is_finalised = serde_json::from_slice::<bool>(&response)?;
-        Ok(is_finalised)
     }
 
     pub async fn get_storage_balance(
@@ -904,56 +842,6 @@ impl NearBridgeClient {
         Ok(tx_hash)
     }
 
-    /// Fast finalize transfer on NEAR
-    #[tracing::instrument(skip_all, name = "FAST FIN TRANSFER")]
-    pub async fn fast_fin_transfer(
-        &self,
-        args: FastFinTransferArgs,
-        transaction_options: TransactionOptions,
-    ) -> Result<CryptoHash> {
-        let endpoint = self.endpoint()?;
-        let omni_bridge_id = self.omni_bridge_id()?;
-
-        let tx_hash = near_rpc_client::change_and_wait(
-            endpoint,
-            ChangeRequest {
-                signer: self.signer()?,
-                nonce: transaction_options.nonce,
-                receiver_id: args.token_id,
-                method_name: "ft_transfer_call".to_string(),
-                args: serde_json::json!({
-                    "receiver_id": omni_bridge_id,
-                    "amount": args.amount_to_send.to_string(),
-                    "msg": serde_json::json!({
-                        "FastFinTransfer": {
-                            "recipient": args.recipient,
-                            "amount": args.amount.to_string(),
-                            "fee": args.fee,
-                            "transfer_id": args.transfer_id,
-                            "msg": args.msg,
-                            "storage_deposit_amount": args.storage_deposit_amount,
-                            "relayer": args.relayer,
-                        }
-                    })
-                    .to_string()
-                })
-                .to_string()
-                .into_bytes(),
-                gas: FAST_FIN_TRANSFER_GAS,
-                deposit: FT_TRANSFER_DEPOSIT,
-            },
-            transaction_options.wait_until,
-            transaction_options.wait_final_outcome_timeout_sec,
-        )
-        .await?;
-
-        tracing::info!(
-            tx_hash = tx_hash.to_string(),
-            "Sent fast finalize transfer transaction"
-        );
-        Ok(tx_hash)
-    }
-
     pub async fn ft_balance_of(&self, token_id: AccountId, account_id: AccountId) -> Result<u128> {
         let endpoint = self.endpoint()?;
 
@@ -1008,11 +896,6 @@ impl NearBridgeClient {
 
     pub async fn get_required_balance_for_fin_transfer(&self) -> Result<u128> {
         self.get_required_balance("required_balance_for_fin_transfer")
-            .await
-    }
-
-    pub async fn get_required_balance_for_fast_fin_transfer(&self) -> Result<u128> {
-        self.get_required_balance("required_balance_for_fast_transfer")
             .await
     }
 
