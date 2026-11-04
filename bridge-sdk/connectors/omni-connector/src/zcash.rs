@@ -1,10 +1,9 @@
 use crate::{CryptoHash, OmniConnector, TransactionOptions};
 
-use bitcoin::{secp256k1, OutPoint, TxOut};
+use bitcoin::{OutPoint, TxOut};
 use bridge_connector_common::result::{BridgeSdkError, Result};
 
 use bitcoin::hashes::Hash;
-use bitcoin::key::rand::rngs::OsRng;
 use near_bridge_client::btc::{ChainSpecificData, VUTXO};
 use omni_types::ChainKind;
 use orchard::circuit::OrchardCircuitVersion;
@@ -25,6 +24,8 @@ use zcash_primitives::transaction::{
 };
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::memo::{Memo, MemoBytes};
+use zcash_rand::rand_core::UnwrapErr;
+use zcash_rand::rngs::SysRng;
 use zcash_transparent::address::TransparentAddress;
 use zcash_transparent::bundle::Bundle;
 
@@ -222,11 +223,12 @@ impl OmniConnector {
                 .get_pk_for_utxo(ChainKind::Zcash, input.utxo.clone())
                 .await?;
 
-            let transparent_pubkey = secp256k1::PublicKey::from_str(&pk_raw).map_err(|err| {
-                BridgeSdkError::ZCashOrchardBundleError(format!(
-                    "Invalid secp256k1 public key for UTXO: {err}"
-                ))
-            })?;
+            let transparent_pubkey =
+                zcash_secp256k1::PublicKey::from_str(&pk_raw).map_err(|err| {
+                    BridgeSdkError::ZCashOrchardBundleError(format!(
+                        "Invalid secp256k1 public key for UTXO: {err}"
+                    ))
+                })?;
 
             let utxo = zcash_transparent::bundle::OutPoint::new(
                 input.out_point.txid.to_byte_array(),
@@ -368,7 +370,7 @@ impl OmniConnector {
             ))
         })?;
 
-        let is_valid = validator.validate(OsRng);
+        let is_valid = validator.validate(UnwrapErr(SysRng));
         if !is_valid {
             return Err(BridgeSdkError::ZCashOrchardBundleError(
                 "Batch Orchard validation failed".to_string(),
@@ -467,7 +469,7 @@ impl OmniConnector {
             )
             .await?;
 
-        let rng = OsRng;
+        let rng = UnwrapErr(SysRng);
 
         let (pool, circuit_version) =
             shielded_pool_and_circuit(&self.zcash_params()?, to_block_height(current_height))?;
@@ -527,23 +529,25 @@ impl OmniConnector {
             )
         })?;
 
-        let pczt = IoFinalizer::new(pczt).finalize_io().map_err(|err| {
-            BridgeSdkError::ZCashOrchardBundleError(format!(
-                "Error on IoFinalizer::finalize_io: {err:?}"
-            ))
-        })?;
+        let pczt = IoFinalizer::new(pczt)
+            .finalize_io(UnwrapErr(SysRng))
+            .map_err(|err| {
+                BridgeSdkError::ZCashOrchardBundleError(format!(
+                    "Error on IoFinalizer::finalize_io: {err:?}"
+                ))
+            })?;
 
         let prover = Prover::new(pczt);
         let pczt = match pool {
             ShieldedPool::Orchard => prover
-                .create_orchard_proof(orchard_proving_key(circuit_version)?)
+                .create_orchard_proof(UnwrapErr(SysRng), orchard_proving_key(circuit_version)?)
                 .map_err(|err| {
                     BridgeSdkError::ZCashOrchardBundleError(format!(
                         "Error on create orchard proof: {err:?}"
                     ))
                 })?,
             ShieldedPool::Ironwood => prover
-                .create_ironwood_proof(orchard_proving_key(circuit_version)?)
+                .create_ironwood_proof(UnwrapErr(SysRng), orchard_proving_key(circuit_version)?)
                 .map_err(|err| {
                     BridgeSdkError::ZCashOrchardBundleError(format!(
                         "Error on create ironwood proof: {err:?}"
@@ -552,8 +556,9 @@ impl OmniConnector {
         }
         .finish();
 
-        let tx: zcash_primitives::transaction::Transaction =
-            TransactionExtractor::new(pczt).extract().map_err(|err| {
+        let tx: zcash_primitives::transaction::Transaction = TransactionExtractor::new(pczt)
+            .extract(UnwrapErr(SysRng))
+            .map_err(|err| {
                 BridgeSdkError::ZCashOrchardBundleError(format!(
                     "Error on extract transaction: {err:?}"
                 ))
