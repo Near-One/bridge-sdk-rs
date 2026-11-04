@@ -999,7 +999,7 @@ pub fn get_tx_outs_utxo_management(
 }
 
 pub fn extract_orchard_address(uaddress: &str) -> Result<CtOption<orchard::Address>, String> {
-    let (_, ua) = unified::Address::decode(uaddress)
+    let (_, _, ua) = unified::Address::decode(uaddress)
         .map_err(|err| format!("Invalid unified address {err}"))?;
     let mut parsed_address = None;
     for receiver in ua.items() {
