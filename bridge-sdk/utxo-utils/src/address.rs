@@ -218,7 +218,7 @@ impl UTXOAddress {
                 Ok(bitcoin::ScriptBuf::new_witness_program(program))
             }
             UTXOAddress::Unified { address, .. } => {
-                let receiver_list = address.items_as_parsed();
+                let receiver_list = address.items();
                 for receiver in receiver_list {
                     match receiver {
                         Receiver::P2pkh(data) => {

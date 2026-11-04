@@ -1,6 +1,6 @@
 [package]
 name = "omni-connector"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 rust-version = "1.96.0"
 
@@ -35,6 +35,10 @@ zcash_address.workspace = true
 ripemd.workspace = true
 sha2.workspace = true
 rand = "0.8"
+# The zcash stack (librustzcash, orchard) needs rand_core 0.10 RNGs and secp256k1 0.33
+# keys, incompatible with the rand 0.8 / secp256k1 0.29 used by `bitcoin` and UTXO selection.
+zcash-rand = { package = "rand", version = "0.10", default-features = false, features = ["sys_rng"] }
+zcash-secp256k1 = { package = "secp256k1", version = "0.33", default-features = false, features = ["alloc"] }
 
 crypto-utils = { path = "../../crypto-utils" }
 utxo-utils = { path = "../../utxo-utils" }

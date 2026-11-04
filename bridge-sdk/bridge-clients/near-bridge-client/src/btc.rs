@@ -707,7 +707,9 @@ impl NearBridgeClient {
     ) -> Result<CryptoHash> {
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
-        let deposit = if args.deposit_msg.safe_deposit.is_some() {
+        // The Zcash connector treats every deposit as a safe deposit, so it always
+        // charges the safe-deposit storage balance.
+        let deposit = if chain == ChainKind::Zcash || args.deposit_msg.safe_deposit.is_some() {
             BTC_SAFE_VERIFY_DEPOSIT_DEPOSIT
         } else {
             BTC_VERIFY_DEPOSIT_DEPOSIT
