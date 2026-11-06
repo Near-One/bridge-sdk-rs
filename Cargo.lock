@@ -1660,7 +1660,7 @@ dependencies = [
 
 [[package]]
 name = "bridge-cli"
-version = "0.3.78"
+version = "0.3.79"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -4495,7 +4495,7 @@ dependencies = [
 
 [[package]]
 name = "near-bridge-client"
-version = "0.2.34"
+version = "0.2.35"
 dependencies = [
  "base64 0.21.7",
  "bitcoin",
@@ -5231,7 +5231,7 @@ dependencies = [
 
 [[package]]
 name = "omni-connector"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "alloy",
  "aptos-bridge-client",
@@ -8889,7 +8889,7 @@ dependencies = [
 
 [[package]]
 name = "starknet-bridge-client"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "async-trait",
  "hex",
