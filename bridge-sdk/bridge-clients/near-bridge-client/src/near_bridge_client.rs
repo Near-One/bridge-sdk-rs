@@ -20,6 +20,7 @@ use reqwest::Url;
 use serde_json::json;
 
 pub mod btc;
+pub mod dao;
 
 const STORAGE_DEPOSIT_GAS: u64 = 10_000_000_000_000;
 
