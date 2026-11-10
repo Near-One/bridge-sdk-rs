@@ -32,6 +32,11 @@ struct CliConfig {
     near_token_locker_id: Option<String>,
     #[arg(long)]
     near_mpc_omni_prover_id: Option<String>,
+    #[arg(
+        long,
+        help = "Sputnik DAO account that holds the DAO role on the bridge"
+    )]
+    near_dao_account_id: Option<String>,
     #[arg(long)]
     eth_light_client_id: Option<String>,
     #[arg(long)]
@@ -241,6 +246,7 @@ impl CliConfig {
             near_mpc_omni_prover_id: self
                 .near_mpc_omni_prover_id
                 .or(other.near_mpc_omni_prover_id),
+            near_dao_account_id: self.near_dao_account_id.or(other.near_dao_account_id),
             eth_light_client_id: self.eth_light_client_id.or(other.eth_light_client_id),
             btc_light_client_id: self.btc_light_client_id.or(other.btc_light_client_id),
             zcash_light_client_id: self.zcash_light_client_id.or(other.zcash_light_client_id),
@@ -392,6 +398,7 @@ fn env_config() -> CliConfig {
         dry_run: env::var("DRY_RUN").is_ok_and(|s| s == "true"),
         near_token_locker_id: env::var("TOKEN_LOCKER_ID").ok(),
         near_mpc_omni_prover_id: env::var("MPC_OMNI_PROVER_ID").ok(),
+        near_dao_account_id: env::var("NEAR_DAO_ACCOUNT_ID").ok(),
         eth_light_client_id: env::var("ETH_LIGHT_CLIENT_ID").ok(),
         btc_light_client_id: env::var("BTC_LIGHT_CLIENT_ID").ok(),
         zcash_light_client_id: env::var("ZCASH_LIGHT_CLIENT_ID").ok(),
@@ -506,6 +513,7 @@ fn default_config(network: Network) -> CliConfig {
             dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_MAINNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_MAINNET.to_owned()),
+            near_dao_account_id: Some(defaults::NEAR_DAO_ACCOUNT_ID_MAINNET.to_owned()),
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_MAINNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_MAINNET.to_owned()),
@@ -636,6 +644,7 @@ fn default_config(network: Network) -> CliConfig {
             dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_TESTNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_TESTNET.to_owned()),
+            near_dao_account_id: None,
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_TESTNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_TESTNET.to_owned()),
@@ -767,6 +776,7 @@ fn default_config(network: Network) -> CliConfig {
             dry_run: false,
             near_token_locker_id: Some(defaults::NEAR_TOKEN_LOCKER_ID_DEVNET.to_owned()),
             near_mpc_omni_prover_id: Some(defaults::NEAR_MPC_OMNI_PROVER_ID_DEVNET.to_owned()),
+            near_dao_account_id: None,
             eth_light_client_id: Some(defaults::ETH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
             btc_light_client_id: Some(defaults::BTC_LIGHT_CLIENT_ID_DEVNET.to_owned()),
             zcash_light_client_id: Some(defaults::ZCASH_LIGHT_CLIENT_ID_DEVNET.to_owned()),
