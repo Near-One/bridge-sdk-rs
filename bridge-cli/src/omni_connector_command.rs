@@ -452,46 +452,6 @@ pub enum OmniConnectorSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
-    #[clap(about = "Finalize a transfer on NEAR using fast transfer")]
-    NearFastFinTransfer {
-        #[clap(short, long, help = "Origin chain of the transfer")]
-        chain: ChainKind,
-        #[clap(
-            short,
-            long,
-            help = "Transaction hash of the init transfer call on origin chain"
-        )]
-        tx_hash: String,
-        #[clap(long, help = "Storage deposit amount for tokens receiver")]
-        storage_deposit_amount: Option<u128>,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
-    #[clap(about = "Finalize a transfer from Utxo chain on NEAR")]
-    NearFastFinTransferFromUtxo {
-        #[clap(short, long, help = "Origin chain of the transfer")]
-        chain: ChainKind,
-        #[clap(
-            short,
-            long,
-            help = "Transaction hash of the deposit transaction on origin chain"
-        )]
-        tx_hash: String,
-        #[clap(
-            short,
-            long,
-            help = "Transfer recipient in format <chain_id>:<address>"
-        )]
-        recipient: OmniAddress,
-        #[clap(long, help = "Refund recipient address (Bitcoin/Zcash)")]
-        refund_address: Option<String>,
-        #[clap(short, long, help = "Transfer fee")]
-        fee: u128,
-        #[clap(long, help = "Storage deposit amount for tokens receiver")]
-        storage_deposit_amount: Option<u128>,
-        #[command(flatten)]
-        config_cli: CliConfig,
-    },
     #[clap(about = "Initialize a transfer on EVM")]
     EvmInitTransfer {
         #[clap(short, long, help = "Chain to initialize the transfer on")]
@@ -1265,8 +1225,6 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
         | Cmd::NearSignTransfer { .. }
         | Cmd::NearInitTransfer { .. }
         | Cmd::NearFinTransfer { .. }
-        | Cmd::NearFastFinTransfer { .. }
-        | Cmd::NearFastFinTransferFromUtxo { .. }
         | Cmd::BindToken { .. }
         | Cmd::NearSignBTCTransaction { .. }
         | Cmd::NearSubmitBtcTransfer { .. }
@@ -1627,44 +1585,6 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     }
                 }
             }
-        }
-        OmniConnectorSubCommand::NearFastFinTransfer {
-            chain,
-            tx_hash,
-            storage_deposit_amount,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .near_fast_transfer(
-                    chain,
-                    tx_hash,
-                    storage_deposit_amount,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
-        }
-        OmniConnectorSubCommand::NearFastFinTransferFromUtxo {
-            chain,
-            tx_hash,
-            recipient,
-            refund_address,
-            fee,
-            storage_deposit_amount,
-            config_cli,
-        } => {
-            omni_connector(network, config_cli)
-                .near_fast_transfer_from_utxo(
-                    chain,
-                    tx_hash,
-                    recipient,
-                    refund_address,
-                    fee,
-                    storage_deposit_amount,
-                    TransactionOptions::default(),
-                )
-                .await
-                .unwrap();
         }
         OmniConnectorSubCommand::EvmInitTransfer {
             chain,

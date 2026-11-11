@@ -56,7 +56,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 near-token = "0.3"
 near-contract-standards = "5.5"
-omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "83e3ac1eeef6b1330744f53d68dd037fa53aab0f" }
+omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "af6d95bb4c6a9e31aba0cd9d6f0fe5f7c8cd2dc9" }
 starknet = "0.17.0"
 serde_with = { version = "3.12.0", features = ["schemars_0_8"] }
 solana-sdk = "4.0.1"
