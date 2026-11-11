@@ -22,7 +22,7 @@ use omni_types::locker_args::StorageDepositAction;
 use omni_types::prover_args::{
     EvmProof, EvmVerifyProofArgs, MpcVerifyProofArgs, WormholeVerifyProofArgs,
 };
-use omni_types::prover_result::ProofKind;
+use omni_types::prover_result::{InitTransferMessage, ProofKind};
 use omni_types::{near_events::OmniBridgeEvent, ChainKind};
 use omni_types::{EvmAddress, Fee, OmniAddress, TransferMessage, H160};
 
@@ -37,6 +37,10 @@ use near_bridge_client::btc::{
     BtcConfirmationContext, BtcRequestRefundArgs, BtcVerifyRefundFinalizeArgs,
     BtcVerifyWithdrawArgs, ChainSpecificData, DepositMsg, FinBtcTransferArgs,
     NearToBtcTransferInfo, TokenReceiverMessage, TxInclusionProof, VUTXO,
+};
+use near_bridge_client::dao::{
+    DaoActionCall, DaoProposal, DaoProposalKind, FinTransferAsDaoArgs, FIN_TRANSFER_AS_DAO_GAS,
+    FIN_TRANSFER_AS_DAO_METHOD,
 };
 use near_bridge_client::{Decimals, NearBridgeClient, TransactionOptions};
 use solana_bridge_client::{
@@ -81,6 +85,16 @@ pub struct BtcTransferDraft {
     pub recipient: String,
     pub memo: Option<String>,
     pub enable_orchard: bool,
+}
+
+/// Result of [`OmniConnector::verify_fin_transfer_as_dao_proposal`]
+pub struct FinTransferAsDaoProposalReport {
+    pub proposal: DaoProposal,
+    pub receiver_id: AccountId,
+    pub action: DaoActionCall,
+    pub args: FinTransferAsDaoArgs,
+    /// Empty when the proposal matches the origin transaction and would succeed now
+    pub problems: Vec<String>,
 }
 
 #[allow(clippy::struct_field_names)]
@@ -4350,6 +4364,285 @@ impl OmniConnector {
         .await
     }
 
+    /// Reads the `InitTransfer` event of `tx_hash` on `chain_kind` once the transaction is
+    /// final there, parsed by the same `omni-types` code the bridge provers use.
+    pub async fn get_final_init_transfer_message(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: &str,
+    ) -> Result<InitTransferMessage> {
+        let init_transfer = match chain_kind {
+            ChainKind::Eth
+            | ChainKind::Base
+            | ChainKind::Arb
+            | ChainKind::Bnb
+            | ChainKind::Pol
+            | ChainKind::HyperEvm
+            | ChainKind::Abs
+            | ChainKind::Avax => {
+                let tx_hash = TxHash::from_str(tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse EVM tx hash: {tx_hash}"
+                    ))
+                })?;
+                let evm_client = self.evm_bridge_client(chain_kind)?;
+                evm_client
+                    .check_finality(tx_hash, &EvmFinality::Finalized)
+                    .await?;
+
+                let log = evm_client.get_init_transfer_log(tx_hash).await?;
+                let omni_bridge_address = evm_client.omni_bridge_address()?;
+                if log.address() != omni_bridge_address {
+                    return Err(BridgeSdkError::InvalidLog(format!(
+                        "InitTransfer log of tx {tx_hash} is emitted by {}, not by the bridge {omni_bridge_address}",
+                        log.address()
+                    )));
+                }
+
+                omni_types::evm::events::parse_evm_event::<
+                    omni_types::evm::events::InitTransfer,
+                    InitTransferMessage,
+                >(chain_kind, alloy::rlp::encode(&log.inner))
+            }
+            ChainKind::Strk => {
+                let tx_hash = starknet::core::types::Felt::from_hex(tx_hash).map_err(|_| {
+                    BridgeSdkError::InvalidArgument(format!(
+                        "Failed to parse Starknet tx hash: {tx_hash}"
+                    ))
+                })?;
+                let strk_client = self.starknet_bridge_client()?;
+                strk_client.check_mpc_finality(tx_hash).await?;
+
+                let log = strk_client.get_init_transfer_log(tx_hash).await?;
+                let keys: Vec<[u8; 32]> = log
+                    .keys
+                    .iter()
+                    .map(starknet::core::types::Felt::to_bytes_be)
+                    .collect();
+                let data: Vec<[u8; 32]> = log
+                    .data
+                    .iter()
+                    .map(starknet::core::types::Felt::to_bytes_be)
+                    .collect();
+                omni_types::starknet::events::parse_init_transfer(
+                    &log.from_address.to_bytes_be(),
+                    &keys,
+                    &data,
+                )
+            }
+            ChainKind::Aptos => {
+                let aptos_client = self.aptos_bridge_client()?;
+                aptos_client.check_mpc_finality(tx_hash).await?;
+
+                let log = aptos_client.get_init_transfer_log(tx_hash).await?;
+                omni_types::aptos::events::parse_init_transfer(&log.type_tag, &log.data)
+            }
+            ChainKind::Near
+            | ChainKind::Sol
+            | ChainKind::Fogo
+            | ChainKind::Btc
+            | ChainKind::Zcash => {
+                return Err(BridgeSdkError::InvalidArgument(format!(
+                    "Reading the InitTransfer event is not supported for chain {chain_kind:?}"
+                )))
+            }
+        };
+
+        init_transfer.map_err(|err| {
+            BridgeSdkError::InvalidLog(format!("Failed to parse InitTransfer event: {err}"))
+        })
+    }
+
+    /// Storage deposits `fin_transfer` needs for `init_transfer` when `fee_recipient`,
+    /// the account finalising the transfer, collects its fees.
+    pub async fn get_storage_deposit_actions_for_init_transfer(
+        &self,
+        init_transfer: &InitTransferMessage,
+        fee_recipient: AccountId,
+    ) -> Result<Vec<StorageDepositAction>> {
+        self.get_storage_deposit_actions(
+            init_transfer.sender.get_chain(),
+            &init_transfer.recipient,
+            &fee_recipient,
+            &init_transfer.token,
+            init_transfer.fee.fee.0,
+            init_transfer.fee.native_fee.0,
+        )
+        .await
+    }
+
+    /// Builds `fin_transfer_as_dao` arguments for the transfer initiated by `tx_hash` on
+    /// `chain_kind`. `dao_id` calls `fin_transfer_as_dao`, so it collects the transfer fees.
+    pub async fn build_fin_transfer_as_dao_args(
+        &self,
+        chain_kind: ChainKind,
+        tx_hash: &str,
+        dao_id: AccountId,
+    ) -> Result<FinTransferAsDaoArgs> {
+        let init_transfer = self
+            .get_final_init_transfer_message(chain_kind, tx_hash)
+            .await?;
+        let storage_deposit_actions = self
+            .get_storage_deposit_actions_for_init_transfer(&init_transfer, dao_id)
+            .await?;
+
+        Ok(FinTransferAsDaoArgs {
+            init_transfer,
+            storage_deposit_actions,
+        })
+    }
+
+    /// Deposit `fin_transfer_as_dao` must attach for `args`, the same `fin_transfer` attaches
+    pub async fn get_fin_transfer_as_dao_deposit(
+        &self,
+        args: &FinTransferAsDaoArgs,
+    ) -> Result<u128> {
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let mut deposit = near_bridge_client
+            .get_required_balance_for_fin_transfer()
+            .await?;
+        deposit += args
+            .storage_deposit_actions
+            .iter()
+            .filter_map(|action| action.storage_deposit_amount)
+            .sum::<u128>();
+        if args.init_transfer.recipient.get_chain() != ChainKind::Near {
+            deposit += near_bridge_client
+                .get_required_balance_for_init_transfer()
+                .await?;
+        }
+
+        Ok(deposit)
+    }
+
+    /// Sputnik DAO proposal kind calling `fin_transfer_as_dao` with `args`, attaching `deposit`
+    pub fn fin_transfer_as_dao_proposal_kind(
+        &self,
+        args: &FinTransferAsDaoArgs,
+        deposit: u128,
+    ) -> Result<DaoProposalKind> {
+        Ok(DaoProposalKind::FunctionCall {
+            receiver_id: self.near_bridge_client()?.omni_bridge_id()?,
+            actions: vec![DaoActionCall {
+                method_name: FIN_TRANSFER_AS_DAO_METHOD.to_string(),
+                args: serde_json::to_vec(args)?.into(),
+                deposit: near_sdk::json_types::U128(deposit),
+                gas: near_sdk::json_types::U64(FIN_TRANSFER_AS_DAO_GAS),
+            }],
+        })
+    }
+
+    /// Reasons `fin_transfer_as_dao` with `args` would fail if `dao_id` called it now
+    pub async fn check_fin_transfer_as_dao(
+        &self,
+        args: &FinTransferAsDaoArgs,
+        dao_id: AccountId,
+    ) -> Result<Vec<String>> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let mut problems = Vec::new();
+
+        if !near_bridge_client
+            .acl_has_role("DAO", dao_id.clone())
+            .await?
+        {
+            problems.push(format!(
+                "{dao_id} does not have the DAO role on {}",
+                near_bridge_client.omni_bridge_id()?
+            ));
+        }
+
+        let origin_chain = args.init_transfer.sender.get_chain();
+        let origin_nonce = args.init_transfer.origin_nonce;
+        if self
+            .near_is_transfer_finalised(omni_types::TransferId {
+                origin_chain,
+                origin_nonce,
+            })
+            .await?
+        {
+            problems.push(format!(
+                "Transfer {origin_chain:?}:{origin_nonce} is already finalised on NEAR"
+            ));
+        }
+
+        Ok(problems)
+    }
+
+    /// Checks that proposal `proposal_id` of `dao_id` calls `fin_transfer_as_dao` with the
+    /// arguments built from `tx_hash` on the proposal's origin chain, and would succeed now.
+    pub async fn verify_fin_transfer_as_dao_proposal(
+        &self,
+        dao_id: AccountId,
+        proposal_id: u64,
+        tx_hash: &str,
+    ) -> Result<FinTransferAsDaoProposalReport> {
+        let near_bridge_client = self.near_bridge_client()?;
+        let proposal = near_bridge_client
+            .dao_get_proposal(dao_id.clone(), proposal_id)
+            .await?;
+
+        let DaoProposalKind::FunctionCall {
+            receiver_id,
+            mut actions,
+        } = serde_json::from_value(proposal.kind.clone()).map_err(|_| {
+            BridgeSdkError::InvalidArgument(format!(
+                "Proposal {proposal_id} is not a FunctionCall proposal: {}",
+                proposal.kind
+            ))
+        })?;
+        if actions.len() != 1 || actions[0].method_name != FIN_TRANSFER_AS_DAO_METHOD {
+            return Err(BridgeSdkError::InvalidArgument(format!(
+                "Proposal {proposal_id} is not a single {FIN_TRANSFER_AS_DAO_METHOD} call"
+            )));
+        }
+        let action = actions.remove(0);
+        let args: FinTransferAsDaoArgs = serde_json::from_slice(&action.args.0)?;
+
+        let mut problems = Vec::new();
+
+        let omni_bridge_id = near_bridge_client.omni_bridge_id()?;
+        if receiver_id != omni_bridge_id {
+            problems.push(format!(
+                "Proposal calls {receiver_id}, not the bridge {omni_bridge_id}"
+            ));
+        }
+
+        let expected = self
+            .build_fin_transfer_as_dao_args(
+                args.init_transfer.sender.get_chain(),
+                tx_hash,
+                dao_id.clone(),
+            )
+            .await?;
+
+        problems.extend(fin_transfer_as_dao_args_mismatches(&args, &expected)?);
+
+        let required_deposit = self.get_fin_transfer_as_dao_deposit(&args).await?;
+        if action.deposit.0 < required_deposit {
+            problems.push(format!(
+                "Proposal attaches {} yoctoNEAR, fin_transfer_as_dao needs {required_deposit}",
+                action.deposit.0
+            ));
+        }
+        if action.gas.0 < FIN_TRANSFER_AS_DAO_GAS {
+            problems.push(format!(
+                "Proposal attaches {} gas, less than {FIN_TRANSFER_AS_DAO_GAS}",
+                action.gas.0
+            ));
+        }
+
+        problems.extend(self.check_fin_transfer_as_dao(&args, dao_id).await?);
+
+        Ok(FinTransferAsDaoProposalReport {
+            proposal,
+            receiver_id,
+            action,
+            args,
+            problems,
+        })
+    }
+
     pub async fn get_storage_deposit_actions(
         &self,
         chain: ChainKind,
@@ -4600,6 +4893,58 @@ impl OmniConnector {
     }
 }
 
+/// Differences between `fin_transfer_as_dao` arguments of a proposal and the `expected`
+/// ones built from the origin transaction. A larger storage deposit than expected is fine.
+fn fin_transfer_as_dao_args_mismatches(
+    proposed: &FinTransferAsDaoArgs,
+    expected: &FinTransferAsDaoArgs,
+) -> Result<Vec<String>> {
+    let mut mismatches = Vec::new();
+
+    let proposed_fields = serde_json::to_value(&proposed.init_transfer)?;
+    let expected_fields = serde_json::to_value(&expected.init_transfer)?;
+    for (field, expected_value) in expected_fields.as_object().into_iter().flatten() {
+        let proposed_value = &proposed_fields[field];
+        if proposed_value != expected_value {
+            mismatches.push(format!(
+                "init_transfer.{field} is {proposed_value}, origin tx has {expected_value}"
+            ));
+        }
+    }
+
+    let targets = |actions: &[StorageDepositAction]| {
+        actions
+            .iter()
+            .map(|action| format!("{}@{}", action.account_id, action.token_id))
+            .collect::<Vec<_>>()
+    };
+    let proposed_targets = targets(&proposed.storage_deposit_actions);
+    let expected_targets = targets(&expected.storage_deposit_actions);
+    if proposed_targets != expected_targets {
+        mismatches.push(format!(
+            "storage_deposit_actions are for {proposed_targets:?}, expected {expected_targets:?}"
+        ));
+        return Ok(mismatches);
+    }
+
+    for (proposed, expected) in proposed
+        .storage_deposit_actions
+        .iter()
+        .zip(&expected.storage_deposit_actions)
+    {
+        let paid = proposed.storage_deposit_amount.unwrap_or_default();
+        let required = expected.storage_deposit_amount.unwrap_or_default();
+        if paid < required {
+            mismatches.push(format!(
+                "Storage deposit of {} on {} needs {required} yoctoNEAR, proposal pays {paid}",
+                proposed.account_id, proposed.token_id
+            ));
+        }
+    }
+
+    Ok(mismatches)
+}
+
 fn validate_zcash_memo_usage(
     chain: ChainKind,
     enable_orchard: bool,
@@ -4627,6 +4972,127 @@ fn validate_zcash_memo_usage(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fin_transfer_as_dao_args() -> FinTransferAsDaoArgs {
+        FinTransferAsDaoArgs {
+            init_transfer: InitTransferMessage {
+                origin_nonce: 6020,
+                token: "eth:0x0000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+                amount: near_sdk::json_types::U128(1_000_000_000_000_000_000),
+                recipient: "near:aurora".parse().unwrap(),
+                fee: Fee {
+                    fee: near_sdk::json_types::U128(0),
+                    native_fee: near_sdk::json_types::U128(5_557_137_300_000),
+                },
+                sender: "eth:0x65a8f07bd9a8598e1b5b6c0a88f4779dbc077675"
+                    .parse()
+                    .unwrap(),
+                msg: "65a8f07bd9a8598e1b5b6c0a88f4779dbc077675".to_string(),
+                emitter_address: "eth:0xe00c629afaccb0510995a2b95560e446a24c85b9"
+                    .parse()
+                    .unwrap(),
+            },
+            storage_deposit_actions: vec![
+                StorageDepositAction {
+                    token_id: "eth.bridge.near".parse().unwrap(),
+                    account_id: "aurora".parse().unwrap(),
+                    storage_deposit_amount: None,
+                },
+                StorageDepositAction {
+                    token_id: "eth.bridge.near".parse().unwrap(),
+                    account_id: "rainbowbridge.sputnik-dao.near".parse().unwrap(),
+                    storage_deposit_amount: None,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn fin_transfer_as_dao_args_survive_proposal_round_trip() {
+        let mut args = fin_transfer_as_dao_args();
+        // Above `u64::MAX`, which `serde_json::Value` can't hold.
+        args.storage_deposit_actions[0].storage_deposit_amount = Some(u128::from(u64::MAX) + 1);
+
+        let connector = OmniConnector {
+            near_bridge_client: Some(
+                near_bridge_client::NearBridgeClientBuilder::default()
+                    .endpoint(None)
+                    .private_key(None)
+                    .signer(None)
+                    .omni_bridge_id(Some("omni.bridge.near".parse().unwrap()))
+                    .mpc_omni_prover_id(None)
+                    .utxo_bridges(HashMap::new())
+                    .bridge_indexer_api_url(None)
+                    .build()
+                    .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let kind = connector
+            .fin_transfer_as_dao_proposal_kind(&args, 1)
+            .unwrap();
+
+        // As `add_proposal` sends it and `get_proposal` returns it.
+        let kind_json = serde_json::to_value(&kind).unwrap();
+        let DaoProposalKind::FunctionCall {
+            receiver_id,
+            actions,
+        } = serde_json::from_value(kind_json).unwrap();
+        assert_eq!(receiver_id.as_str(), "omni.bridge.near");
+        assert_eq!(actions[0].method_name, FIN_TRANSFER_AS_DAO_METHOD);
+
+        let decoded: FinTransferAsDaoArgs = serde_json::from_slice(&actions[0].args.0).unwrap();
+        assert!(fin_transfer_as_dao_args_mismatches(&decoded, &args)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            decoded.storage_deposit_actions[0].storage_deposit_amount,
+            Some(u128::from(u64::MAX) + 1)
+        );
+    }
+
+    #[test]
+    fn fin_transfer_as_dao_args_mismatches_reports_differences() {
+        let expected = fin_transfer_as_dao_args();
+        assert!(fin_transfer_as_dao_args_mismatches(&expected, &expected)
+            .unwrap()
+            .is_empty());
+
+        let mut proposed = fin_transfer_as_dao_args();
+        proposed.init_transfer.amount = near_sdk::json_types::U128(2_000_000_000_000_000_000);
+        proposed.init_transfer.recipient = "near:attacker.near".parse().unwrap();
+        let mismatches = fin_transfer_as_dao_args_mismatches(&proposed, &expected).unwrap();
+        assert_eq!(mismatches.len(), 2, "{mismatches:?}");
+        assert!(mismatches[0].starts_with("init_transfer.amount"));
+        assert!(mismatches[1].starts_with("init_transfer.recipient"));
+
+        let mut proposed = fin_transfer_as_dao_args();
+        proposed.storage_deposit_actions[1].account_id = "attacker.near".parse().unwrap();
+        let mismatches = fin_transfer_as_dao_args_mismatches(&proposed, &expected).unwrap();
+        assert_eq!(mismatches.len(), 1, "{mismatches:?}");
+        assert!(mismatches[0].starts_with("storage_deposit_actions"));
+    }
+
+    #[test]
+    fn fin_transfer_as_dao_args_mismatches_checks_storage_deposit_amounts() {
+        let mut expected = fin_transfer_as_dao_args();
+        expected.storage_deposit_actions[0].storage_deposit_amount =
+            Some(1_250_000_000_000_000_000_000);
+
+        let mismatches =
+            fin_transfer_as_dao_args_mismatches(&fin_transfer_as_dao_args(), &expected).unwrap();
+        assert_eq!(mismatches.len(), 1, "{mismatches:?}");
+        assert!(mismatches[0].starts_with("Storage deposit of aurora"));
+
+        let mut proposed = fin_transfer_as_dao_args();
+        proposed.storage_deposit_actions[0].storage_deposit_amount =
+            Some(1_500_000_000_000_000_000_000);
+        assert!(fin_transfer_as_dao_args_mismatches(&proposed, &expected)
+            .unwrap()
+            .is_empty());
+    }
 
     #[test]
     fn accepts_absent_memo_for_btc() {

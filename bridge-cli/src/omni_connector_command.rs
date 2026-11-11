@@ -2,6 +2,7 @@ use clap::Subcommand;
 use core::panic;
 use near_mpc_contract_interface::types::{AptosFinality, StarknetFinality};
 use std::collections::HashMap;
+use std::io::Write;
 use std::{path::Path, str::FromStr};
 
 use alloy::primitives::{Address as EvmH160, TxHash};
@@ -12,6 +13,7 @@ use hypercore_bridge_client::{HyperCoreBridgeClientBuilder, HyperliquidNetwork};
 use light_client::LightClientBuilder;
 use near_bridge_client::{
     btc::{format_max_gas_fee, DepositMsg, SafeDepositMsg},
+    dao::DaoProposalKind,
     NearBridgeClientBuilder, TransactionOptions, UTXOChainAccounts,
 };
 use near_primitives::{hash::CryptoHash, types::AccountId};
@@ -1070,6 +1072,47 @@ pub(crate) enum InternalSubCommand {
         #[command(flatten)]
         config_cli: CliConfig,
     },
+    #[clap(
+        about = "Propose to the bridge DAO to finalize a transfer on NEAR without a proof",
+        long_about = "Propose to the bridge DAO to finalize a transfer on NEAR without a proof.\n\nBuilds the \
+fin_transfer_as_dao arguments from the InitTransfer event of the origin transaction (which must be final), \
+prints the proposal and submits it with add_proposal only after confirmation. The proposal bond (1 NEAR on \
+mainnet) is attached by the signer. Supported origin chains: EVM chains, Starknet and Aptos."
+    )]
+    NearFinTransferAsDao {
+        #[clap(short, long, help = "Origin chain of the transfer to finalize")]
+        chain: ChainKind,
+        #[clap(short, long, help = "Destination chain of the transfer")]
+        destination_chain: ChainKind,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the InitTransfer call on origin chain"
+        )]
+        tx_hash: String,
+        #[clap(
+            long,
+            help = "Why the transfer can't be finalized with a proof; appended to the proposal description"
+        )]
+        reason: Option<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
+    #[clap(
+        about = "Verify a fin_transfer_as_dao DAO proposal against its origin chain transaction"
+    )]
+    VerifyFinTransferAsDaoProposal {
+        #[clap(short, long, help = "Id of the DAO proposal")]
+        proposal_id: u64,
+        #[clap(
+            short,
+            long,
+            help = "Transaction hash of the InitTransfer call on origin chain; read from the proposal description when omitted"
+        )]
+        tx_hash: Option<String>,
+        #[command(flatten)]
+        config_cli: CliConfig,
+    },
 }
 
 /// `--dry-run` builds and prints an unsigned transaction instead of
@@ -1202,6 +1245,10 @@ fn ensure_dry_run_supported(cmd: &OmniConnectorSubCommand, network: Network) {
             InternalSubCommand::InitNearToBitcoinTransfer { .. } => false,
             // Read-only PDA derivation.
             InternalSubCommand::SvmGetTokenVault { .. } => false,
+            // A NEAR `add_proposal` transaction — dry-run honored by the NEAR client.
+            InternalSubCommand::NearFinTransferAsDao { .. } => false,
+            // Read-only.
+            InternalSubCommand::VerifyFinTransferAsDaoProposal { .. } => false,
         },
     };
 
@@ -2317,8 +2364,203 @@ pub async fn match_subcommand(cmd: OmniConnectorSubCommand, network: Network) {
                     .await
                     .unwrap();
             }
+            InternalSubCommand::NearFinTransferAsDao {
+                chain,
+                destination_chain,
+                tx_hash,
+                reason,
+                config_cli,
+            } => {
+                let dao_id = dao_account_id(&config_cli, network);
+                let connector = omni_connector(network, config_cli);
+                let near_bridge_client = connector.near_bridge_client().unwrap();
+
+                let args = connector
+                    .build_fin_transfer_as_dao_args(chain, &tx_hash, dao_id.clone())
+                    .await
+                    .unwrap();
+
+                let recipient = &args.init_transfer.recipient;
+                if recipient.get_chain() != destination_chain {
+                    eprintln!(
+                        "error: transfer recipient {recipient} is not on {destination_chain:?}"
+                    );
+                    std::process::exit(1);
+                }
+
+                let problems = connector
+                    .check_fin_transfer_as_dao(&args, dao_id.clone())
+                    .await
+                    .unwrap();
+                if !problems.is_empty() {
+                    eprintln!("error: fin_transfer_as_dao would fail:");
+                    for problem in problems {
+                        eprintln!("  - {problem}");
+                    }
+                    std::process::exit(1);
+                }
+
+                let deposit = connector
+                    .get_fin_transfer_as_dao_deposit(&args)
+                    .await
+                    .unwrap();
+                let kind = connector
+                    .fin_transfer_as_dao_proposal_kind(&args, deposit)
+                    .unwrap();
+                let proposal_bond = near_bridge_client
+                    .dao_get_proposal_bond(dao_id.clone())
+                    .await
+                    .unwrap();
+
+                let mut description = format!(
+                    "Finalize {chain:?} transfer nonce {} (tx {tx_hash}) via fin_transfer_as_dao",
+                    args.init_transfer.origin_nonce
+                );
+                if let Some(reason) = reason {
+                    description = format!("{description}: {reason}");
+                }
+
+                let DaoProposalKind::FunctionCall {
+                    receiver_id,
+                    actions,
+                } = &kind;
+                println!("DAO:           {dao_id}");
+                println!(
+                    "proposer:      {}",
+                    near_bridge_client.account_id().unwrap()
+                );
+                println!("proposal bond: {}", format_near(proposal_bond));
+                println!("description:   {description}");
+                for action in actions {
+                    println!("call:          {receiver_id}.{}", action.method_name);
+                    println!("deposit:       {}", format_near(action.deposit.0));
+                    println!("gas:           {} Tgas", action.gas.0 / 1_000_000_000_000);
+                }
+                println!("args:\n{}", serde_json::to_string_pretty(&args).unwrap());
+
+                if !confirm("Submit this proposal?") {
+                    println!("Aborted, nothing was submitted");
+                    return;
+                }
+
+                let (tx_hash, proposal_id) = near_bridge_client
+                    .dao_add_proposal(
+                        dao_id,
+                        description,
+                        kind,
+                        proposal_bond,
+                        TransactionOptions::default(),
+                    )
+                    .await
+                    .unwrap();
+                if let Some(proposal_id) = proposal_id {
+                    println!("Added proposal {proposal_id} in tx {tx_hash}");
+                }
+            }
+            InternalSubCommand::VerifyFinTransferAsDaoProposal {
+                proposal_id,
+                tx_hash,
+                config_cli,
+            } => {
+                let dao_id = dao_account_id(&config_cli, network);
+                let connector = omni_connector(network, config_cli);
+
+                let tx_hash = if let Some(tx_hash) = tx_hash {
+                    tx_hash
+                } else {
+                    let proposal = connector
+                        .near_bridge_client()
+                        .unwrap()
+                        .dao_get_proposal(dao_id.clone(), proposal_id)
+                        .await
+                        .unwrap();
+                    tx_hash_from_description(&proposal.description).unwrap_or_else(|| {
+                        eprintln!(
+                            "error: no \"(tx <hash>\" in the proposal description; pass --tx-hash"
+                        );
+                        std::process::exit(1);
+                    })
+                };
+
+                let report = connector
+                    .verify_fin_transfer_as_dao_proposal(dao_id, proposal_id, &tx_hash)
+                    .await
+                    .unwrap();
+
+                let proposal = &report.proposal;
+                println!("proposal:      {} by {}", proposal.id, proposal.proposer);
+                println!("status:        {}", proposal.status);
+                println!("description:   {}", proposal.description);
+                println!("origin tx:     {tx_hash}");
+                println!(
+                    "call:          {}.{}",
+                    report.receiver_id, report.action.method_name
+                );
+                println!("deposit:       {}", format_near(report.action.deposit.0));
+                println!(
+                    "gas:           {} Tgas",
+                    report.action.gas.0 / 1_000_000_000_000
+                );
+                println!(
+                    "args:\n{}",
+                    serde_json::to_string_pretty(&report.args).unwrap()
+                );
+
+                if report.problems.is_empty() {
+                    println!("OK: proposal matches the origin tx and passes all checks");
+                } else {
+                    println!("FAILED:");
+                    for problem in &report.problems {
+                        println!("  - {problem}");
+                    }
+                    std::process::exit(1);
+                }
+            }
         },
     }
+}
+
+fn dao_account_id(config_cli: &CliConfig, network: Network) -> AccountId {
+    combined_config(config_cli.clone(), network)
+        .near_dao_account_id
+        .unwrap_or_else(|| {
+            eprintln!("error: DAO account is not configured; pass --near-dao-account-id");
+            std::process::exit(1);
+        })
+        .parse()
+        .unwrap()
+}
+
+/// Origin tx hash from a description in the `... (tx <hash>...` format
+/// `near-fin-transfer-as-dao` writes.
+fn tx_hash_from_description(description: &str) -> Option<String> {
+    let (_, rest) = description.split_once("(tx ")?;
+    rest.split(|c: char| c == ')' || c == ',' || c.is_whitespace())
+        .next()
+        .filter(|tx_hash| !tx_hash.is_empty())
+        .map(str::to_string)
+}
+
+fn format_near(yocto_near: u128) -> String {
+    const YOCTO_PER_NEAR: u128 = 10u128.pow(24);
+    let fraction = format!("{:024}", yocto_near % YOCTO_PER_NEAR);
+    let fraction = fraction.trim_end_matches('0');
+    let near = yocto_near / YOCTO_PER_NEAR;
+    if fraction.is_empty() {
+        format!("{near} NEAR ({yocto_near} yoctoNEAR)")
+    } else {
+        format!("{near}.{fraction} NEAR ({yocto_near} yoctoNEAR)")
+    }
+}
+
+/// Asks `question` on the terminal; `true` only when the answer is y/yes.
+fn confirm(question: &str) -> bool {
+    print!("{question} [y/N] ");
+    std::io::stdout().flush().unwrap();
+
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer).unwrap();
+    matches!(answer.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
 /// Whether the bridge expects an MPC proof for transactions originating on `chain`.
@@ -2672,5 +2914,41 @@ fn svm_signer_from_config(
         })
     } else {
         keypair.map(extract_solana_keypair).map(SvmSigner::Keypair)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_tx_hash_from_proposal_description() {
+        assert_eq!(
+            tx_hash_from_description(
+                "Finalize Eth transfer nonce 6020 (tx 0xf2bf) via fin_transfer_as_dao: reason"
+            )
+            .as_deref(),
+            Some("0xf2bf")
+        );
+        assert_eq!(
+            tx_hash_from_description(
+                "Finalize Eth transfer nonce 6020 (tx 0xf2bf, block 25996343)"
+            )
+            .as_deref(),
+            Some("0xf2bf")
+        );
+        assert_eq!(tx_hash_from_description("Upgrade Zcash to v0.9.9"), None);
+    }
+
+    #[test]
+    fn formats_near_amounts_exactly() {
+        assert_eq!(
+            format_near(1_140_000_000_000_000_000_002),
+            "0.001140000000000000000002 NEAR (1140000000000000000002 yoctoNEAR)"
+        );
+        assert_eq!(
+            format_near(10u128.pow(24)),
+            "1 NEAR (1000000000000000000000000 yoctoNEAR)"
+        );
     }
 }

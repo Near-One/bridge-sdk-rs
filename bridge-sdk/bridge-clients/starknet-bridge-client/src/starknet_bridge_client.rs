@@ -500,6 +500,7 @@ impl StarknetBridgeClient {
         event_selector: Felt,
         event_name: &str,
     ) -> Result<StarknetEventLog> {
+        let bridge = self.omni_bridge_address()?;
         let receipt = self
             .provider
             .get_transaction_receipt(tx_hash)
@@ -523,10 +524,12 @@ impl StarknetBridgeClient {
         let (log_index, event) = events
             .iter()
             .enumerate()
-            .find(|(_, e)| !e.keys.is_empty() && e.keys[0] == event_selector)
+            .find(|(_, e)| {
+                e.from_address == bridge && !e.keys.is_empty() && e.keys[0] == event_selector
+            })
             .ok_or_else(|| {
                 StarknetBridgeClientError::BlockchainDataError(format!(
-                    "{event_name} event not found in receipt for tx {tx_hash:#066x}"
+                    "{event_name} event of bridge {bridge:#066x} not found in receipt for tx {tx_hash:#066x}"
                 ))
             })?;
 
