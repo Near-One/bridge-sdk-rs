@@ -33,6 +33,14 @@ const INIT_TRANSFER_EMITTER_INDEX: usize = 6;
 const INIT_TRANSFER_SOL_SENDER_INDEX: usize = 1;
 const INIT_TRANSFER_SOL_EMITTER_INDEX: usize = 2;
 
+fn transfer_event_transaction_config() -> RpcTransactionConfig {
+    RpcTransactionConfig {
+        encoding: Some(UiTransactionEncoding::Json),
+        commitment: Some(CommitmentConfig::confirmed()),
+        max_supported_transaction_version: Some(1),
+    }
+}
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::as_conversions,
@@ -184,14 +192,7 @@ impl SolanaBridgeClient {
     ) -> Result<Transfer, SolanaBridgeClientError> {
         let client = self.client()?;
         let tx = client
-            .get_transaction_with_config(
-                signature,
-                RpcTransactionConfig {
-                    encoding: Some(UiTransactionEncoding::Json),
-                    commitment: Some(CommitmentConfig::confirmed()),
-                    max_supported_transaction_version: Some(0),
-                },
-            )
+            .get_transaction_with_config(signature, transfer_event_transaction_config())
             .await?;
 
         if let EncodedTransaction::Json(ref transaction) = tx.transaction.transaction {
@@ -613,4 +614,15 @@ fn print_unsigned_transaction(transaction: &Transaction) -> Result<(), SolanaBri
     println!("Ignore any signature/confirmation logged below.");
     println!();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn transfer_event_query_accepts_v1_transactions() {
+        assert_eq!(
+            super::transfer_event_transaction_config().max_supported_transaction_version,
+            Some(1)
+        );
+    }
 }
