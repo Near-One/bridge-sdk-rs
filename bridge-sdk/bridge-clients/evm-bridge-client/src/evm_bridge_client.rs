@@ -23,8 +23,12 @@ pub use builder::EvmBridgeClientBuilder;
 mod builder;
 pub mod error;
 
-const DEPLOY_TOKEN_GAS: u64 = 500_000;
-const FIN_TRANSFER_GAS: u64 = 250_000;
+// Fallbacks used only when `eth_estimateGas` fails. Measured on Sepolia after
+// Amsterdam (EIP-8037 state gas): deployToken with a new token contract ~1.70M
+// (was ~379k), finTransfer minting to a fresh recipient ~302k (was ~119k).
+const DEPLOY_TOKEN_FALLBACK_GAS: u64 = 2_000_000;
+const FIN_TRANSFER_FALLBACK_GAS: u64 = 350_000;
+const GAS_ESTIMATE_MARGIN_PERCENT: u64 = 20;
 
 sol! {
     #[allow(missing_docs)]
@@ -328,8 +332,9 @@ impl EvmBridgeClient {
             omni_bridge.deployToken(Bytes::from(serialized_signature), payload),
             tx_nonce,
             self.get_wormhole_fee().await.ok(),
-            Some(DEPLOY_TOKEN_GAS),
+            None,
         );
+        let call_builder = Self::with_estimated_gas(call_builder, DEPLOY_TOKEN_FALLBACK_GAS).await;
 
         let receipt = call_builder.send().await?.get_receipt().await?;
 
@@ -453,8 +458,10 @@ impl EvmBridgeClient {
                     omni_bridge.finTransfer_0(Bytes::from(signature.to_bytes()), bridge_deposit),
                     tx_nonce,
                     self.get_wormhole_fee().await.ok(),
-                    Some(FIN_TRANSFER_GAS),
+                    None,
                 );
+                let call_builder =
+                    Self::with_estimated_gas(call_builder, FIN_TRANSFER_FALLBACK_GAS).await;
 
                 let pending = call_builder.send().await?;
                 let tx_hash = *pending.tx_hash();
@@ -481,8 +488,10 @@ impl EvmBridgeClient {
                     omni_bridge.finTransfer_1(Bytes::from(signature.to_bytes()), bridge_deposit),
                     tx_nonce,
                     self.get_wormhole_fee().await.ok(),
-                    Some(FIN_TRANSFER_GAS),
+                    None,
                 );
+                let call_builder =
+                    Self::with_estimated_gas(call_builder, FIN_TRANSFER_FALLBACK_GAS).await;
 
                 let pending = call_builder.send().await?;
                 let tx_hash = *pending.tx_hash();
@@ -813,6 +822,31 @@ impl EvmBridgeClient {
         }
 
         call_builder
+    }
+
+    /// Sets the gas limit to `eth_estimateGas` plus a 20% margin, falling back
+    /// to `fallback_gas` if the estimate fails.
+    async fn with_estimated_gas<P, D, N>(
+        call_builder: CallBuilder<P, D, N>,
+        fallback_gas: u64,
+    ) -> CallBuilder<P, D, N>
+    where
+        P: Provider<N>,
+        D: CallDecoder,
+        N: Network,
+    {
+        let gas = match call_builder.estimate_gas().await {
+            Ok(gas) => gas.saturating_mul(100 + GAS_ESTIMATE_MARGIN_PERCENT) / 100,
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    fallback_gas,
+                    "Gas estimation failed, using fallback gas limit"
+                );
+                fallback_gas
+            }
+        };
+        call_builder.gas(gas)
     }
 
     async fn get_wormhole_fee(&self) -> Result<U256> {
