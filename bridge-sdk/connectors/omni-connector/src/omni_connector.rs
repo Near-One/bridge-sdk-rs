@@ -3077,7 +3077,7 @@ impl OmniConnector {
                 .evm_log_metadata(
                     address.clone(),
                     token.get_chain(),
-                    transaction_options.nonce.map(U256::from),
+                    transaction_options.nonce.fixed().map(U256::from),
                 )
                 .await
                 .map(|hash| hash.to_string()),
