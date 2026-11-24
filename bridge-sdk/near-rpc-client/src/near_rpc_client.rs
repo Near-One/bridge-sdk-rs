@@ -472,7 +472,8 @@ pub async fn change(
     }
 }
 
-/// Whether the node knows the transaction `tx_hash`.
+/// Whether the transaction `tx_hash` is on chain. Returns an error when the node
+/// cannot tell.
 async fn transaction_exists(
     client: &JsonRpcClient,
     tx_hash: CryptoHash,
@@ -489,6 +490,20 @@ async fn transaction_exists(
         .await;
 
     match response {
+        // `NONE` does not confirm inclusion: a node that does not track the
+        // signer's shard only forwards the query and replies `NONE`.
+        Ok(response)
+            if matches!(
+                response.final_execution_status,
+                near_primitives::views::TxExecutionStatus::None
+            ) =>
+        {
+            tracing::debug!(
+                tx_hash = tx_hash.to_string(),
+                "NEAR transaction status is NONE, inclusion not confirmed"
+            );
+            Err(NearRpcError::ResultError)
+        }
         Ok(_) => Ok(true),
         Err(err)
             if matches!(
@@ -1017,6 +1032,26 @@ mod tests {
         let (rpc, addr) = MockRpc::start_with_tx_status(
             vec![invalid_nonce(101, 105), included()],
             vec![Some(timeout())],
+        )
+        .await;
+        let counter: Arc<dyn NonceSource> = Arc::new(NonceCounter::new(0));
+
+        let err = change(&addr, change_request(NonceStrategy::Source(counter)))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err.invalid_nonce(), Some((101, 105)));
+        assert_eq!(rpc.sent_nonces(), vec![101]);
+    }
+
+    #[tokio::test]
+    async fn status_none_is_not_treated_as_on_chain() {
+        use mock_rpc::*;
+        // A node that does not track the shard answers `NONE` for any hash.
+        let not_tracked = serde_json::json!({ "result": { "final_execution_status": "NONE" } });
+        let (rpc, addr) = MockRpc::start_with_tx_status(
+            vec![invalid_nonce(101, 105), included()],
+            vec![Some(not_tracked)],
         )
         .await;
         let counter: Arc<dyn NonceSource> = Arc::new(NonceCounter::new(0));
