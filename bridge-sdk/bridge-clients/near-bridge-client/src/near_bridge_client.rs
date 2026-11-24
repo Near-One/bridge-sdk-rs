@@ -9,6 +9,7 @@ use near_contract_standards::storage_management::StorageBalance;
 use near_crypto::{SecretKey, Signer};
 use near_primitives::{hash::CryptoHash, types::AccountId, views::TxExecutionStatus};
 use near_rpc_client::{ChangeRequest, ViewRequest};
+pub use near_rpc_client::{NonceCounter, NonceSource, NonceStrategy};
 use near_token::NearToken;
 use omni_types::{
     locker_args::{BindTokenArgs, ClaimFeeArgs, DeployTokenArgs, FinTransferArgs},
@@ -47,9 +48,12 @@ pub struct Decimals {
     pub origin_decimals: u8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TransactionOptions {
-    pub nonce: Option<u64>,
+    /// Nonce of the NEAR transaction. A method that sends two transactions
+    /// (e.g. a storage deposit and then the main call) applies it to each:
+    /// `Fixed(n)` becomes `n` and `n + 1`; `Source` reserves one nonce per transaction.
+    pub nonce: NonceStrategy,
     pub wait_until: TxExecutionStatus,
     pub wait_final_outcome_timeout_sec: Option<u64>,
 }
@@ -57,7 +61,7 @@ pub struct TransactionOptions {
 impl Default for TransactionOptions {
     fn default() -> Self {
         Self {
-            nonce: None,
+            nonce: NonceStrategy::default(),
             wait_until: TxExecutionStatus::Final,
             wait_final_outcome_timeout_sec: None,
         }
@@ -720,13 +724,14 @@ impl NearBridgeClient {
             .await?
             .saturating_add(native_fee);
 
-        let nonce = if self
+        let storage_deposited = self
             .deposit_storage_if_required(required_balance, transaction_options.clone())
-            .await?
-        {
-            transaction_options.nonce.map(|nonce| nonce + 1)
-        } else {
-            transaction_options.nonce
+            .await?;
+        // The storage deposit used the fixed nonce, so the transfer takes the next one.
+        // The other strategies pick a fresh nonce for each transaction.
+        let nonce = match transaction_options.nonce {
+            NonceStrategy::Fixed(nonce) if storage_deposited => NonceStrategy::Fixed(nonce + 1),
+            nonce => nonce,
         };
 
         let mut init_transfer_msg = serde_json::Map::new();

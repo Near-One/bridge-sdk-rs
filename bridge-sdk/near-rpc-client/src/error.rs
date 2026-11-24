@@ -45,6 +45,18 @@ impl NearRpcError {
         )
     }
 
+    /// `(tx_nonce, ak_nonce)` when the node rejected a transaction because its
+    /// nonce was not greater than the access-key nonce. That signed transaction
+    /// can no longer be included. It can already be on chain if the same request
+    /// was sent twice, so check its status before you re-sign it with a new nonce.
+    #[must_use]
+    pub fn invalid_nonce(&self) -> Option<(u64, u64)> {
+        match self {
+            Self::RpcTransactionError(err) => crate::near_rpc_client::invalid_nonce(err),
+            _ => None,
+        }
+    }
+
     /// `true` when the error was produced by executing code on the contract,
     /// as opposed to a transport/RPC failure. Includes the method-not-found
     /// case — check [`Self::is_method_not_found`] first when that matters.
@@ -124,5 +136,61 @@ mod tests {
     #[test]
     fn unrelated_error_is_not_contract_execution_error() {
         assert!(!NearRpcError::ResultError.is_contract_execution_error());
+    }
+
+    fn transaction_error(context: near_primitives::errors::InvalidTxError) -> NearRpcError {
+        NearRpcError::RpcTransactionError(JsonRpcError::ServerError(
+            JsonRpcServerError::HandlerError(RpcTransactionError::InvalidTransaction { context }),
+        ))
+    }
+
+    #[test]
+    fn invalid_nonce_is_detected() {
+        let err = transaction_error(near_primitives::errors::InvalidTxError::InvalidNonce {
+            tx_nonce: 10,
+            ak_nonce: 13,
+        });
+        assert_eq!(err.invalid_nonce(), Some((10, 13)));
+    }
+
+    #[test]
+    fn invalid_nonce_from_rpc_response_is_detected() {
+        // Shape of a real `send_tx` rejection. The client parses it from `data`
+        // because `cause.info` has no `context`.
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "dontcare",
+            "error": {
+                "name": "HANDLER_ERROR",
+                "cause": { "name": "INVALID_TRANSACTION", "info": {} },
+                "code": -32000,
+                "message": "Server error",
+                "data": { "TxExecutionError": { "InvalidTxError": {
+                    "InvalidNonce": { "tx_nonce": 129, "ak_nonce": 131 }
+                } } }
+            }
+        });
+        let rpc_error: near_jsonrpc_primitives::errors::RpcError =
+            serde_json::from_value(response["error"].clone()).unwrap();
+        let err = NearRpcError::RpcTransactionError(JsonRpcError::from(rpc_error));
+        assert_eq!(err.invalid_nonce(), Some((129, 131)));
+    }
+
+    #[test]
+    fn other_invalid_tx_is_not_invalid_nonce() {
+        let err = transaction_error(near_primitives::errors::InvalidTxError::NonceTooLarge {
+            tx_nonce: 10,
+            upper_bound: 5,
+        });
+        assert_eq!(err.invalid_nonce(), None);
+    }
+
+    #[test]
+    fn timeout_is_not_invalid_nonce() {
+        let err = NearRpcError::RpcTransactionError(JsonRpcError::ServerError(
+            JsonRpcServerError::HandlerError(RpcTransactionError::TimeoutError),
+        ));
+        assert_eq!(err.invalid_nonce(), None);
+        assert_eq!(NearRpcError::ResultError.invalid_nonce(), None);
     }
 }
