@@ -135,13 +135,14 @@ impl NonceSource for NonceCounter {
 #[derive(Clone, Default)]
 pub enum NonceStrategy {
     /// Access-key nonce + 1, from the access-key query that [`change`] sends.
-    /// On `InvalidNonce`, re-signs with the `ak_nonce` from the error + 1.
+    /// On `InvalidNonce`, may re-sign with the `ak_nonce` from the error + 1
+    /// (see [`change`]).
     #[default]
     AccessKey,
     /// Exactly this nonce. Never retried: the caller owns the nonce.
     Fixed(u64),
-    /// Reserved from the source right before signing. On `InvalidNonce`,
-    /// reserves a new nonce from the source and re-signs.
+    /// Reserved from the source right before signing. On `InvalidNonce`, may
+    /// reserve a new nonce from the source and re-sign (see [`change`]).
     Source(Arc<dyn NonceSource>),
 }
 
@@ -310,6 +311,14 @@ pub async fn get_block(
 
 /// Calls the rpc method that requires change of the state
 ///
+/// With [`NonceStrategy::AccessKey`] or [`NonceStrategy::Source`], an
+/// `InvalidNonce` rejection is handled as follows. If the rejected transaction
+/// is already on chain (a duplicate send), its hash is returned. Otherwise the
+/// same actions are re-signed with a new nonce, up to
+/// [`MAX_INVALID_NONCE_RETRIES`] times. The error is returned instead when the
+/// status check fails or when `tx_nonce == ak_nonce`, because then a
+/// transaction with exactly this nonce landed, most likely this one.
+///
 /// # Errors
 /// Returns an error if the change call fails
 pub async fn change(
@@ -400,69 +409,66 @@ pub async fn change(
         };
 
         // `InvalidNonce` means the access-key nonce already reached `tx_nonce`,
-        // so this signed transaction can never be included from now on. It is
-        // safe to sign a copy with a new nonce, unless this transaction is what
-        // moved the nonce: a proxy may re-send a request whose first copy was
-        // accepted, and the duplicate then fails with `InvalidNonce`. Check that
-        // first. Timeouts and transport errors are never retried: the
-        // transaction may still land.
-        //
-        // A `Source` never hands out a nonce twice, so `tx_nonce == ak_nonce`
-        // means a transaction with exactly this nonce landed: almost always this
-        // one. A load-balanced RPC can still answer the status query from a node
-        // that has not seen it yet, so do not re-sign; the caller retries later.
-        // With `AccessKey`, equality is the normal race between two senders
-        // that both picked `ak_nonce + 1`, so re-signing is correct there.
-        match invalid_nonce(&err) {
-            Some((tx_nonce, ak_nonce))
-                if change_request.nonce.retries_invalid_nonce()
-                    && retries < MAX_INVALID_NONCE_RETRIES =>
-            {
-                match transaction_exists(&client, tx_hash, signer_account_id.clone()).await {
-                    Ok(false)
-                        if tx_nonce == ak_nonce
-                            && matches!(change_request.nonce, NonceStrategy::Source(_)) =>
-                    {
-                        tracing::warn!(
-                            tx_hash = tx_hash.to_string(),
-                            tx_nonce,
-                            ak_nonce,
-                            "NEAR transaction rejected with InvalidNonce for its own nonce, not re-signing: it may be a duplicate that is not visible yet"
-                        );
-                        return Err(err.into());
-                    }
-                    Ok(false) => {}
-                    Ok(true) => {
-                        tracing::info!(
-                            tx_hash = tx_hash.to_string(),
-                            tx_nonce,
-                            ak_nonce,
-                            "NEAR transaction reported InvalidNonce but is already on chain"
-                        );
-                        return Ok(tx_hash);
-                    }
-                    Err(status_err) => {
-                        tracing::warn!(
-                            tx_hash = tx_hash.to_string(),
-                            error = %status_err,
-                            "Could not check NEAR transaction after InvalidNonce, not re-signing"
-                        );
-                        return Err(err.into());
-                    }
-                }
+        // so this signed transaction can never be included from now on. It may
+        // still be what moved the nonce: a proxy may re-send a request whose
+        // first copy was accepted, and the duplicate then fails with
+        // `InvalidNonce`. So check its status first, on every attempt. Timeouts
+        // and transport errors are never retried: the transaction may still land.
+        let Some((tx_nonce, ak_nonce)) = invalid_nonce(&err) else {
+            return Err(err.into());
+        };
+        if !change_request.nonce.retries_invalid_nonce() {
+            return Err(err.into());
+        }
 
-                retries += 1;
+        match transaction_exists(&client, tx_hash, signer_account_id.clone()).await {
+            Ok(true) => {
                 tracing::info!(
                     tx_hash = tx_hash.to_string(),
                     tx_nonce,
                     ak_nonce,
-                    retry = retries,
-                    "NEAR transaction rejected with InvalidNonce, re-signing with a new nonce"
+                    "NEAR transaction reported InvalidNonce but is already on chain"
                 );
-                access_key_nonce = access_key_nonce.max(ak_nonce);
+                return Ok(tx_hash);
             }
-            _ => return Err(err.into()),
+            Ok(false) => {}
+            Err(status_err) => {
+                tracing::warn!(
+                    tx_hash = tx_hash.to_string(),
+                    error = %status_err,
+                    "Could not check NEAR transaction after InvalidNonce, not re-signing"
+                );
+                return Err(err.into());
+            }
         }
+
+        // A load-balanced RPC can answer the status query from a node that has
+        // not seen the transaction yet. `tx_nonce == ak_nonce` means a
+        // transaction with exactly this nonce landed, most likely this one, so
+        // do not re-sign a copy that could execute the actions twice. The
+        // caller can retry later, when the status is visible.
+        if tx_nonce == ak_nonce {
+            tracing::warn!(
+                tx_hash = tx_hash.to_string(),
+                tx_nonce,
+                ak_nonce,
+                "NEAR transaction rejected with InvalidNonce for its own nonce, not re-signing: it may be a duplicate that is not visible yet"
+            );
+            return Err(err.into());
+        }
+
+        if retries == MAX_INVALID_NONCE_RETRIES {
+            return Err(err.into());
+        }
+        retries += 1;
+        tracing::info!(
+            tx_hash = tx_hash.to_string(),
+            tx_nonce,
+            ak_nonce,
+            retry = retries,
+            "NEAR transaction rejected with InvalidNonce, re-signing with a new nonce"
+        );
+        access_key_nonce = access_key_nonce.max(ak_nonce);
     }
 }
 
@@ -787,24 +793,25 @@ mod tests {
         pub struct MockRpc {
             send_tx_replies: Vec<Value>,
             sent: Mutex<Vec<(u64, CryptoHash)>>,
-            /// Reply to `tx` status queries; `None` means "unknown transaction".
-            tx_status_reply: Option<Value>,
+            /// Replies to successive `tx` status queries (the last one repeats);
+            /// `None` or an empty list means "unknown transaction".
+            tx_status_replies: Vec<Option<Value>>,
             tx_status_queries: Mutex<Vec<CryptoHash>>,
         }
 
         impl MockRpc {
             pub async fn start(send_tx_replies: Vec<Value>) -> (Arc<Self>, String) {
-                Self::start_with_tx_status(send_tx_replies, None).await
+                Self::start_with_tx_status(send_tx_replies, Vec::new()).await
             }
 
             pub async fn start_with_tx_status(
                 send_tx_replies: Vec<Value>,
-                tx_status_reply: Option<Value>,
+                tx_status_replies: Vec<Option<Value>>,
             ) -> (Arc<Self>, String) {
                 let mock = Arc::new(Self {
                     send_tx_replies,
                     sent: Mutex::new(Vec::new()),
-                    tx_status_reply,
+                    tx_status_replies,
                     tx_status_queries: Mutex::new(Vec::new()),
                 });
                 let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -851,8 +858,13 @@ mod tests {
                     Some("tx") => {
                         let tx_hash: CryptoHash =
                             serde_json::from_value(request["params"]["tx_hash"].clone()).unwrap();
-                        self.tx_status_queries.lock().unwrap().push(tx_hash);
-                        self.tx_status_reply.clone().unwrap_or_else(|| {
+                        let mut queries = self.tx_status_queries.lock().unwrap();
+                        queries.push(tx_hash);
+                        let reply = match self.tx_status_replies.len() {
+                            0 => None,
+                            len => self.tx_status_replies[(queries.len() - 1).min(len - 1)].clone(),
+                        };
+                        reply.unwrap_or_else(|| {
                             json!({ "error": {
                                 "name": "HANDLER_ERROR",
                                 "cause": {
@@ -953,9 +965,11 @@ mod tests {
     async fn invalid_nonce_for_landed_transaction_is_not_resigned() {
         use mock_rpc::*;
         let landed = serde_json::json!({ "result": { "final_execution_status": "EXECUTED" } });
-        let (rpc, addr) =
-            MockRpc::start_with_tx_status(vec![invalid_nonce(101, 101), included()], Some(landed))
-                .await;
+        let (rpc, addr) = MockRpc::start_with_tx_status(
+            vec![invalid_nonce(101, 101), included()],
+            vec![Some(landed)],
+        )
+        .await;
         let counter: Arc<dyn NonceSource> = Arc::new(NonceCounter::new(0));
 
         let tx_hash = change(&addr, change_request(NonceStrategy::Source(counter)))
@@ -984,16 +998,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn access_key_strategy_resigns_when_nonce_equals_access_key_nonce() {
+    async fn access_key_strategy_does_not_resign_when_nonce_equals_access_key_nonce() {
         use mock_rpc::*;
-        // Another sender also picked `ak_nonce + 1` and landed first.
+        // Same as for `Source`: the landed transaction is most likely this one.
         let (rpc, addr) = MockRpc::start(vec![invalid_nonce(101, 101), included()]).await;
 
-        change(&addr, change_request(NonceStrategy::AccessKey))
+        let err = change(&addr, change_request(NonceStrategy::AccessKey))
             .await
-            .unwrap();
+            .unwrap_err();
 
-        assert_eq!(rpc.sent_nonces(), vec![101, 102]);
+        assert_eq!(err.invalid_nonce(), Some((101, 101)));
+        assert_eq!(rpc.sent_nonces(), vec![101]);
     }
 
     #[tokio::test]
@@ -1001,7 +1016,7 @@ mod tests {
         use mock_rpc::*;
         let (rpc, addr) = MockRpc::start_with_tx_status(
             vec![invalid_nonce(101, 105), included()],
-            Some(timeout()),
+            vec![Some(timeout())],
         )
         .await;
         let counter: Arc<dyn NonceSource> = Arc::new(NonceCounter::new(0));
@@ -1037,6 +1052,7 @@ mod tests {
 
         assert_eq!(err.invalid_nonce(), Some((7, 100)));
         assert_eq!(rpc.sent_nonces(), vec![7]);
+        assert!(rpc.tx_status_queries().is_empty());
     }
 
     #[tokio::test]
@@ -1051,6 +1067,26 @@ mod tests {
 
         assert!(err.invalid_nonce().is_some());
         assert_eq!(rpc.sent_nonces().len(), 1 + MAX_INVALID_NONCE_RETRIES);
+        // The last rejected copy is checked too.
+        assert_eq!(rpc.tx_status_queries().len(), 1 + MAX_INVALID_NONCE_RETRIES);
+    }
+
+    #[tokio::test]
+    async fn landed_transaction_is_detected_on_the_last_attempt() {
+        use mock_rpc::*;
+        let landed = serde_json::json!({ "result": { "final_execution_status": "EXECUTED" } });
+        let mut tx_status = vec![None; MAX_INVALID_NONCE_RETRIES];
+        tx_status.push(Some(landed));
+        let (rpc, addr) =
+            MockRpc::start_with_tx_status(vec![invalid_nonce(0, 200)], tx_status).await;
+        let counter: Arc<dyn NonceSource> = Arc::new(NonceCounter::new(0));
+
+        let tx_hash = change(&addr, change_request(NonceStrategy::Source(counter)))
+            .await
+            .unwrap();
+
+        assert_eq!(rpc.sent_nonces().len(), 1 + MAX_INVALID_NONCE_RETRIES);
+        assert_eq!(rpc.sent_hashes().last(), Some(&tx_hash));
     }
 
     #[tokio::test]
