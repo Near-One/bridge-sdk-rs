@@ -220,6 +220,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
             .collect();
 
         let coinbase_tx_id = transactions[0].to_string();
+        let coinbase_tx_sha256 = block.coinbase_tx_sha256();
         let coinbase_merkle_proof = merkle_tools::merkle_proof_calculator(transactions, 0);
         let coinbase_merkle_proof_str = coinbase_merkle_proof
             .iter()
@@ -235,6 +236,7 @@ impl<T: UTXOChain> UTXOBridgeClient<T> {
                 .expect("Error on convert usize into u64"),
             merkle_proof: merkle_proof_str,
             coinbase_tx_id,
+            coinbase_tx_sha256,
             coinbase_merkle_proof: coinbase_merkle_proof_str,
             outputs,
         })

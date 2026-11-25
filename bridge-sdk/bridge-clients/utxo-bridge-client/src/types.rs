@@ -1,5 +1,5 @@
 use bitcoin::consensus::{encode, serialize};
-use bitcoincore_rpc::bitcoin::hashes::Hash;
+use bitcoincore_rpc::bitcoin::hashes::{sha256, Hash};
 use merkle_tools::H256;
 use zcash_primitives::block::BlockHeader;
 use zcash_primitives::transaction::Transaction;
@@ -15,6 +15,11 @@ pub struct TxProof {
     pub tx_index: u64,
     pub merkle_proof: Vec<String>,
     pub coinbase_tx_id: String,
+    /// Bitcoin only: hex SHA256 of the coinbase's non-witness serialization, in hash
+    /// output byte order. Connectors with the 64-byte-coinbase fix
+    /// (Near-One/btc-bridge#110) expect it in place of `coinbase_tx_id` and derive the
+    /// txid on-chain as its SHA256. `None` on Zcash, where `coinbase_tx_id` is still sent.
+    pub coinbase_tx_sha256: Option<String>,
     pub coinbase_merkle_proof: Vec<String>,
     pub outputs: Vec<TxOutputView>,
 }
@@ -54,6 +59,8 @@ pub trait UTXOChainBlock {
     fn hash(&self) -> String;
     fn transactions(&self) -> Vec<H256>;
     fn tx_data(&self, tx_index: usize) -> Vec<u8>;
+    /// See [`TxProof::coinbase_tx_sha256`].
+    fn coinbase_tx_sha256(&self) -> Option<String>;
 }
 
 impl UTXOChainBlock for bitcoin::Block {
@@ -75,6 +82,18 @@ impl UTXOChainBlock for bitcoin::Block {
 
     fn tx_data(&self, tx_index: usize) -> Vec<u8> {
         serialize(&self.txdata[tx_index])
+    }
+
+    fn coinbase_tx_sha256(&self) -> Option<String> {
+        let mut coinbase = self.txdata.first()?.clone();
+        // Post-segwit coinbases carry a witness; with every witness empty, `serialize`
+        // emits the legacy (non-witness) encoding that the txid commits to.
+        for input in &mut coinbase.input {
+            input.witness.clear();
+        }
+        Some(hex::encode(
+            sha256::Hash::hash(&serialize(&coinbase)).to_byte_array(),
+        ))
     }
 }
 
@@ -142,6 +161,10 @@ impl UTXOChainBlock for ZcashBlock {
             .expect("Serialization failed");
         tx_data
     }
+
+    fn coinbase_tx_sha256(&self) -> Option<String> {
+        None
+    }
 }
 
 pub trait UTXOChain {
@@ -201,5 +224,38 @@ mod tests {
             block_hex.ends_with(&hex::encode(&tx_bytes)),
             "re-serialized tx must match the original block's trailing tx bytes"
         );
+
+        // The coinbase-SHA256 proof format is Bitcoin-only.
+        assert_eq!(block.coinbase_tx_sha256(), None);
+    }
+
+    /// The contract derives the coinbase txid as SHA256(`coinbase_tx_sha256`), reversed.
+    fn txid_from_coinbase_tx_sha256(coinbase_tx_sha256: &str) -> String {
+        let bytes = hex::decode(coinbase_tx_sha256).expect("valid hex");
+        let mut txid = sha256::Hash::hash(&bytes).to_byte_array();
+        txid.reverse();
+        hex::encode(txid)
+    }
+
+    #[test]
+    fn bitcoin_coinbase_tx_sha256_derives_coinbase_txid() {
+        let genesis = bitcoin::blockdata::constants::genesis_block(bitcoin::Network::Bitcoin);
+        let coinbase_tx_sha256 = genesis.coinbase_tx_sha256().expect("bitcoin block");
+
+        assert_eq!(
+            txid_from_coinbase_tx_sha256(&coinbase_tx_sha256),
+            "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
+        );
+    }
+
+    #[test]
+    fn bitcoin_coinbase_tx_sha256_ignores_witness() {
+        let mut block = bitcoin::blockdata::constants::genesis_block(bitcoin::Network::Bitcoin);
+        // A segwit coinbase carries the 32-byte witness reserved value.
+        block.txdata[0].input[0].witness.push([0u8; 32]);
+        let txid = block.txdata[0].compute_txid().to_string();
+        let coinbase_tx_sha256 = block.coinbase_tx_sha256().expect("bitcoin block");
+
+        assert_eq!(txid_from_coinbase_tx_sha256(&coinbase_tx_sha256), txid);
     }
 }

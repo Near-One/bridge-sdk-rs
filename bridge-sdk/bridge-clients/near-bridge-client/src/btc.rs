@@ -24,6 +24,10 @@ use utxo_utils::UTXO;
 
 const CONFIG_CACHE_TTL: Duration = Duration::from_secs(3600);
 
+/// First connector version whose Bitcoin `TxInclusionProof::coinbase_tx_id` carries the
+/// SHA256 of the coinbase instead of its txid (Near-One/btc-bridge#110).
+const COINBASE_TX_SHA256_MIN_VERSION: (u64, u64, u64) = (0, 9, 10);
+
 const INIT_BTC_TRANSFER_GAS: u64 = 300_000_000_000_000;
 const ACTIVE_UTXO_MANAGEMENT_GAS: u64 = 300_000_000_000_000;
 const SIGN_BTC_TRANSACTION_GAS: u64 = 300_000_000_000_000;
@@ -308,6 +312,21 @@ pub(crate) struct PartialConfig {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct PartialMetadata {
     pub current_utxos_num: u32,
+}
+
+/// Parses a `major.minor.patch` contract version, ignoring any pre-release/build suffix.
+fn parse_contract_version(version: &str) -> Result<(u64, u64, u64)> {
+    let invalid = || {
+        BridgeSdkError::ContractConfigurationError(format!(
+            "Invalid UTXO connector version: {version}"
+        ))
+    };
+    let core = version.split(['-', '+']).next().ok_or_else(invalid)?;
+    let mut parts = core.split('.').map(str::parse::<u64>);
+    match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(Ok(major)), Some(Ok(minor)), Some(Ok(patch)), None) => Ok((major, minor, patch)),
+        _ => Err(invalid()),
+    }
 }
 
 #[derive(Clone, serde::Deserialize)]
@@ -1356,6 +1375,39 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
+    pub async fn get_utxo_connector_version(&self, chain: ChainKind) -> Result<String> {
+        let endpoint = self.endpoint()?;
+        let btc_connector = self.utxo_chain_connector(chain)?;
+
+        let response = near_rpc_client::view(
+            endpoint,
+            ViewRequest {
+                contract_account_id: btc_connector,
+                method_name: "get_version".to_string(),
+                args: serde_json::json!({}),
+            },
+        )
+        .await?;
+
+        Ok(serde_json::from_slice::<String>(&response)?)
+    }
+
+    /// Whether the connector expects `TxInclusionProof::coinbase_tx_id` to be the SHA256
+    /// of the coinbase's non-witness serialization rather than the coinbase txid. Only
+    /// Bitcoin connectors from [`COINBASE_TX_SHA256_MIN_VERSION`] on do; Zcash always
+    /// takes the txid. Not cached, so a connector upgrade is picked up immediately.
+    pub async fn utxo_connector_expects_coinbase_tx_sha256(
+        &self,
+        chain: ChainKind,
+    ) -> Result<bool> {
+        if chain != ChainKind::Btc {
+            return Ok(false);
+        }
+
+        let version = self.get_utxo_connector_version(chain).await?;
+        Ok(parse_contract_version(&version)? >= COINBASE_TX_SHA256_MIN_VERSION)
+    }
+
     pub async fn get_pk_for_utxo(&self, chain: ChainKind, utxo: UTXO) -> Result<String> {
         let config = self.get_config(chain).await?;
         let btc_connector = self.utxo_chain_connector(chain)?;
@@ -1965,7 +2017,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::NearBridgeClientBuilder;
+    use crate::{NearBridgeClientBuilder, UTXOChainAccounts};
 
     const DEPOSIT_ADDRESS_PATH: &str = "/api/v3/utxo/get_user_deposit_address";
 
@@ -1980,6 +2032,100 @@ mod tests {
             .bridge_indexer_api_url(api_url)
             .build()
             .unwrap()
+    }
+
+    /// A client whose NEAR RPC is a mock answering every view call with `version`.
+    async fn client_with_connector_version(version: &str) -> (MockServer, NearBridgeClient) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(body_partial_json(serde_json::json!({
+                "method": "query",
+                "params": {"method_name": "get_version"},
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": "dontcare",
+                "result": {
+                    "result": serde_json::to_vec(&version).unwrap(),
+                    "logs": [],
+                    "block_height": 1,
+                    "block_hash": "11111111111111111111111111111111",
+                },
+            })))
+            .mount(&server)
+            .await;
+
+        let connector = UTXOChainAccounts {
+            utxo_chain_connector: Some("btc-connector.test.near".parse().unwrap()),
+            utxo_chain_token: None,
+            satoshi_relayer: None,
+        };
+        let client = NearBridgeClientBuilder::default()
+            .endpoint(Some(server.uri()))
+            .private_key(None)
+            .signer(None)
+            .omni_bridge_id(None)
+            .mpc_omni_prover_id(None)
+            .utxo_bridges(HashMap::from([
+                (ChainKind::Btc, connector.clone()),
+                (ChainKind::Zcash, connector),
+            ]))
+            .bridge_indexer_api_url(None)
+            .build()
+            .unwrap();
+
+        (server, client)
+    }
+
+    #[tokio::test]
+    async fn coinbase_tx_sha256_expected_from_btc_connector_0_9_10() {
+        for (version, expected) in [
+            ("0.9.6", false),
+            ("0.9.9", false),
+            ("0.9.10", true),
+            ("0.9.11", true),
+            ("0.10.0", true),
+            ("1.0.0", true),
+        ] {
+            let (_server, client) = client_with_connector_version(version).await;
+            let expects_sha256 = client
+                .utxo_connector_expects_coinbase_tx_sha256(ChainKind::Btc)
+                .await
+                .expect("version check should succeed");
+            assert_eq!(expects_sha256, expected, "version {version}");
+        }
+    }
+
+    #[tokio::test]
+    async fn coinbase_tx_sha256_never_expected_from_zcash_connector() {
+        let (server, client) = client_with_connector_version("1.0.0").await;
+        let expects_sha256 = client
+            .utxo_connector_expects_coinbase_tx_sha256(ChainKind::Zcash)
+            .await
+            .expect("zcash needs no version check");
+
+        assert!(!expects_sha256);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn parse_contract_version_accepts_semver() {
+        assert_eq!(parse_contract_version("0.9.10").unwrap(), (0, 9, 10));
+        assert_eq!(parse_contract_version("1.2.3-rc.1").unwrap(), (1, 2, 3));
+        assert_eq!(parse_contract_version("1.2.3+build").unwrap(), (1, 2, 3));
+    }
+
+    #[test]
+    fn parse_contract_version_rejects_malformed() {
+        for version in ["", "0.9", "0.9.10.1", "v0.9.10", "0.x.10"] {
+            assert!(
+                matches!(
+                    parse_contract_version(version),
+                    Err(BridgeSdkError::ContractConfigurationError(_))
+                ),
+                "version {version:?}"
+            );
+        }
     }
 
     fn near_recipient() -> OmniAddress {

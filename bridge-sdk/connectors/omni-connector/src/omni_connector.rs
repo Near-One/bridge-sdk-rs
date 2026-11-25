@@ -16,6 +16,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::types::AccountId;
 use omni_types::mpc_types::MpcFinality;
 use utxo_bridge_client::error::UtxoClientError;
+use utxo_bridge_client::types::TxProof;
 use utxo_utils::address::{Network, UTXOAddress};
 
 use omni_types::locker_args::StorageDepositAction;
@@ -689,6 +690,38 @@ impl OmniConnector {
             .await
     }
 
+    /// Builds the connector's `TxInclusionProof`, passing the coinbase in the form the
+    /// deployed connector expects: Bitcoin connectors with the 64-byte-coinbase fix
+    /// (Near-One/btc-bridge#110) take the SHA256 of the coinbase and derive its txid
+    /// on-chain; older Bitcoin connectors and Zcash take the coinbase txid.
+    async fn utxo_tx_inclusion_proof(
+        &self,
+        chain: ChainKind,
+        proof_data: &TxProof,
+    ) -> Result<TxInclusionProof> {
+        let coinbase_tx_id = if self
+            .near_bridge_client()?
+            .utxo_connector_expects_coinbase_tx_sha256(chain)
+            .await?
+        {
+            proof_data.coinbase_tx_sha256.clone().ok_or_else(|| {
+                BridgeSdkError::UtxoClientError(format!(
+                    "{chain:?} tx proof has no coinbase SHA256"
+                ))
+            })?
+        } else {
+            proof_data.coinbase_tx_id.clone()
+        };
+
+        Ok(TxInclusionProof {
+            tx_block_blockhash: proof_data.tx_block_blockhash.clone(),
+            tx_index: proof_data.tx_index,
+            merkle_proof: proof_data.merkle_proof.clone(),
+            coinbase_tx_id,
+            coinbase_merkle_proof: proof_data.coinbase_merkle_proof.clone(),
+        })
+    }
+
     async fn build_fin_btc_transfer_args(
         &self,
         chain: ChainKind,
@@ -750,17 +783,12 @@ impl OmniConnector {
             .await?;
         }
 
+        let proof = self.utxo_tx_inclusion_proof(chain, &proof_data).await?;
         Ok(FinBtcTransferArgs {
             deposit_msg,
             tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            proof: TxInclusionProof {
-                tx_block_blockhash: proof_data.tx_block_blockhash,
-                tx_index: proof_data.tx_index,
-                merkle_proof: proof_data.merkle_proof,
-                coinbase_tx_id: proof_data.coinbase_tx_id,
-                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            },
+            proof,
         })
     }
 
@@ -824,15 +852,10 @@ impl OmniConnector {
         )
         .await?;
 
+        let proof = self.utxo_tx_inclusion_proof(chain, &proof_data).await?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            proof: TxInclusionProof {
-                tx_block_blockhash: proof_data.tx_block_blockhash,
-                tx_index: proof_data.tx_index,
-                merkle_proof: proof_data.merkle_proof,
-                coinbase_tx_id: proof_data.coinbase_tx_id,
-                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            },
+            proof,
         };
 
         near_bridge_client
@@ -877,15 +900,10 @@ impl OmniConnector {
         )
         .await?;
 
+        let proof = self.utxo_tx_inclusion_proof(chain, &proof_data).await?;
         let args = BtcVerifyWithdrawArgs {
             tx_id: tx_hash,
-            proof: TxInclusionProof {
-                tx_block_blockhash: proof_data.tx_block_blockhash,
-                tx_index: proof_data.tx_index,
-                merkle_proof: proof_data.merkle_proof,
-                coinbase_tx_id: proof_data.coinbase_tx_id,
-                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            },
+            proof,
         };
 
         near_bridge_client
@@ -954,18 +972,13 @@ impl OmniConnector {
                 .get_deposit_msg_for_near_account(recipient_id, deposit_refund_address),
         };
 
+        let proof = self.utxo_tx_inclusion_proof(chain, &proof_data).await?;
         Ok(BtcRequestRefundArgs {
             deposit_msg,
             refund_address,
             tx_bytes: near_sdk::json_types::Base64VecU8(proof_data.tx_bytes),
             vout,
-            proof: TxInclusionProof {
-                tx_block_blockhash: proof_data.tx_block_blockhash,
-                tx_index: proof_data.tx_index,
-                merkle_proof: proof_data.merkle_proof,
-                coinbase_tx_id: proof_data.coinbase_tx_id,
-                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            },
+            proof,
             gas_fee,
         })
     }
@@ -1045,15 +1058,10 @@ impl OmniConnector {
         )
         .await?;
 
+        let proof = self.utxo_tx_inclusion_proof(chain, &proof_data).await?;
         let args = BtcVerifyRefundFinalizeArgs {
             tx_id: btc_tx_hash,
-            proof: TxInclusionProof {
-                tx_block_blockhash: proof_data.tx_block_blockhash,
-                tx_index: proof_data.tx_index,
-                merkle_proof: proof_data.merkle_proof,
-                coinbase_tx_id: proof_data.coinbase_tx_id,
-                coinbase_merkle_proof: proof_data.coinbase_merkle_proof,
-            },
+            proof,
         };
 
         near_bridge_client
