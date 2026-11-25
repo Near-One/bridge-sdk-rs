@@ -115,6 +115,9 @@ pub struct NearBridgeClient {
     #[doc = r"Last `get_config` response per UTXO chain, reused until it is `btc::CONFIG_CACHE_TTL` old. Shared across clones"]
     #[builder(setter(skip), default)]
     utxo_config_cache: Arc<RwLock<HashMap<ChainKind, (Instant, btc::PartialConfig)>>>,
+    #[doc = r"Last `get_version` response per UTXO chain, reused until it is `btc::CONFIG_CACHE_TTL` old. Shared across clones"]
+    #[builder(setter(skip), default)]
+    utxo_version_cache: Arc<RwLock<HashMap<ChainKind, (Instant, String)>>>,
 }
 
 impl NearBridgeClient {

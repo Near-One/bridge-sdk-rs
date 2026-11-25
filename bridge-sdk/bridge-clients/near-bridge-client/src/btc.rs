@@ -1375,7 +1375,13 @@ impl NearBridgeClient {
         Ok(metadata.current_utxos_num)
     }
 
+    /// Reads the connector version, reusing a cached response for up to
+    /// [`CONFIG_CACHE_TTL`].
     pub async fn get_utxo_connector_version(&self, chain: ChainKind) -> Result<String> {
+        if let Some(version) = self.cached_version(chain) {
+            return Ok(version);
+        }
+
         let endpoint = self.endpoint()?;
         let btc_connector = self.utxo_chain_connector(chain)?;
 
@@ -1389,13 +1395,30 @@ impl NearBridgeClient {
         )
         .await?;
 
-        Ok(serde_json::from_slice::<String>(&response)?)
+        let version = serde_json::from_slice::<String>(&response)?;
+        self.store_version(chain, &version);
+
+        Ok(version)
+    }
+
+    fn cached_version(&self, chain: ChainKind) -> Option<String> {
+        let cache = self.utxo_version_cache.read().ok()?;
+        let (fetched_at, version) = cache.get(&chain)?;
+
+        (fetched_at.elapsed() < CONFIG_CACHE_TTL).then(|| version.clone())
+    }
+
+    fn store_version(&self, chain: ChainKind, version: &str) {
+        if let Ok(mut cache) = self.utxo_version_cache.write() {
+            cache.insert(chain, (Instant::now(), version.to_string()));
+        }
     }
 
     /// Whether the connector expects `TxInclusionProof::coinbase_tx_id` to be the SHA256
     /// of the coinbase's non-witness serialization rather than the coinbase txid. Only
     /// Bitcoin connectors from [`COINBASE_TX_SHA256_MIN_VERSION`] on do; Zcash always
-    /// takes the txid. Not cached, so a connector upgrade is picked up immediately.
+    /// takes the txid. The version is cached for [`CONFIG_CACHE_TTL`], so after a
+    /// connector upgrade proofs may keep the old format until the cache expires.
     pub async fn utxo_connector_expects_coinbase_tx_sha256(
         &self,
         chain: ChainKind,
@@ -2094,6 +2117,22 @@ mod tests {
                 .expect("version check should succeed");
             assert_eq!(expects_sha256, expected, "version {version}");
         }
+    }
+
+    #[tokio::test]
+    async fn connector_version_is_cached() {
+        let (server, client) = client_with_connector_version("0.9.10").await;
+        for _ in 0..3 {
+            assert_eq!(
+                client
+                    .get_utxo_connector_version(ChainKind::Btc)
+                    .await
+                    .unwrap(),
+                "0.9.10"
+            );
+        }
+
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     #[tokio::test]
